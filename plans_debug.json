@@ -1,0 +1,566 @@
+[
+  {
+    "id": 29,
+    "title": " DentalGO 1 Mês Grátis (quarentena) + Revista JBCOMS / Assinantes convertidos",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 302,
+    "title": "CIOSP2026 - 3 Meses Cortesia",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 96,
+    "title": "Dental GO",
+    "price": 8900,
+    "isManualPayment": 0
+  },
+  {
+    "id": 32,
+    "title": "Dental GO + Estética | JCDR (Impresso) ",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 34,
+    "title": "Dental GO + Journal of the Brazilian College of Oral and Maxillofacial Surgery (Impresso)",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 231,
+    "title": "Dental GO + Livro Marpe ES",
+    "price": 7800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 97,
+    "title": "Dental GO + Revista Clínica de Ortodontia (Impressa)",
+    "price": 12900,
+    "isManualPayment": 0
+  },
+  {
+    "id": 98,
+    "title": "Dental GO + Revista Endodontics (impressa)",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 74,
+    "title": "Dental GO 1 Mês Grátis - Doctor S.A",
+    "price": 7800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 69,
+    "title": "Dental Go 7 Dias Grátis - R$78,00",
+    "price": 7800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 70,
+    "title": "Dental Go 7 Dias Grátis + Revista Clínica de Ortodontia (Impressa)",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 73,
+    "title": "Dental Go 7 Dias Grátis + Revista Endodontics (Impressa)",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 71,
+    "title": "Dental Go 7 Dias Grátis + Revista Estética | JCDR (Impressa)",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 72,
+    "title": "Dental Go 7 Dias Grátis + Revista JBCOMS (Impressa)",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 141,
+    "title": "Dental GO Anual R$ 48,00 - Instituto Eduardo Prado",
+    "price": 4800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 122,
+    "title": "Dental GO Anual R$ 48,00 + Revista Impressa",
+    "price": 6800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 248,
+    "title": "Dental GO Anual R$ 58,00 + Livro Alinhadores ES",
+    "price": 5800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 223,
+    "title": "Dental GO Anual R$ 58,00 + Livro Reabsorções Dentárias",
+    "price": 5800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 251,
+    "title": "Dental GO Anual R$ 68,00 + Livro Alinhadores",
+    "price": 6800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 105,
+    "title": "Dental GO Anual R$48,00",
+    "price": 4800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 116,
+    "title": "Dental GO Anual R$58,00 - Livro Biomecânica + Ortodontia Preventiva e Interceptadora",
+    "price": 5800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 163,
+    "title": "Dental GO Anual R$58,00 - Livro Odontologia do Sono",
+    "price": 5800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 299,
+    "title": "Dental GO Anual R$66,00 - Black Friday",
+    "price": 6600,
+    "isManualPayment": 1
+  },
+  {
+    "id": 115,
+    "title": "Dental GO Anual R$68,00 + 2 Revistas Impressas",
+    "price": 10800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 142,
+    "title": "Dental GO Anual R$68,00 + Ortodontia Preventiva e Interceptadora",
+    "price": 6800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 119,
+    "title": "Dental GO Anual R$70,00 + Revista Impressa",
+    "price": 108000,
+    "isManualPayment": 1
+  },
+  {
+    "id": 86,
+    "title": "Dental GO Anual R$78,00",
+    "price": 7800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 283,
+    "title": "Dental GO Anual R$89,00",
+    "price": 8900,
+    "isManualPayment": 1
+  },
+  {
+    "id": 37,
+    "title": "Dental GO Black Friday 20% de Desconto",
+    "price": 6200,
+    "isManualPayment": 0
+  },
+  {
+    "id": 77,
+    "title": "Dental GO Black Friday 20% de Desconto  + Revista Clínica de Ortodontia (Impressa) ",
+    "price": 8200,
+    "isManualPayment": 0
+  },
+  {
+    "id": 81,
+    "title": "Dental GO Black Friday 20% de Desconto - Internacional",
+    "price": 6200,
+    "isManualPayment": 0
+  },
+  {
+    "id": 78,
+    "title": "Dental GO Black Friday 20% de Desconto - Revista Endodontics (Impressa)",
+    "price": 8200,
+    "isManualPayment": 0
+  },
+  {
+    "id": 79,
+    "title": "Dental GO Black Friday 20% de Desconto - Revista Estética | JCDR (Impresso)",
+    "price": 8200,
+    "isManualPayment": 0
+  },
+  {
+    "id": 80,
+    "title": "Dental GO Black Friday 20% de Desconto - Revista JBCOMS (Impressa)",
+    "price": 8200,
+    "isManualPayment": 0
+  },
+  {
+    "id": 140,
+    "title": "Dental GO Cortesia Revisores",
+    "price": 0,
+    "isManualPayment": 1
+  },
+  {
+    "id": 24,
+    "title": "Dental Go em 12 x R$ 78,00",
+    "price": 93600,
+    "isManualPayment": 0
+  },
+  {
+    "id": 100,
+    "title": "Dental GO Internacional",
+    "price": 7800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 60,
+    "title": "Dental Go Internacional 7 Dias Grátis - R$78,00",
+    "price": 7800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 155,
+    "title": "Dental GO Promocioal Estudantes - R$35,00",
+    "price": 3500,
+    "isManualPayment": 0
+  },
+  {
+    "id": 101,
+    "title": "Dental GO Promocioal Estudantes - R$39,00",
+    "price": 3900,
+    "isManualPayment": 0
+  },
+  {
+    "id": 125,
+    "title": "Dental GO Promocioal Estudantes - R$39,00",
+    "price": 3900,
+    "isManualPayment": 1
+  },
+  {
+    "id": 35,
+    "title": "Dental GO Promocional Alunos - R$ 39,00 por Mês",
+    "price": 3900,
+    "isManualPayment": 0
+  },
+  {
+    "id": 68,
+    "title": "Dental GO Promocional Alunos 7 Dias Grátis - R$ 39,00 por Mês",
+    "price": 3900,
+    "isManualPayment": 0
+  },
+  {
+    "id": 109,
+    "title": "Dental GO R$ 78,00 - 7 Dias",
+    "price": 7800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 144,
+    "title": "Dental GO R$58,00 + 2 Revistas Impressas",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 246,
+    "title": "Dental GO R$66,00 - 15%OFF",
+    "price": 6600,
+    "isManualPayment": 0
+  },
+  {
+    "id": 134,
+    "title": "Dental GO Recorrente - R$ 48,00 + 2 Revistas Impressas",
+    "price": 8800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 127,
+    "title": "Dental GO Recorrente - R$ 48,00 + Revista Impressa",
+    "price": 6800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 107,
+    "title": "Dental GO Recorrente - R$ 58,00",
+    "price": 5800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 262,
+    "title": "Dental GO Recorrente - R$ 89,00",
+    "price": 8900,
+    "isManualPayment": 0
+  },
+  {
+    "id": 166,
+    "title": "Dental GO Recorrente R$ 50,00",
+    "price": 5000,
+    "isManualPayment": 0
+  },
+  {
+    "id": 143,
+    "title": "Dental GO Recorrente R$ 50,00 + Revista Clínica",
+    "price": 7000,
+    "isManualPayment": 0
+  },
+  {
+    "id": 106,
+    "title": "Dental GO Recorrente R$58,00 + Revistas Impressa",
+    "price": 5800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 111,
+    "title": "Dental Go Recorrente R$68,00",
+    "price": 6800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 164,
+    "title": "Dental GO Recorrente R$68,00 + 3 Revistas Impressas",
+    "price": 12800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 133,
+    "title": "Dental GO Recorrente R$68,00 + Revista Impressa",
+    "price": 8800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 204,
+    "title": "Dental GO Recorrentes  + Revista Endodontics - R$ 98,00",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 214,
+    "title": "Dental GO Recorrentes  Promocional R$ 54.60 + Revista Clínica de Ortodontia",
+    "price": 7460,
+    "isManualPayment": 0
+  },
+  {
+    "id": 180,
+    "title": "Dental GO Recorrentes - R$ 58,00",
+    "price": 5800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 173,
+    "title": "Dental GO Recorrentes - R$ 68,00",
+    "price": 6800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 197,
+    "title": "Dental GO Recorrentes - R$ 78,00",
+    "price": 7800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 181,
+    "title": "Dental GO Recorrentes + Revista Clínica de Ortodontia - R$ 78,00",
+    "price": 7800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 177,
+    "title": "Dental GO Recorrentes + Revista Clínica de Ortodontia - R$ 88,00",
+    "price": 8800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 202,
+    "title": "Dental GO Recorrentes + Revista Clínica de Ortodontia - R$ 98,00",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 183,
+    "title": "Dental GO Recorrentes + Revista Endodontics - R$ 78,00",
+    "price": 7800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 179,
+    "title": "Dental GO Recorrentes + Revista Endodontics - R$ 88,00",
+    "price": 8800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 182,
+    "title": "Dental GO Recorrentes + Revista Estética | JCDR - R$ 78,00",
+    "price": 7800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 178,
+    "title": "Dental GO Recorrentes + Revista Estética | JCDR - R$ 88,00",
+    "price": 8800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 203,
+    "title": "Dental GO Recorrentes + Revista Estética | JCDR - R$ 98,00",
+    "price": 9800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 209,
+    "title": "Dental GO Recorrentes Promocional - R$ 48,00",
+    "price": 4800,
+    "isManualPayment": 0
+  },
+  {
+    "id": 216,
+    "title": "Dental GO Recorrentes Promocional R$ 54.60  + Revista Endodontics",
+    "price": 7460,
+    "isManualPayment": 0
+  },
+  {
+    "id": 215,
+    "title": "Dental GO Recorrentes Promocional R$ 54.60  + Revista Estética | JCDR",
+    "price": 7460,
+    "isManualPayment": 0
+  },
+  {
+    "id": 128,
+    "title": "Dental Press Dental GO R$ 58,00 Anual+ Livro Abor",
+    "price": 5800,
+    "isManualPayment": 1
+  },
+  {
+    "id": 258,
+    "title": "Dental Press Scholar Apostilar",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 275,
+    "title": "JBCOMS",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 117,
+    "title": "Plano Anual Dental GO - R$ 780,00",
+    "price": 78000,
+    "isManualPayment": 1
+  },
+  {
+    "id": 156,
+    "title": "Plano Dental GO Anual - R$700,00",
+    "price": 70000,
+    "isManualPayment": 0
+  },
+  {
+    "id": 118,
+    "title": "Plano Dental GO Anual - R$780,00",
+    "price": 78000,
+    "isManualPayment": 0
+  },
+  {
+    "id": 279,
+    "title": "SBTI",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 286,
+    "title": "SBTI e JBCOMS",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 284,
+    "title": "SBTI e SOBRAPI",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 255,
+    "title": "Scholar",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 278,
+    "title": "Scholar - Andre Machado",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 273,
+    "title": "Scholar Ária",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 265,
+    "title": "Scholar CIEC",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 256,
+    "title": "Scholar Eleva",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 289,
+    "title": "Scholar Instituto De Pesquisa E Ensino Do Tocantins LTDA",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 272,
+    "title": "Scholar Smile",
+    "price": 2500,
+    "isManualPayment": 1
+  },
+  {
+    "id": 259,
+    "title": "Scholar Tokape",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 281,
+    "title": "SEOC",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 290,
+    "title": "SLM - São Leopoldo Mandic",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 291,
+    "title": "SLM Professores",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 263,
+    "title": "SOBRAPI",
+    "price": 1,
+    "isManualPayment": 1
+  },
+  {
+    "id": 287,
+    "title": "SOBRAPI E JBCOMS",
+    "price": 1,
+    "isManualPayment": 1
+  }
+]
