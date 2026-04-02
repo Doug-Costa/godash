@@ -1,18 +1,31 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
-const Q_EXPIRING_SOON_CORE = `
-SELECT p.fullName, p.email, pl.title AS planTitle, s.expiresIn, DATEDIFF(s.expiresIn, CURDATE()) AS daysLeft
-FROM subscriptions s JOIN people p ON s.personId = p.id JOIN plans pl ON s.planId = pl.id
-WHERE s.status = 'active' AND s.expiresIn IS NOT NULL AND s.expiresIn <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
-AND (pl.title LIKE '%Anual%' OR pl.title LIKE '%Recorrente%') AND s.expiresIn >= CURDATE()
-ORDER BY s.expiresIn ASC LIMIT 100
-`;
+const P_ANNUAL = "LOWER(pl.title) LIKE '%anual%'";
+const P_RECURRING = "LOWER(pl.title) LIKE '%recorrente%' OR LOWER(pl.title) LIKE '%mensal%' OR (LOWER(pl.title) LIKE '%dentalgo%' AND LOWER(pl.title) NOT LIKE '%anual%')";
+const P_INSTITUTIONAL = "LOWER(pl.title) LIKE '%scholar%' OR LOWER(pl.title) LIKE '%mandic%' OR LOWER(pl.title) LIKE '%ioa%' OR LOWER(pl.title) LIKE '%sbti%' OR LOWER(pl.title) LIKE '%sobrap%' OR LOWER(pl.title) LIKE '%sociedade%' OR LOWER(pl.title) LIKE '%universidade%' OR LOWER(pl.title) LIKE '%grupo%'";
+const P_CORE = `(${P_ANNUAL} OR ${P_RECURRING}) AND NOT (${P_INSTITUTIONAL})`;
 
+const Q_EXPIRING_SOON_CORE = `
+SELECT 
+  p.fullName, p.email, pl.title AS planTitle, 
+  s.isValidUntil as expiresIn, 
+  DATEDIFF(s.isValidUntil, CURDATE()) AS daysLeft
+FROM subscriptions s 
+JOIN people p ON s.personId = p.id 
+JOIN plans pl ON s.planId = pl.id
+WHERE s.status = 'active' 
+  AND s.isValidUntil IS NOT NULL 
+  AND s.isValidUntil >= CURDATE()
+  AND s.isValidUntil <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
+  AND (${P_CORE})
+ORDER BY s.isValidUntil ASC 
+LIMIT 100
+`;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const days = parseInt(searchParams.get('days') || '30', 10);
+  const days = parseInt(searchParams.get('days') || '60', 10);
 
   try {
     const [expiringSoon] = await pool.query(Q_EXPIRING_SOON_CORE, [days]);

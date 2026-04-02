@@ -1,102 +1,100 @@
-'use client';
-
 import {
   ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
   Tooltip,
+  Legend
 } from 'recharts';
 
-interface PlanData {
-  planId: number;
-  planTitle: string;
-  intervalType: string;
-  isManualPayment: number;
-  price: number;
-  subscriberCount: number;
-}
-
 interface PlanDistributionChartProps {
-  data: PlanData[];
+  data: any[];
   payingUsers: number;
   courtesyUsers: number;
 }
 
-const COLORS = [
-  '#22D3EE', '#C084FC', '#4ADE80', '#FACC15',
-  '#F87171', '#FB923C', '#818CF8', '#2DD4BF',
-  '#E879F9', '#A78BFA',
-];
-
-const formatBRL = (cents: number) =>
-  (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: PlanData & { fill: string } }> }) => {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload;
-  return (
-    <div style={{
-      background: 'var(--surface-raised)',
-      border: '1px solid var(--border-hover)',
-      borderRadius: 12,
-      padding: '12px 16px',
-      boxShadow: 'var(--shadow-card)',
-      maxWidth: 240,
-    }}>
-      <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6, fontSize: 13 }}>{d.planTitle || 'Sem nome'}</div>
-      <div className="label-sm" style={{ marginBottom: 2 }}>
-        {d.subscriberCount} assinantes · {formatBRL(d.price)}/{d.intervalType === 'months' ? 'mês' : 'dia'}
-      </div>
-      {d.isManualPayment === 1 && (
-        <span className="badge badge-warn" style={{ marginTop: 4 }}>Cortesia</span>
-      )}
-    </div>
-  );
+const COLORS = {
+  'Anual': '#22D3EE',
+  'Recorrente': '#C084FC',
+  'Produto': '#4ADE80',
+  'Institucional': '#FACC15',
+  'Cortesia': '#94A3B8'
 };
 
 export default function PlanDistributionChart({ data, payingUsers, courtesyUsers }: PlanDistributionChartProps) {
-  const total = data.reduce((sum, d) => sum + Number(d.subscriberCount), 0);
+  // Grouping by Board Taxonomy
+  const categories = {
+    'Anual': 0,
+    'Recorrente': 0,
+    'Produto': 0,
+    'Institucional': 0,
+    'Cortesia': 0
+  };
+
+  data.forEach(p => {
+    const title = (p.planTitle || '').toLowerCase();
+    if (title.includes('scholar') || title.includes('mandic') || title.includes('ioa') || title.includes('sbti') || title.includes('sobrap') || title.includes('sociedade') || title.includes('universidade') || title.includes('grupo')) {
+      categories['Institucional'] += p.subscriberCount;
+    } else if (title.includes('cortesia') || title.includes('teste') || title.includes('degustação')) {
+      categories['Cortesia'] += p.subscriberCount;
+    } else if (title.includes('livro') || title.includes('ebook')) {
+      categories['Produto'] += p.subscriberCount;
+    } else if (title.includes('anual')) {
+      categories['Anual'] += p.subscriberCount;
+    } else {
+      categories['Recorrente'] += p.subscriberCount;
+    }
+  });
+
+  const chartData = Object.entries(categories)
+    .filter(([_, value]) => value > 0)
+    .map(([name, value]) => ({ name, value }));
 
   return (
-    <div className="card animate-fadeUp" style={{ animationDelay: '250ms' }}>
-      <div style={{ marginBottom: 16 }}>
-        <div className="label" style={{ marginBottom: 4 }}>Distribuição por Plano</div>
-        <div className="label-sm">{total} assinantes ativos</div>
+    <div className="card animate-fadeUp" style={{ padding: '24px' }}>
+      <div style={{ marginBottom: 20 }}>
+        <div className="label">Distribuição Estratégica (Pizza)</div>
+        <p className="label-sm">Segmentação por Taxonomia de Diretoria</p>
       </div>
-      <div style={{ width: '100%', height: 220 }}>
+
+      <div style={{ width: '100%', height: 260 }}>
         <ResponsiveContainer>
           <PieChart>
-            <Pie data={data} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={3} dataKey="subscriberCount" stroke="none">
-              {data.map((_, i) => (
-                <Cell key={i} fill={COLORS[i % COLORS.length]} />
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              innerRadius={60}
+              outerRadius={90}
+              paddingAngle={5}
+              dataKey="value"
+              stroke="none"
+              animationBegin={0}
+              animationDuration={1000}
+            >
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={COLORS[entry.name as keyof typeof COLORS]} />
               ))}
             </Pie>
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip 
+              contentStyle={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8 }}
+              itemStyle={{ color: 'var(--text-primary)', fontSize: 12 }}
+            />
+            <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-        {data.slice(0, 6).map((d, i) => (
-          <div key={d.planId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-              <div style={{ width: 10, height: 10, borderRadius: 3, background: COLORS[i % COLORS.length], flexShrink: 0 }} />
-              <span className="label-sm" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {d.planTitle || `Plano #${d.planId}`}
-              </span>
-            </div>
-            <span className="stat-mono" style={{ fontSize: 12, color: 'var(--text-secondary)', flexShrink: 0 }}>{d.subscriberCount}</span>
-          </div>
-        ))}
-      </div>
-      <div style={{ display: 'flex', gap: 16, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+
+      <div style={{ marginTop: 20, display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 16 }}>
         <div>
-          <div className="label-sm">Pagantes</div>
-          <div className="stat-mono" style={{ color: 'var(--green)', fontSize: 18 }}>{payingUsers}</div>
+          <div className="label-sm">Total Core</div>
+          <div style={{ color: 'var(--accent)', fontWeight: 700, fontSize: '1.25rem' }}>{payingUsers}</div>
         </div>
         <div>
-          <div className="label-sm">Cortesia</div>
-          <div className="stat-mono" style={{ color: 'var(--yellow)', fontSize: 18 }}>{courtesyUsers}</div>
+          <div className="label-sm">Total Taxonomia</div>
+          <div style={{ color: 'var(--text-secondary)', fontWeight: 700, fontSize: '1.25rem' }}>
+            {Object.values(categories).reduce((a, b) => a + b, 0)}
+          </div>
         </div>
       </div>
     </div>

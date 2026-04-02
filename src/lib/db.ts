@@ -21,4 +21,14 @@ const pool = mysql.createPool({
   }),
 });
 
+// Test connection on startup for Docker logs
+if (typeof window === 'undefined') {
+  pool.getConnection().then(conn => {
+    console.log('✅ DB Connected Successfully in Docker (Target:', process.env.DB_HOST, ')');
+    conn.release();
+  }).catch(err => {
+    console.error('❌ DB Connection Failed in Docker:', err.message);
+  });
+}
+
 export default pool;

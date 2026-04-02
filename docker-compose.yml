@@ -1,0 +1,9 @@
+services:
+  dentalgo-bi:
+    build: .
+    ports:
+      - "3035:3000"
+    env_file:
+      - .env.local
+    restart: always
+    container_name: dentalgo-bi

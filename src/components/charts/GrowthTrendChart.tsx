@@ -15,7 +15,8 @@ import {
 interface GrowthTrendChartProps {
   data: Array<{
     period: string;
-    new_subscribers: number;
+    new_growth: number;
+    renewals: number;
     churn_events: number;
   }>;
   month?: string;
@@ -36,7 +37,7 @@ export default function GrowthTrendChart({ data, month }: GrowthTrendChartProps)
         <div className="label" style={{ color: 'var(--text-primary)', marginBottom: 4 }}>
           Tendência de Crescimento: {monthLabel}
         </div>
-        <p className="label-sm">Novos Assinantes vs. Cancelamentos/Expirados</p>
+        <p className="label-sm">Aquisição (Novo/Retorno) vs. Churn</p>
       </div>
 
       <div style={{ flex: 1, width: '100%', minHeight: 300 }}>
@@ -46,6 +47,10 @@ export default function GrowthTrendChart({ data, month }: GrowthTrendChartProps)
               <linearGradient id="colorNew" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.3}/>
                 <stop offset="95%" stopColor="var(--accent)" stopOpacity={0}/>
+              </linearGradient>
+              <linearGradient id="colorRenewal" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--purple)" stopOpacity={0.3}/>
+                <stop offset="95%" stopColor="var(--purple)" stopOpacity={0}/>
               </linearGradient>
               <linearGradient id="colorChurn" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="var(--red)" stopOpacity={0.3}/>
@@ -78,16 +83,32 @@ export default function GrowthTrendChart({ data, month }: GrowthTrendChartProps)
               labelFormatter={(label) => `Dia: ${formatPeriod(label)}`}
             />
             <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: 12, paddingBottom: 20 }} />
+            
+            {/* Stacked Growth */}
             <Area 
               type="monotone" 
-              dataKey="new_subscribers" 
-              name="Novos Assinantes"
+              dataKey="new_growth" 
+              name="Novas Aquisições"
+              stackId="1"
               stroke="var(--accent)" 
-              strokeWidth={3}
+              strokeWidth={2}
               fillOpacity={1} 
               fill="url(#colorNew)" 
               animationDuration={1500}
             />
+            <Area 
+              type="monotone" 
+              dataKey="renewals" 
+              name="Retorno (Comercial)"
+              stackId="1"
+              stroke="var(--purple)" 
+              strokeWidth={2}
+              fillOpacity={1} 
+              fill="url(#colorRenewal)" 
+              animationDuration={1500}
+            />
+
+            {/* Non-stacked Churn for comparison */}
             <Area 
               type="monotone" 
               dataKey="churn_events" 

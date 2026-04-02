@@ -1,6 +1,6 @@
 import DashboardContent from './DashboardContent';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://127.0.0.1:3035';
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
 async function fetchData(endpoint: string, params?: Record<string, string>) {
   try {
@@ -9,10 +9,14 @@ async function fetchData(endpoint: string, params?: Record<string, string>) {
       Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
     }
     const res = await fetch(url.toString(), { cache: 'no-store' });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`❌ Fetch Failed in Docker: ${endpoint} (Status: ${res.status} URL: ${url.toString()})`);
+      return null;
+    }
     const json = await res.json();
     return json.data ?? null;
-  } catch {
+  } catch (error: any) {
+    console.error(`❌ Fetch Error in Docker: ${endpoint} (${error.message})`);
     return null;
   }
 }
