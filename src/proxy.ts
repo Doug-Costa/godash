@@ -1,6 +1,6 @@
 import { auth } from '@/auth';
 
-export const proxy = auth((req) => {
+export default auth((req) => {
   if (!req.auth) {
     const url = req.nextUrl.clone();
     url.pathname = '/login';
