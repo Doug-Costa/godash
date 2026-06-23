@@ -1,0 +1,11 @@
+﻿{
+    "success":  true,
+    "data":  {
+                 "totalUsers":  38328,
+                 "activeCoreSubscriptions":  551,
+                 "activeInstitutionalSubscriptions":  16261,
+                 "canceledCoreSubscriptions":  1302,
+                 "expiringSoon":  132,
+                 "looseSalesThisMonth":  "377300"
+             }
+}

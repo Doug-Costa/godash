@@ -1,0 +1,87 @@
+﻿{
+    "success":  true,
+    "data":  {
+                 "revenueByPeriod":  [
+                                         {
+                                             "period":  "2026-03",
+                                             "mrr":  1250.0001,
+                                             "sales":  377300,
+                                             "revenue":  378550.0001
+                                         },
+                                         {
+                                             "period":  "2026-04",
+                                             "mrr":  1250.0001,
+                                             "sales":  0,
+                                             "revenue":  1250.0001
+                                         },
+                                         {
+                                             "period":  "2026-05",
+                                             "mrr":  1250.0001,
+                                             "sales":  0,
+                                             "revenue":  1250.0001
+                                         },
+                                         {
+                                             "period":  "2026-06",
+                                             "mrr":  1250.0001,
+                                             "sales":  0,
+                                             "revenue":  1250.0001
+                                         },
+                                         {
+                                             "period":  "2026-07",
+                                             "mrr":  1250.0001,
+                                             "sales":  0,
+                                             "revenue":  1250.0001
+                                         },
+                                         {
+                                             "period":  "2026-08",
+                                             "mrr":  1250.0001,
+                                             "sales":  0,
+                                             "revenue":  1250.0001
+                                         },
+                                         {
+                                             "period":  "2026-09",
+                                             "mrr":  833.3334,
+                                             "sales":  0,
+                                             "revenue":  833.3334
+                                         },
+                                         {
+                                             "period":  "2026-10",
+                                             "mrr":  833.3334,
+                                             "sales":  0,
+                                             "revenue":  833.3334
+                                         },
+                                         {
+                                             "period":  "2026-11",
+                                             "mrr":  833.3334,
+                                             "sales":  0,
+                                             "revenue":  833.3334
+                                         },
+                                         {
+                                             "period":  "2026-12",
+                                             "mrr":  416.6667,
+                                             "sales":  0,
+                                             "revenue":  416.6667
+                                         },
+                                         {
+                                             "period":  "2027-01",
+                                             "mrr":  416.6667,
+                                             "sales":  0,
+                                             "revenue":  416.6667
+                                         },
+                                         {
+                                             "period":  "2027-02",
+                                             "mrr":  416.6667,
+                                             "sales":  0,
+                                             "revenue":  416.6667
+                                         }
+                                     ],
+                 "ltv":  {
+                             "avgLTV":  "18578.6205",
+                             "maxLTV":  "173000",
+                             "minLTV":  "0"
+                         },
+                 "lifetime":  {
+                                  "avgLifetimeDays":  "336.6836"
+                              }
+             }
+}
