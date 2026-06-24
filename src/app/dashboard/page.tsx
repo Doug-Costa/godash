@@ -1,4 +1,6 @@
 import DashboardContent from './DashboardContent';
+import { auth } from '@/auth';
+import prisma from '@/lib/prisma';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
@@ -26,7 +28,6 @@ interface SearchParams {
   month?: string;
 }
 
-
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -36,15 +37,57 @@ export default async function DashboardPage({
   const period = resolvedParams?.period || '12m';
   const month = resolvedParams?.month || new Date().toISOString().slice(0, 7); // Default to current YYYY-MM
 
+  // 1. Resolve Session and Role
+  const session = await auth();
+  const currentUser = session?.user ? {
+    id: (session.user as any).id,
+    name: session.user.name || 'Agente',
+    email: session.user.email || '',
+    role: (session.user as any).role || 'AGENT',
+  } : null;
 
-  const [kpis, revenue, users, churn, subscriptions] = await Promise.all([
-    fetchData('kpis', { month }),
-    fetchData('revenue', { period, month }),
-    fetchData('users', { month }),
-    fetchData('churn', { months: period.replace('m', '') }), // Churn uses months count
-    fetchData('subscriptions', { days: '30' }),
-  ]);
+  const isAdmin = currentUser?.role === 'ADMIN';
 
+  // 2. Conditional data fetching based on role
+  let kpis = null;
+  let revenue = null;
+  let users = null;
+  let churn = null;
+  let subscriptions = null;
+
+  if (isAdmin) {
+    // Admin fetches everything
+    [kpis, revenue, users, churn, subscriptions] = await Promise.all([
+      fetchData('kpis', { month }),
+      fetchData('revenue', { period, month }),
+      fetchData('users', { month }),
+      fetchData('churn', { months: period.replace('m', '') }),
+      fetchData('subscriptions', { days: '30' }),
+    ]);
+  } else {
+    // Agent only fetches the users (leads) core info
+    users = await fetchData('users', { month });
+  }
+
+  // 3. Fetch agents list from SQLite and format nullable properties
+  const rawAgents = await prisma.user.findMany({
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isActive: true,
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  const agents = rawAgents.map(a => ({
+    id: a.id,
+    name: a.name || 'Agente',
+    email: a.email || '',
+    role: a.role,
+    isActive: a.isActive
+  }));
 
   return (
     <DashboardContent
@@ -55,7 +98,10 @@ export default async function DashboardPage({
       subscriptions={subscriptions}
       period={period}
       month={month}
+      currentUser={currentUser}
+      agents={agents}
     />
-
   );
 }
+
+

@@ -1,0 +1,235 @@
+import { NextResponse } from 'next/server';
+import pool from '@/lib/db';
+import prisma from '@/lib/prisma';
+import { PrismaCrmRepository } from '@/lib/repositories/PrismaCrmRepository';
+import { auth } from '@/auth';
+
+const crmRepository = new PrismaCrmRepository();
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const month = searchParams.get('month'); // YYYY-MM
+  const plan = searchParams.get('plan'); // planId or 'none'
+  const search = searchParams.get('search'); // name/email
+  const stage = searchParams.get('stage'); // crm stage
+  const assigneeId = searchParams.get('assigneeId'); // agent user id or 'unassigned'
+
+  try {
+    let query = `
+      SELECT 
+        p.id, 
+        p.fullName, 
+        p.email, 
+        p.phoneNumber, 
+        p.createdAt,
+        pl.id as planId,
+        pl.title as planTitle,
+        pl.price as planPrice,
+        pl.intervalType as planInterval
+      FROM people p
+      LEFT JOIN subscriptions s ON s.personId = p.id AND s.status = 'active'
+      LEFT JOIN plans pl ON s.planId = pl.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    // 1. Filter by CRM state from SQLite (stage or assignee)
+    if (stage || assigneeId) {
+      const crmFilter: any = {};
+      if (stage) crmFilter.stage = stage;
+      if (assigneeId) {
+        crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
+      }
+      
+      const matchingStates = await prisma.leadState.findMany({
+        where: crmFilter,
+        select: { externalPersonId: true }
+      });
+      
+      const matchingIds = matchingStates.map(s => s.externalPersonId);
+      if (matchingIds.length === 0) {
+        return NextResponse.json({ success: true, data: [] });
+      }
+      
+      query += ` AND p.id IN (?)`;
+      params.push(matchingIds);
+    }
+
+    // 2. Filter by date/month (MySQL)
+    if (month) {
+      query += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
+      params.push(month);
+    }
+
+    // 3. Filter by plan (MySQL)
+    if (plan) {
+      if (plan === 'none') {
+        query += ` AND pl.id IS NULL`;
+      } else {
+        query += ` AND pl.id = ?`;
+        params.push(Number(plan));
+      }
+    }
+
+    // 4. Filter by name/email (MySQL)
+    if (search) {
+      query += ` AND (p.fullName LIKE ? OR p.email LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`);
+    }
+
+    query += ` ORDER BY p.createdAt DESC LIMIT 1000`;
+
+    const [rows] = await pool.query(query, params);
+    const personIds = (rows as any[]).map(r => r.id);
+
+    if (personIds.length === 0) {
+      return NextResponse.json({ success: true, data: [] });
+    }
+
+    // Fetch corresponding states and interactions from SQLite
+    const leadStates = await prisma.leadState.findMany({
+      where: {
+        externalPersonId: { in: personIds }
+      },
+      include: {
+        interactions: {
+          include: {
+            author: { select: { name: true } }
+          },
+          orderBy: { createdAt: 'desc' }
+        },
+        assignee: {
+          select: { id: true, name: true }
+        }
+      }
+    });
+
+    const stateMap = new Map();
+    leadStates.forEach(ls => {
+      stateMap.set(ls.externalPersonId, ls);
+    });
+
+    const data = (rows as any[]).map(r => {
+      const state = stateMap.get(r.id);
+      return {
+        id: r.id,
+        fullName: r.fullName || 'Sem Nome',
+        email: r.email || '',
+        phoneNumber: r.phoneNumber || '',
+        createdAt: r.createdAt.toISOString(),
+        plan: r.planId ? {
+          id: r.planId,
+          title: r.planTitle,
+          price: r.planPrice,
+          interval: r.planInterval
+        } : null,
+        stage: state?.stage || 'novo_cadastro',
+        assignee: state?.assignee ? {
+          id: state.assignee.id,
+          name: state.assignee.name
+        } : null,
+        notes: (state?.interactions || []).map((i: any) => ({
+          id: i.id,
+          text: i.text,
+          date: i.createdAt.toISOString(),
+          authorName: i.author?.name || 'Agente'
+        }))
+      };
+    });
+
+    return NextResponse.json({ success: true, data });
+  } catch (error: any) {
+    console.error('Leads GET error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const session = await auth();
+    let authorId = (session?.user as any)?.id;
+
+    if (!authorId) {
+      // Fallback for system agent if no logged-in session exists
+      let agent = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
+      if (!agent) {
+        const hashedPassword = await bcryptHash('admin123');
+        agent = await prisma.user.create({
+          data: {
+            name: 'Administrador DentalGO',
+            email: 'admin@dentalgo.com',
+            password: hashedPassword,
+            role: 'ADMIN',
+          }
+        });
+      }
+      authorId = agent.id;
+    }
+
+    const body = await request.json();
+    const { leadId, stage, note, assigneeId } = body;
+
+    if (!leadId) {
+      return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 });
+    }
+
+    const externalPersonId = Number(leadId);
+
+    // 1. Update Stage if provided
+    if (stage) {
+      await crmRepository.updateStage(externalPersonId, stage);
+    }
+
+    // 2. Assign Lead if provided
+    if (assigneeId !== undefined) {
+      await crmRepository.assignLead(externalPersonId, assigneeId === 'unassigned' || !assigneeId ? null : assigneeId);
+    }
+
+    // 3. Add Note if provided
+    if (note && note.trim() !== '') {
+      await crmRepository.addInteraction(externalPersonId, note, authorId);
+    }
+
+    // Fetch the updated lead state to return
+    const updatedState = await prisma.leadState.findUnique({
+      where: { externalPersonId },
+      include: {
+        interactions: {
+          include: {
+            author: { select: { name: true } }
+          },
+          orderBy: { createdAt: 'desc' }
+        },
+        assignee: {
+          select: { id: true, name: true }
+        }
+      }
+    });
+
+    const formattedData = {
+      leadId: externalPersonId,
+      stage: updatedState?.stage || 'novo_cadastro',
+      assignee: updatedState?.assignee ? {
+        id: updatedState.assignee.id,
+        name: updatedState.assignee.name
+      } : null,
+      notes: (updatedState?.interactions || []).map((i: any) => ({
+        id: i.id,
+        text: i.text,
+        date: i.createdAt.toISOString(),
+        authorName: i.author?.name || 'Agente'
+      }))
+    };
+
+    return NextResponse.json({ success: true, data: formattedData });
+  } catch (error: any) {
+    console.error('Leads POST error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+// Utility function to hash password in case of fallback creation
+async function bcryptHash(password: string): Promise<string> {
+  const bcrypt = require('bcryptjs');
+  return bcrypt.hash(password, 10);
+}
