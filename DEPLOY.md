@@ -67,9 +67,9 @@ chmod +x deploy.sh
 ```
 
 ### Passo 4: Sincronizar o Banco de Dados SQLite (Primeiro Deploy)
-Após iniciar o container, rode a sincronização do Prisma para criar o banco de dados `dev.db` com as tabelas de segurança e CRM:
+Após iniciar o container, rode a sincronização do Prisma para criar o banco de dados `dev.db` com as tabelas de segurança e CRM (utilizando a versão correta do Prisma para evitar incompatibilidades de schema):
 ```bash
-docker exec -it dentalgo-bi npx prisma db push
+docker exec -it dentalgo-bi npx prisma@6.19.3 db push
 ```
 > 💡 **Nota**: O primeiro usuário Administrador (`admin@dentalgo.com` / `admin123`) é criado automaticamente no primeiro acesso assim que você tentar realizar o login.
 
