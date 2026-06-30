@@ -1,0 +1,18 @@
+{
+  "1. TABELAS DO BANCO": [],
+  "2. ESTRUTURA: plans": [],
+  "3. TODOS OS PLANOS": [],
+  "4. ESTRUTURA: people": [],
+  "5. ESTRUTURA: subscriptions": [],
+  "6. ESTRUTURA: products": [],
+  "7. ESTRUTURA: purchases": [],
+  "8. RESUMO GERAL": [],
+  "9. STATUS EM subscriptions": [],
+  "10. PLANOS × ASSINANTES ATIVOS": [],
+  "11. PRODUTOS (lista completa)": [],
+  "12. TIPOS DE PRODUTOS": [],
+  "13. CLIENTS COM COMPRAS MAS SEM SUB ATIVA": [],
+  "14. CLIENTES COM SUB ATIVA (amostra)": [],
+  "15. PURCHASE_ITEMS ESTRUTURA": [],
+  "16. PRODUCT_ITEMS ESTRUTURA": []
+}

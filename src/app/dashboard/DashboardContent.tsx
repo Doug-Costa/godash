@@ -400,6 +400,19 @@ export default function DashboardContent({
               👥 Equipe CRM
             </button>
           )}
+          {(isAdmin || currentUser?.role === 'POST_SALES') && (
+            <button 
+              onClick={() => window.location.href = '/dashboard/post-sales'}
+              style={{
+                padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              📣 Pós-Venda
+            </button>
+          )}
         </nav>
 
         {/* User profile & Logout */}

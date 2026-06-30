@@ -1,3 +1,8 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// DentalGO CRM — Prisma Schema (Banco 2: SQLite interno)
+// Provider: sqlite (dev) → trocar para postgresql/mysql em produção escalável
+// ─────────────────────────────────────────────────────────────────────────────
+
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
@@ -7,34 +12,48 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// IAM — Usuários e Autenticação (NextAuth)
+// roles válidos: "ADMIN" | "AGENT" | "POST_SALES"
+// ─────────────────────────────────────────────────────────────────────────────
+
 model User {
-  id            String            @id @default(cuid())
+  id            String    @id @default(cuid())
   name          String?
-  email         String?           @unique
+  email         String?   @unique
   emailVerified DateTime?
   image         String?
   password      String?
-  role          String            @default("AGENT")
-  isActive      Boolean           @default(true)
+
+  /// Roles: "ADMIN" | "AGENT" | "POST_SALES"
+  role          String    @default("AGENT")
+  isActive      Boolean   @default(true)
+
+  // NextAuth relations
   accounts      Account[]
   sessions      Session[]
-  assignedLeads LeadState[]
-  interactions  LeadInteraction[]
+
+  // CRM relations
+  assignedLeads    LeadState[]
+  interactions     LeadInteraction[]
+
+  // Pós-Venda relations
+  assignedTasks    LeadPostSaleTask[]
 }
 
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String?
-  access_token       String?
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?
-  session_state      String?
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -57,14 +76,19 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CRM — Funil Comercial (existente)
+// ─────────────────────────────────────────────────────────────────────────────
+
 model LeadState {
   id               String            @id @default(cuid())
   externalPersonId Int               @unique
   stage            String
   assigneeId       String?
   updatedAt        DateTime          @updatedAt
-  assignee         User?             @relation(fields: [assigneeId], references: [id])
-  interactions     LeadInteraction[]
+
+  assignee     User?             @relation(fields: [assigneeId], references: [id])
+  interactions LeadInteraction[]
 }
 
 model LeadInteraction {
@@ -73,6 +97,77 @@ model LeadInteraction {
   text        String
   authorId    String
   createdAt   DateTime  @default(now())
-  leadState   LeadState @relation(fields: [leadStateId], references: [id], onDelete: Cascade)
-  author      User      @relation(fields: [authorId], references: [id])
+
+  leadState LeadState @relation(fields: [leadStateId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PÓS-VENDA — Motor de Automação (ÉPICO 7)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Sequência de mensagens pós-venda configurada pelo admin.
+/// Define "o que mandar" e "quando mandar" (em dias após startAt da assinatura).
+model PostSaleSequence {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  /// Nome descritivo: "Boas-vindas 2 dias", "Acompanhamento 15 dias", etc.
+  name            String
+
+  /// Dias após o startAt da assinatura em que o alerta deve disparar.
+  triggerDays     Int
+
+  /// Texto base/gancho para WhatsApp ou Webhook. Suporta variáveis:
+  /// {{nome}}, {{plano}}, {{email}}, {{telefone}}
+  templateMessage String
+
+  /// Se falso, a sequência não gera novas tarefas (mas mantém as existentes).
+  isActive        Boolean  @default(true)
+
+  /// Para qual segmento de plano esta sequência se aplica.
+  /// "all" | "paid" | "book_only" | "promo" | "courtesy"
+  targetSegment   String   @default("paid")
+
+  tasks           LeadPostSaleTask[]
+}
+
+/// Tarefa de Pós-Venda agendada para um lead específico.
+/// Gerada automaticamente pelo sync diário via syncPostSalesTasks.
+model LeadPostSaleTask {
+  id               String    @id @default(cuid())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  /// ID do cliente no Banco 1 (Clone MySQL — people.id)
+  externalPersonId Int
+
+  /// Sequência que gerou esta tarefa
+  sequenceId       String
+  sequence         PostSaleSequence @relation(fields: [sequenceId], references: [id])
+
+  /// Agente de pós-venda responsável
+  assignedToId     String?
+  assignedTo       User?     @relation(fields: [assignedToId], references: [id])
+
+  /// Status da tarefa: "PENDING" | "COMPLETED" | "CANCELED" | "SKIPPED"
+  status           String    @default("PENDING")
+
+  /// Data exata em que o alerta deve aparecer na tela do agente
+  scheduledFor     DateTime
+
+  /// Data em que foi marcada como concluída
+  completedAt      DateTime?
+
+  /// Notas do agente ao concluir (opcional)
+  completionNote   String?
+
+  /// Snapshot do personId + planId no momento da criação (para rastreabilidade)
+  snapshotPlanId   Int?
+  snapshotPlanName String?
+
+  @@index([externalPersonId])
+  @@index([status, scheduledFor])
+  @@index([assignedToId, status])
 }
