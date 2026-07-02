@@ -111,6 +111,10 @@ export default function DashboardContent({
   };
 
   useEffect(() => {
+    setFilterMonth(month);
+  }, [month]);
+
+  useEffect(() => {
     fetchLeads();
   }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth]);
 

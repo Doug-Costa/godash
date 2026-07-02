@@ -6,11 +6,13 @@ const P_RECURRING = "LOWER(pl.title) LIKE '%recorrente%' OR LOWER(pl.title) LIKE
 const P_INSTITUTIONAL = "LOWER(pl.title) LIKE '%scholar%' OR LOWER(pl.title) LIKE '%mandic%' OR LOWER(pl.title) LIKE '%ioa%' OR LOWER(pl.title) LIKE '%sbti%' OR LOWER(pl.title) LIKE '%sobrap%' OR LOWER(pl.title) LIKE '%sociedade%' OR LOWER(pl.title) LIKE '%universidade%' OR LOWER(pl.title) LIKE '%grupo%'";
 const P_CORE = `(${P_ANNUAL} OR ${P_RECURRING}) AND pl.price >= 2000 AND NOT (${P_INSTITUTIONAL})`;
 
-// Fidelity filter: must BE active CURRENTLY and EXIST then
+// Fidelity filter: must be active at the end of target month and exist then
 const PT_CORE_ACTIVE = (targetDate: string) => `
-  s.status = 'active'
-  AND s.createdAt <= LAST_DAY(CONCAT('${targetDate}', '-01'))
+  s.createdAt <= LAST_DAY(CONCAT('${targetDate}', '-01'))
+  AND (s.canceledAt IS NULL OR s.canceledAt > LAST_DAY(CONCAT('${targetDate}', '-01')))
+  AND (s.status = 'active' OR COALESCE(s.isValidUntil, s.expiresIn) IS NULL OR COALESCE(s.isValidUntil, s.expiresIn) > LAST_DAY(CONCAT('${targetDate}', '-01')))
 `;
+
 
 // Helper for total base (including non-active ghosts for estimated view)
 const PT_SNAPSHOT_TOTAL = (targetDate: string) => `

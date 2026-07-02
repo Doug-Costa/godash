@@ -9,7 +9,12 @@ services:
       - .env.local
     volumes:
       - ./prisma_data:/app/prisma_data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      - db-clone_default
     restart: always
     container_name: dentalgo-bi
+
+networks:
+  db-clone_default:
+    external: true
+

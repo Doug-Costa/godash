@@ -17,7 +17,6 @@ LEFT JOIN (
   SELECT DISTINCT personId FROM subscriptions WHERE DATE_FORMAT(createdAt, '%Y-%m') < ?
 ) as prev ON s.personId = prev.personId
 WHERE (${P_CORE})
-  AND s.status = 'active'
   AND DATE_FORMAT(s.createdAt, '%Y-%m') = ?
 GROUP BY period
 ORDER BY period ASC

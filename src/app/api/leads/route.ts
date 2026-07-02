@@ -14,6 +14,8 @@ export async function GET(request: Request) {
   const stage = searchParams.get('stage'); // crm stage
   const assigneeId = searchParams.get('assigneeId'); // agent user id or 'unassigned'
 
+  const targetMonth = month || new Date().toISOString().slice(0, 7);
+
   try {
     let query = `
       SELECT 
@@ -27,7 +29,9 @@ export async function GET(request: Request) {
         pl.price as planPrice,
         pl.intervalType as planInterval
       FROM people p
-      LEFT JOIN subscriptions s ON s.personId = p.id AND s.status = 'active'
+      LEFT JOIN subscriptions s ON s.personId = p.id 
+        AND s.createdAt <= LAST_DAY(CONCAT(?, '-01')) 
+        AND (s.canceledAt IS NULL OR s.canceledAt > LAST_DAY(CONCAT(?, '-01')))
       LEFT JOIN plans pl ON s.planId = pl.id
       WHERE 1=1
     `;
@@ -79,7 +83,7 @@ export async function GET(request: Request) {
 
     query += ` ORDER BY p.createdAt DESC LIMIT 1000`;
 
-    const [rows] = await pool.query(query, params);
+    const [rows] = await pool.query(query, [targetMonth, targetMonth, ...params]);
     const personIds = (rows as any[]).map(r => r.id);
 
     if (personIds.length === 0) {
