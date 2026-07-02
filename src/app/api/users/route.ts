@@ -23,7 +23,7 @@ SELECT
   COUNT(s.id) as subscriberCount
 FROM subscriptions s 
 JOIN plans pl ON s.planId = pl.id
-WHERE (${PT_CORE_ACTIVE(month)}) AND (${P_CORE})
+WHERE (${PT_CORE_ACTIVE(month)})
 GROUP BY pl.id, pl.title, pl.price, pl.intervalType 
 ORDER BY subscriberCount DESC
 `;
