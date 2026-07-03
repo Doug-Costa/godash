@@ -42,14 +42,19 @@ export async function GET(request: Request) {
     const params: any[] = [];
 
     // 1. Filter by CRM state from SQLite (stage, assignee, lossReason, tag)
-    if (stage || assigneeId || lossReason || tag) {
+    const hasStage = stage && stage !== '';
+    const hasAssignee = assigneeId && assigneeId !== 'all';
+    const hasLossReason = lossReason && lossReason !== 'all' && lossReason !== '';
+    const hasTag = tag && tag !== 'all' && tag !== '';
+
+    if (hasStage || hasAssignee || hasLossReason || hasTag) {
       const crmFilter: any = {};
-      if (stage) crmFilter.stage = stage;
-      if (assigneeId) {
+      if (hasStage) crmFilter.stage = stage;
+      if (hasAssignee) {
         crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
       }
-      if (lossReason) crmFilter.lossReason = lossReason;
-      if (tag) crmFilter.tag = tag;
+      if (hasLossReason) crmFilter.lossReason = lossReason;
+      if (hasTag) crmFilter.tag = tag;
       
       const matchingStates = await prisma.leadState.findMany({
         where: crmFilter,
