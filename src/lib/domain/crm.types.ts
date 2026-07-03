@@ -24,6 +24,7 @@ export interface CrmLeadState {
   interactionCount: number;
   lossReason?: string | null;
   tag?: string | null;
+  scheduledFor?: Date | null;
 }
 
 export interface CrmLeadInteraction {

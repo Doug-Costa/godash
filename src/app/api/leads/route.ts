@@ -182,7 +182,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { leadId, stage, note, assigneeId, type, lossReason } = body;
+    const { leadId, stage, note, assigneeId, type, lossReason, scheduledFor } = body;
 
     if (!leadId) {
       return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 });
@@ -192,8 +192,14 @@ export async function POST(request: Request) {
 
     // 1. Register Quick action/Interaction if type provided
     if (type) {
+      if (type === 'MEETING_SCHEDULED' && !scheduledFor) {
+        return NextResponse.json({ success: false, error: 'scheduledFor (data de retorno) is required for MEETING_SCHEDULED' }, { status: 400 });
+      }
+
+      const parsedScheduledFor = scheduledFor ? new Date(scheduledFor) : undefined;
+
       const registerService = new RegisterLeadInteractionService(crmRepository);
-      await registerService.execute(externalPersonId, authorId, type, note, lossReason);
+      await registerService.execute(externalPersonId, authorId, type, note, lossReason, parsedScheduledFor);
 
       // Auto tag the lead
       const taggingService = new LeadTaggingService(crmRepository);

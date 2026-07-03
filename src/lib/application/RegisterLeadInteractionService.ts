@@ -14,7 +14,8 @@ export class RegisterLeadInteractionService {
     authorId: string,
     type: InteractionType,
     note?: string,
-    lossReason?: LossReason
+    lossReason?: LossReason,
+    scheduledFor?: Date
   ) {
     // 1. Get current lead state
     let leadState = await this.crmRepo.getLeadState(externalPersonId);
@@ -39,7 +40,10 @@ export class RegisterLeadInteractionService {
     let text = note;
     if (!text || text.trim() === '') {
       if (type === 'CONTACT_ATTEMPT') text = 'Tentativa de contato realizada (Sem Nota).';
-      else if (type === 'MEETING_SCHEDULED') text = 'Retorno agendado com o lead para negociação (Sem Nota).';
+      else if (type === 'MEETING_SCHEDULED') {
+        const formattedDate = scheduledFor ? new Date(scheduledFor).toLocaleString('pt-BR') : 'não informada';
+        text = `Retorno agendado com o lead para: ${formattedDate} (Sem Nota).`;
+      }
       else if (type === 'LOST') text = `Lead marcado como perdido. Motivo: ${lossReason || 'Não especificado'}.`;
       else if (type === 'RECOVERED') text = 'Lead ganho! Assinatura ativada.';
       else if (type === 'CONTACTED') text = 'Contato estabelecido com sucesso.';
@@ -50,11 +54,16 @@ export class RegisterLeadInteractionService {
     // 4. Record the interaction in timeline (adds note, updates lastInteractionAt, increments interactionCount)
     await this.crmRepo.addInteraction(externalPersonId, text, authorId);
 
-    // 5. Update state of the lead (stage, lossReason if LOST)
+    // 5. Update state of the lead (stage, lossReason if LOST, scheduledFor if MEETING_SCHEDULED)
+    const finalScheduledFor = type === 'MEETING_SCHEDULED' 
+      ? (scheduledFor || null) 
+      : (type === 'LOST' || type === 'RECOVERED' ? null : (leadState?.scheduledFor || null));
+
     leadState = await this.crmRepo.updateLeadState(externalPersonId, {
       stage: nextStage,
       lossReason: type === 'LOST' ? lossReason : null,
       lastInteractionAt: new Date(),
+      scheduledFor: finalScheduledFor,
     });
 
     // 6. Dispatch domain event

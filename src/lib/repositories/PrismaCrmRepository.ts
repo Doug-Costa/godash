@@ -17,6 +17,7 @@ export class PrismaCrmRepository implements ICrmRepository {
       interactionCount: state.interactionCount,
       lossReason: state.lossReason,
       tag: state.tag,
+      scheduledFor: state.scheduledFor,
     };
   }
 
@@ -37,6 +38,7 @@ export class PrismaCrmRepository implements ICrmRepository {
       interactionCount: s.interactionCount,
       lossReason: s.lossReason,
       tag: s.tag,
+      scheduledFor: s.scheduledFor,
     }));
   }
 
@@ -55,6 +57,7 @@ export class PrismaCrmRepository implements ICrmRepository {
       interactionCount: state.interactionCount,
       lossReason: state.lossReason,
       tag: state.tag,
+      scheduledFor: state.scheduledFor,
     };
   }
 
@@ -73,6 +76,7 @@ export class PrismaCrmRepository implements ICrmRepository {
       interactionCount: state.interactionCount,
       lossReason: state.lossReason,
       tag: state.tag,
+      scheduledFor: state.scheduledFor,
     };
   }
 
@@ -155,6 +159,7 @@ export class PrismaCrmRepository implements ICrmRepository {
         interactionCount: data.interactionCount,
         lossReason: data.lossReason,
         tag: data.tag,
+        scheduledFor: data.scheduledFor,
       },
       create: {
         externalPersonId,
@@ -164,6 +169,7 @@ export class PrismaCrmRepository implements ICrmRepository {
         interactionCount: data.interactionCount || 0,
         lossReason: data.lossReason,
         tag: data.tag,
+        scheduledFor: data.scheduledFor,
       },
     });
 
@@ -175,6 +181,7 @@ export class PrismaCrmRepository implements ICrmRepository {
       interactionCount: state.interactionCount,
       lossReason: state.lossReason,
       tag: state.tag,
+      scheduledFor: state.scheduledFor,
     };
   }
 
@@ -191,6 +198,7 @@ export class PrismaCrmRepository implements ICrmRepository {
       interactionCount: s.interactionCount,
       lossReason: s.lossReason,
       tag: s.tag,
+      scheduledFor: s.scheduledFor,
     }));
   }
 
@@ -207,6 +215,7 @@ export class PrismaCrmRepository implements ICrmRepository {
       interactionCount: s.interactionCount,
       lossReason: s.lossReason,
       tag: s.tag,
+      scheduledFor: s.scheduledFor,
     }));
   }
 
@@ -237,6 +246,7 @@ export class PrismaCrmRepository implements ICrmRepository {
       interactionCount: s.interactionCount,
       lossReason: s.lossReason,
       tag: s.tag,
+      scheduledFor: s.scheduledFor,
     }));
   }
 }

@@ -81,6 +81,8 @@ export default function DashboardContent({
   const [fastNote, setFastNote] = useState('');
   const [detailNote, setDetailNote] = useState('');
   const [showLossReasons, setShowLossReasons] = useState(false);
+  const [showScheduler, setShowScheduler] = useState(false);
+  const [scheduledDate, setScheduledDate] = useState('');
 
   // Team management state
   const [teamList, setTeamList] = useState(agents);
@@ -189,11 +191,13 @@ export default function DashboardContent({
     setSelectedLead(lead);
     setDetailNote('');
     setShowLossReasons(false);
+    setShowScheduler(false);
+    setScheduledDate('');
     setShowTimelineModal(true);
   };
 
   // One-click disposition handler
-  const handleActionDisposition = async (type: string, lossReason?: string) => {
+  const handleActionDisposition = async (type: string, lossReason?: string, scheduledFor?: string) => {
     if (!selectedLead) return;
 
     try {
@@ -205,6 +209,7 @@ export default function DashboardContent({
           type,
           lossReason,
           note: detailNote.trim() !== '' ? detailNote : undefined,
+          scheduledFor,
         }),
       });
 
@@ -217,6 +222,8 @@ export default function DashboardContent({
         }));
         setDetailNote('');
         setShowLossReasons(false);
+        setShowScheduler(false);
+        setScheduledDate('');
         fetchLeads();
 
         if (type === 'LOST' || type === 'RECOVERED') {
@@ -1117,7 +1124,7 @@ export default function DashboardContent({
             }}>
               <div>
                 <label className="label-sm" style={{ display: 'block', marginBottom: 8, color: 'var(--text-secondary)' }}>Ações Rápidas de Atendimento:</label>
-                {!showLossReasons ? (
+                {!showLossReasons && !showScheduler ? (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <button
                       onClick={() => handleActionDisposition('CONTACT_ATTEMPT')}
@@ -1130,7 +1137,7 @@ export default function DashboardContent({
                       💬 Contato Feito
                     </button>
                     <button
-                      onClick={() => handleActionDisposition('MEETING_SCHEDULED')}
+                      onClick={() => setShowScheduler(true)}
                       style={{
                         padding: '10px 8px', background: 'rgba(96, 165, 250, 0.15)', border: '1px solid #60A5FA',
                         borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
@@ -1158,6 +1165,39 @@ export default function DashboardContent({
                       }}
                     >
                       🚨 Perda / Descarte
+                    </button>
+                  </div>
+                ) : showScheduler ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#60A5FA' }}>Escolha a Data/Hora do Retorno:</span>
+                      <button 
+                        onClick={() => { setShowScheduler(false); setScheduledDate(''); }}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        Voltar
+                      </button>
+                    </div>
+                    <input
+                      type="datetime-local"
+                      value={scheduledDate}
+                      required
+                      onChange={(e) => setScheduledDate(e.target.value)}
+                      style={{
+                        width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)',
+                        borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none'
+                      }}
+                    />
+                    <button
+                      onClick={() => handleActionDisposition('MEETING_SCHEDULED', undefined, scheduledDate)}
+                      disabled={!scheduledDate}
+                      style={{
+                        width: '100%', padding: '8px 12px', background: scheduledDate ? '#60A5FA' : 'var(--border)',
+                        color: scheduledDate ? '#000' : 'var(--text-muted)', border: 'none', borderRadius: 8,
+                        fontSize: 12, fontWeight: 700, cursor: scheduledDate ? 'pointer' : 'not-allowed', transition: 'all 0.2s'
+                      }}
+                    >
+                      📅 Confirmar Retorno
                     </button>
                   </div>
                 ) : (

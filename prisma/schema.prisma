@@ -90,6 +90,7 @@ model LeadState {
   interactionCount  Int               @default(0)
   lossReason        String?
   tag               String?
+  scheduledFor      DateTime?
 
   assignee     User?             @relation(fields: [assigneeId], references: [id])
   interactions LeadInteraction[]
