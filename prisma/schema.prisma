@@ -81,11 +81,15 @@ model VerificationToken {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model LeadState {
-  id               String            @id @default(cuid())
-  externalPersonId Int               @unique
-  stage            String
-  assigneeId       String?
-  updatedAt        DateTime          @updatedAt
+  id                String            @id @default(cuid())
+  externalPersonId  Int               @unique
+  stage             String
+  assigneeId        String?
+  updatedAt         DateTime          @updatedAt
+  lastInteractionAt DateTime?
+  interactionCount  Int               @default(0)
+  lossReason        String?
+  tag               String?
 
   assignee     User?             @relation(fields: [assigneeId], references: [id])
   interactions LeadInteraction[]

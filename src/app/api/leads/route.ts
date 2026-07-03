@@ -3,6 +3,8 @@ import pool from '@/lib/db';
 import prisma from '@/lib/prisma';
 import { PrismaCrmRepository } from '@/lib/repositories/PrismaCrmRepository';
 import { auth } from '@/auth';
+import { RegisterLeadInteractionService } from '@/lib/application/RegisterLeadInteractionService';
+import { LeadTaggingService } from '@/lib/application/LeadTaggingService';
 
 const crmRepository = new PrismaCrmRepository();
 
@@ -13,6 +15,8 @@ export async function GET(request: Request) {
   const search = searchParams.get('search'); // name/email
   const stage = searchParams.get('stage'); // crm stage
   const assigneeId = searchParams.get('assigneeId'); // agent user id or 'unassigned'
+  const lossReason = searchParams.get('lossReason');
+  const tag = searchParams.get('tag');
 
   const targetMonth = month || new Date().toISOString().slice(0, 7);
 
@@ -37,13 +41,15 @@ export async function GET(request: Request) {
     `;
     const params: any[] = [];
 
-    // 1. Filter by CRM state from SQLite (stage or assignee)
-    if (stage || assigneeId) {
+    // 1. Filter by CRM state from SQLite (stage, assignee, lossReason, tag)
+    if (stage || assigneeId || lossReason || tag) {
       const crmFilter: any = {};
       if (stage) crmFilter.stage = stage;
       if (assigneeId) {
         crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
       }
+      if (lossReason) crmFilter.lossReason = lossReason;
+      if (tag) crmFilter.tag = tag;
       
       const matchingStates = await prisma.leadState.findMany({
         where: crmFilter,
@@ -171,7 +177,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { leadId, stage, note, assigneeId } = body;
+    const { leadId, stage, note, assigneeId, type, lossReason } = body;
 
     if (!leadId) {
       return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 });
@@ -179,19 +185,27 @@ export async function POST(request: Request) {
 
     const externalPersonId = Number(leadId);
 
-    // 1. Update Stage if provided
-    if (stage) {
-      await crmRepository.updateStage(externalPersonId, stage);
+    // 1. Register Quick action/Interaction if type provided
+    if (type) {
+      const registerService = new RegisterLeadInteractionService(crmRepository);
+      await registerService.execute(externalPersonId, authorId, type, note, lossReason);
+
+      // Auto tag the lead
+      const taggingService = new LeadTaggingService(crmRepository);
+      await taggingService.tagLead(externalPersonId);
+    } else {
+      // Manual updates fallback (old behavior)
+      if (stage) {
+        await crmRepository.updateStage(externalPersonId, stage);
+      }
+      if (note && note.trim() !== '') {
+        await crmRepository.addInteraction(externalPersonId, note, authorId);
+      }
     }
 
-    // 2. Assign Lead if provided
+    // 2. Assign Lead if provided (separate from quick disposition)
     if (assigneeId !== undefined) {
       await crmRepository.assignLead(externalPersonId, assigneeId === 'unassigned' || !assigneeId ? null : assigneeId);
-    }
-
-    // 3. Add Note if provided
-    if (note && note.trim() !== '') {
-      await crmRepository.addInteraction(externalPersonId, note, authorId);
     }
 
     // Fetch the updated lead state to return

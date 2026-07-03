@@ -80,6 +80,7 @@ export default function DashboardContent({
   const [fastAssignee, setFastAssignee] = useState('unassigned');
   const [fastNote, setFastNote] = useState('');
   const [detailNote, setDetailNote] = useState('');
+  const [showLossReasons, setShowLossReasons] = useState(false);
 
   // Team management state
   const [teamList, setTeamList] = useState(agents);
@@ -187,7 +188,44 @@ export default function DashboardContent({
   const openTimeline = (lead: any) => {
     setSelectedLead(lead);
     setDetailNote('');
+    setShowLossReasons(false);
     setShowTimelineModal(true);
+  };
+
+  // One-click disposition handler
+  const handleActionDisposition = async (type: string, lossReason?: string) => {
+    if (!selectedLead) return;
+
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: selectedLead.id,
+          type,
+          lossReason,
+          note: detailNote.trim() !== '' ? detailNote : undefined,
+        }),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        setSelectedLead((prev: any) => ({
+          ...prev,
+          stage: json.data.stage,
+          notes: json.data.notes || [],
+        }));
+        setDetailNote('');
+        setShowLossReasons(false);
+        fetchLeads();
+
+        if (type === 'LOST' || type === 'RECOVERED') {
+          setShowTimelineModal(false);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to register action disposition:', err);
+    }
   };
 
   // Submit new note in Timeline modal
@@ -1078,30 +1116,118 @@ export default function DashboardContent({
               padding: 16, background: 'var(--surface-raised)', borderRadius: 12
             }}>
               <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Etapa do Funil:</label>
-                <select 
-                  value={selectedLead.stage} 
-                  onChange={(e) => handleDetailUpdate('stage', e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
-                >
-                  {Object.entries(STAGE_LABELS).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </select>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 8, color: 'var(--text-secondary)' }}>Ações Rápidas de Atendimento:</label>
+                {!showLossReasons ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <button
+                      onClick={() => handleActionDisposition('CONTACT_ATTEMPT')}
+                      style={{
+                        padding: '10px 8px', background: 'rgba(192, 132, 252, 0.15)', border: '1px solid var(--accent)',
+                        borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
+                      }}
+                    >
+                      💬 Contato Feito
+                    </button>
+                    <button
+                      onClick={() => handleActionDisposition('MEETING_SCHEDULED')}
+                      style={{
+                        padding: '10px 8px', background: 'rgba(96, 165, 250, 0.15)', border: '1px solid #60A5FA',
+                        borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
+                      }}
+                    >
+                      📅 Agendar Retorno
+                    </button>
+                    <button
+                      onClick={() => handleActionDisposition('RECOVERED')}
+                      style={{
+                        padding: '10px 8px', background: 'rgba(74, 222, 128, 0.15)', border: '1px solid #4ADE80',
+                        borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
+                      }}
+                    >
+                      🤝 Ganho
+                    </button>
+                    <button
+                      onClick={() => setShowLossReasons(true)}
+                      style={{
+                        padding: '10px 8px', background: 'rgba(248, 113, 113, 0.15)', border: '1px solid #F87171',
+                        borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
+                      }}
+                    >
+                      🚨 Perda / Descarte
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#F87171' }}>Selecione o Motivo da Perda:</span>
+                      <button 
+                        onClick={() => setShowLossReasons(false)}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        Voltar
+                      </button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <button
+                        onClick={() => handleActionDisposition('LOST', 'PRICE_TOO_HIGH')}
+                        style={{
+                          padding: '8px', background: 'var(--surface)', border: '1px solid #F87171',
+                          borderRadius: 8, color: '#F87171', fontSize: 11, fontWeight: 500, cursor: 'pointer'
+                        }}
+                      >
+                        💰 Preço Alto
+                      </button>
+                      <button
+                        onClick={() => handleActionDisposition('LOST', 'GHOSTING')}
+                        style={{
+                          padding: '8px', background: 'var(--surface)', border: '1px solid #F87171',
+                          borderRadius: 8, color: '#F87171', fontSize: 11, fontWeight: 500, cursor: 'pointer'
+                        }}
+                      >
+                        🔇 Sem Resposta
+                      </button>
+                      <button
+                        onClick={() => handleActionDisposition('LOST', 'MISSING_CONTENT')}
+                        style={{
+                          padding: '8px', background: 'var(--surface)', border: '1px solid #F87171',
+                          borderRadius: 8, color: '#F87171', fontSize: 11, fontWeight: 500, cursor: 'pointer'
+                        }}
+                      >
+                        📚 Sem Conteúdo
+                      </button>
+                      <button
+                        onClick={() => handleActionDisposition('LOST', 'UNQUALIFIED')}
+                        style={{
+                          padding: '8px', background: 'var(--surface)', border: '1px solid #F87171',
+                          borderRadius: 8, color: '#F87171', fontSize: 11, fontWeight: 500, cursor: 'pointer'
+                        }}
+                      >
+                        🚫 Não Qualificado
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Atribuído a:</label>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 8, color: 'var(--text-secondary)' }}>Atribuído a:</label>
                 <select 
                   value={selectedLead.assignee?.id || 'unassigned'} 
                   onChange={(e) => handleDetailUpdate('assigneeId', e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
+                  style={{ width: '100%', padding: '10px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
                 >
                   <option value="unassigned">Sem Responsável (Fila Livre)</option>
                   {teamList.map(t => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
+                <div style={{ marginTop: 12, fontSize: 11, color: 'var(--text-muted)' }}>
+                  Estágio Atual: <span style={{ fontWeight: 700, color: STAGE_COLORS[selectedLead.stage] || '#6B6B7B' }}>{STAGE_LABELS[selectedLead.stage] || selectedLead.stage}</span>
+                </div>
               </div>
             </div>
 
@@ -1144,7 +1270,7 @@ export default function DashboardContent({
                 <textarea 
                   value={detailNote} 
                   onChange={(e) => setDetailNote(e.target.value)}
-                  placeholder="Escreva uma nova anotação de contato comercial..."
+                  placeholder="Escreva uma nova anotação opcional (clique nos botões de ação acima para registrar com estágio)..."
                   style={{
                     flex: 1, height: 60, padding: '10px 14px', background: 'var(--surface-raised)',
                     border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', resize: 'none', outline: 'none', fontSize: 13
@@ -1154,8 +1280,9 @@ export default function DashboardContent({
                   type="submit" 
                   className="btn-action btn-action-purple"
                   style={{ padding: '0 24px', borderRadius: 8 }}
+                  disabled={!detailNote.trim()}
                 >
-                  Registrar
+                  Apenas Anotar
                 </button>
               </div>
             </form>

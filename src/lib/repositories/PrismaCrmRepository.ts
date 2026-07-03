@@ -1,7 +1,25 @@
 import prisma from '@/lib/prisma';
-import { ICrmRepository, CrmLeadState, CrmLeadInteraction } from '@/lib/domain/crm.types';
+import { ICrmRepository, CrmLeadState, CrmLeadInteraction, LossReason, LeadTag } from '@/lib/domain/crm.types';
 
 export class PrismaCrmRepository implements ICrmRepository {
+  async getLeadState(externalPersonId: number): Promise<CrmLeadState | null> {
+    const state = await prisma.leadState.findUnique({
+      where: { externalPersonId },
+    });
+
+    if (!state) return null;
+
+    return {
+      externalPersonId: state.externalPersonId,
+      stage: state.stage,
+      assigneeId: state.assigneeId,
+      lastInteractionAt: state.lastInteractionAt,
+      interactionCount: state.interactionCount,
+      lossReason: state.lossReason,
+      tag: state.tag,
+    };
+  }
+
   async getManyLeadStates(externalPersonIds: number[]): Promise<CrmLeadState[]> {
     const states = await prisma.leadState.findMany({
       where: {
@@ -15,6 +33,10 @@ export class PrismaCrmRepository implements ICrmRepository {
       externalPersonId: s.externalPersonId,
       stage: s.stage,
       assigneeId: s.assigneeId,
+      lastInteractionAt: s.lastInteractionAt,
+      interactionCount: s.interactionCount,
+      lossReason: s.lossReason,
+      tag: s.tag,
     }));
   }
 
@@ -29,10 +51,14 @@ export class PrismaCrmRepository implements ICrmRepository {
       externalPersonId: state.externalPersonId,
       stage: state.stage,
       assigneeId: state.assigneeId,
+      lastInteractionAt: state.lastInteractionAt,
+      interactionCount: state.interactionCount,
+      lossReason: state.lossReason,
+      tag: state.tag,
     };
   }
 
-  async assignLead(externalPersonId: number, assigneeId: string): Promise<CrmLeadState> {
+  async assignLead(externalPersonId: number, assigneeId: string | null): Promise<CrmLeadState> {
     const state = await prisma.leadState.upsert({
       where: { externalPersonId },
       update: { assigneeId },
@@ -43,14 +69,28 @@ export class PrismaCrmRepository implements ICrmRepository {
       externalPersonId: state.externalPersonId,
       stage: state.stage,
       assigneeId: state.assigneeId,
+      lastInteractionAt: state.lastInteractionAt,
+      interactionCount: state.interactionCount,
+      lossReason: state.lossReason,
+      tag: state.tag,
     };
   }
 
   async addInteraction(externalPersonId: number, text: string, authorId: string): Promise<CrmLeadInteraction> {
     const leadState = await prisma.leadState.upsert({
       where: { externalPersonId },
-      update: {},
-      create: { externalPersonId, stage: 'novo_cadastro' },
+      update: {
+        lastInteractionAt: new Date(),
+        interactionCount: {
+          increment: 1
+        }
+      },
+      create: { 
+        externalPersonId, 
+        stage: 'novo_cadastro',
+        lastInteractionAt: new Date(),
+        interactionCount: 1
+      },
     });
 
     const interaction = await prisma.leadInteraction.create({
@@ -102,6 +142,101 @@ export class PrismaCrmRepository implements ICrmRepository {
       text: i.text,
       authorId: i.authorId,
       createdAt: i.createdAt,
+    }));
+  }
+
+  async updateLeadState(externalPersonId: number, data: Partial<CrmLeadState>): Promise<CrmLeadState> {
+    const state = await prisma.leadState.upsert({
+      where: { externalPersonId },
+      update: {
+        stage: data.stage,
+        assigneeId: data.assigneeId,
+        lastInteractionAt: data.lastInteractionAt,
+        interactionCount: data.interactionCount,
+        lossReason: data.lossReason,
+        tag: data.tag,
+      },
+      create: {
+        externalPersonId,
+        stage: data.stage || 'novo_cadastro',
+        assigneeId: data.assigneeId,
+        lastInteractionAt: data.lastInteractionAt || new Date(),
+        interactionCount: data.interactionCount || 0,
+        lossReason: data.lossReason,
+        tag: data.tag,
+      },
+    });
+
+    return {
+      externalPersonId: state.externalPersonId,
+      stage: state.stage,
+      assigneeId: state.assigneeId,
+      lastInteractionAt: state.lastInteractionAt,
+      interactionCount: state.interactionCount,
+      lossReason: state.lossReason,
+      tag: state.tag,
+    };
+  }
+
+  async getLeadsByLossReason(reason: LossReason): Promise<CrmLeadState[]> {
+    const states = await prisma.leadState.findMany({
+      where: { lossReason: reason },
+    });
+
+    return states.map((s) => ({
+      externalPersonId: s.externalPersonId,
+      stage: s.stage,
+      assigneeId: s.assigneeId,
+      lastInteractionAt: s.lastInteractionAt,
+      interactionCount: s.interactionCount,
+      lossReason: s.lossReason,
+      tag: s.tag,
+    }));
+  }
+
+  async getLeadsByTag(tag: LeadTag): Promise<CrmLeadState[]> {
+    const states = await prisma.leadState.findMany({
+      where: { tag },
+    });
+
+    return states.map((s) => ({
+      externalPersonId: s.externalPersonId,
+      stage: s.stage,
+      assigneeId: s.assigneeId,
+      lastInteractionAt: s.lastInteractionAt,
+      interactionCount: s.interactionCount,
+      lossReason: s.lossReason,
+      tag: s.tag,
+    }));
+  }
+
+  async getExpiredSlaLeads(days: number): Promise<CrmLeadState[]> {
+    const thresholdDate = new Date();
+    thresholdDate.setDate(thresholdDate.getDate() - days);
+
+    const states = await prisma.leadState.findMany({
+      where: {
+        stage: {
+          in: ['primeiro_contato', 'em_negociacao']
+        },
+        assigneeId: {
+          not: null
+        },
+        OR: [
+          { lastInteractionAt: { lte: thresholdDate } },
+          { lastInteractionAt: null }
+        ]
+      },
+    });
+
+    return states.map((s) => ({
+      externalPersonId: s.externalPersonId,
+      stage: s.stage,
+      assigneeId: s.assigneeId,
+      lastInteractionAt: s.lastInteractionAt,
+      interactionCount: s.interactionCount,
+      lossReason: s.lossReason,
+      tag: s.tag,
     }));
   }
 }
