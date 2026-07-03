@@ -23,7 +23,10 @@ try {
 }
 
 async function main() {
-  const host = env.DB_HOST || '127.0.0.1';
+  let host = env.DB_HOST || '127.0.0.1';
+  if (host === 'db-target') {
+    host = '172.29.0.2'; // Fallback for host execution
+  }
   const port = Number(env.DB_PORT) || 3306;
   const user = env.DB_USER || 'root';
   const password = env.DB_PASSWORD || '';
