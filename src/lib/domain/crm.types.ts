@@ -14,7 +14,7 @@ export type LossReason =
   | 'PRICE'
   | 'NO_RESPONSE';
 
-export type LeadTag = 'BOOK_CLIENT' | 'ABANDONED_CART';
+export type LeadTag = 'BOOK_CLIENT' | 'ABANDONED_CART' | 'CANCELED_CLIENT';
 
 export interface CrmLeadState {
   externalPersonId: number;

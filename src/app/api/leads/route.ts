@@ -139,6 +139,7 @@ export async function GET(request: Request) {
           interval: r.planInterval
         } : null,
         stage: state?.stage || 'novo_cadastro',
+        tag: state?.tag || null,
         assignee: state?.assignee ? {
           id: state.assignee.id,
           name: state.assignee.name
@@ -182,7 +183,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { leadId, stage, note, assigneeId, type, lossReason, scheduledFor } = body;
+    const { leadId, stage, note, assigneeId, type, lossReason, scheduledFor, tag } = body;
 
     if (!leadId) {
       return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 });
@@ -214,6 +215,11 @@ export async function POST(request: Request) {
       }
     }
 
+    // Explicit tag update if provided
+    if (tag) {
+      await crmRepository.updateLeadState(externalPersonId, { tag });
+    }
+
     // 2. Assign Lead if provided (separate from quick disposition)
     if (assigneeId !== undefined) {
       await crmRepository.assignLead(externalPersonId, assigneeId === 'unassigned' || !assigneeId ? null : assigneeId);
@@ -238,6 +244,7 @@ export async function POST(request: Request) {
     const formattedData = {
       leadId: externalPersonId,
       stage: updatedState?.stage || 'novo_cadastro',
+      tag: updatedState?.tag || null,
       assignee: updatedState?.assignee ? {
         id: updatedState.assignee.id,
         name: updatedState.assignee.name

@@ -55,13 +55,21 @@ export default function DashboardContent({
   const isAdmin = currentUser?.role === 'ADMIN';
 
   // State Management
-  const [activeTab, setActiveTab] = useState<'financeiro' | 'kanban' | 'leads' | 'team'>(
+  const [activeTab, setActiveTab] = useState<'financeiro' | 'kanban' | 'leads' | 'team' | 'cancelados'>(
     isAdmin ? 'financeiro' : 'kanban'
   );
   
   // Leads data state (loaded dynamically for Kanban & Leads Table)
   const [leads, setLeads] = useState<any[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
+
+  // Canceled data state (loaded dynamically with pagination)
+  const [canceledData, setCanceledData] = useState<any[]>([]);
+  const [canceledTotal, setCanceledTotal] = useState(0);
+  const [canceledPage, setCanceledPage] = useState(1);
+  const canceledLimit = 10;
+  const [canceledTotalPages, setCanceledTotalPages] = useState(1);
+  const [loadingCanceled, setLoadingCanceled] = useState(false);
 
   // Filters state
   const [filterPlan, setFilterPlan] = useState('all');
@@ -113,13 +121,50 @@ export default function DashboardContent({
     }
   };
 
+  const fetchCanceledLeads = async () => {
+    if (!isAdmin) return;
+    setLoadingCanceled(true);
+    try {
+      let url = `/api/leads/canceled?page=${canceledPage}&limit=${canceledLimit}&month=${filterMonth}`;
+      if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
+      if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
+
+      const res = await fetch(url);
+      if (res.ok) {
+        const json = await res.json();
+        setCanceledData(json.data || []);
+        setCanceledTotal(json.pagination?.total || 0);
+        setCanceledTotalPages(json.pagination?.totalPages || 1);
+      }
+    } catch (err) {
+      console.error('Error fetching canceled leads:', err);
+    } finally {
+      setLoadingCanceled(false);
+    }
+  };
+
   useEffect(() => {
     setFilterMonth(month);
   }, [month]);
 
   useEffect(() => {
     fetchLeads();
+    if (activeTab === 'cancelados') {
+      fetchCanceledLeads();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth]);
+
+  useEffect(() => {
+    if (activeTab === 'cancelados') {
+      fetchCanceledLeads();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, canceledPage, canceledLimit]);
+
+  useEffect(() => {
+    setCanceledPage(1);
+  }, [filterMonth, filterPlan, filterSearch]);
 
   // Handle Export
   const handleExport = (type: string) => {
@@ -152,9 +197,12 @@ export default function DashboardContent({
   };
 
   // Open Fast Acquisition modal
-  const openFastAcquisition = (lead: any) => {
-    setSelectedLead(lead);
-    setFastStage(lead.stage || 'novo_cadastro');
+  const openFastAcquisition = (lead: any, isFromCanceled = false) => {
+    setSelectedLead({
+      ...lead,
+      isFromCanceledList: isFromCanceled
+    });
+    setFastStage(isFromCanceled ? 'novo_cadastro' : (lead.stage || 'novo_cadastro'));
     setFastAssignee(lead.assignee?.id || 'unassigned');
     setFastNote('');
     setShowFastAcquisitionModal(true);
@@ -174,12 +222,16 @@ export default function DashboardContent({
           stage: fastStage,
           assigneeId: fastAssignee,
           note: fastNote.trim() !== '' ? fastNote : undefined,
+          tag: selectedLead.isFromCanceledList ? 'CANCELED_CLIENT' : selectedLead.tag,
         }),
       });
 
       if (res.ok) {
         setShowFastAcquisitionModal(false);
         fetchLeads();
+        if (activeTab === 'cancelados') {
+          fetchCanceledLeads();
+        }
       }
     } catch (err) {
       console.error('Fast acquisition save failed:', err);
@@ -447,6 +499,19 @@ export default function DashboardContent({
               }}
             >
               👥 Equipe CRM
+            </button>
+          )}
+          {isAdmin && (
+            <button 
+              onClick={() => setActiveTab('cancelados')}
+              style={{
+                padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                background: activeTab === 'cancelados' ? 'var(--accent-glow)' : 'transparent',
+                color: activeTab === 'cancelados' ? 'var(--accent)' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              🚫 Cancelados
             </button>
           )}
           {(isAdmin || currentUser?.role === 'POST_SALES') && (
@@ -720,8 +785,13 @@ export default function DashboardContent({
                             onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                             onMouseLeave={(e) => e.currentTarget.style.transform = 'none'}
                           >
-                            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', marginBottom: 4 }}>
-                              {lead.fullName}
+                            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span>{lead.fullName}</span>
+                              {lead.tag === 'CANCELED_CLIENT' && (
+                                <span className="badge badge-down" style={{ fontSize: 9, padding: '2px 6px' }}>
+                                  🚫 Cancelado
+                                </span>
+                              )}
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
                               {lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}
@@ -866,7 +936,16 @@ export default function DashboardContent({
                       return (
                         <tr key={lead.id}>
                           <td><span className="stat-mono" style={{ fontSize: 12 }}>{lead.createdAt.slice(0, 10)}</span></td>
-                          <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{lead.fullName}</td>
+                          <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {lead.fullName}
+                              {lead.tag === 'CANCELED_CLIENT' && (
+                                <span className="badge badge-down" style={{ fontSize: 9, padding: '2px 6px' }}>
+                                  🚫 Cancelado
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td><span className="stat-mono" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{lead.email}</span></td>
                           <td>
                             {lead.phoneNumber ? (
@@ -933,6 +1012,253 @@ export default function DashboardContent({
                 </tbody>
               </table>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Aba de Cancelados (ADMIN Only) */}
+      {activeTab === 'cancelados' && isAdmin && (
+        <div className="card animate-fadeUp">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
+            <div>
+              <div className="label" style={{ marginBottom: 4 }}>🚫 Clientes Cancelados (Churn)</div>
+              <div className="label-sm">Filtre cadastros de clientes com assinaturas canceladas, gerencie no CRM ou exporte relatórios.</div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button 
+                onClick={() => {
+                  let url = `/api/leads/canceled?format=csv&month=${filterMonth}`;
+                  if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
+                  if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
+                  window.open(url, '_blank');
+                }}
+                className="btn-action btn-action-outline"
+                style={{ fontSize: 12, padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                📥 Exportar CSV
+              </button>
+              <button 
+                onClick={() => {
+                  let url = `/dashboard/canceled/print?month=${filterMonth}`;
+                  if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
+                  if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
+                  window.open(url, '_blank');
+                }}
+                className="btn-action btn-action-purple"
+                style={{ fontSize: 12, padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                🖨️ Gerar PDF
+              </button>
+              <span className="badge badge-cyan">{canceledTotal} cancelados</span>
+            </div>
+          </div>
+
+          {/* Filtering Bar */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 12, marginBottom: 20, padding: 16, background: 'var(--surface-raised)', borderRadius: 12
+          }}>
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Buscar Nome/Email:</label>
+              <input 
+                type="text" 
+                value={filterSearch} 
+                onChange={(e) => setFilterSearch(e.target.value)}
+                placeholder="Ex: Carlos Silva..."
+                style={{
+                  width: '100%', padding: '8px 12px', background: 'var(--surface)',
+                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
+                }}
+              />
+            </div>
+
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Plano Cancelado:</label>
+              <select 
+                value={filterPlan} 
+                onChange={(e) => setFilterPlan(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
+              >
+                <option value="all">Todos os Planos</option>
+                {users?.usersByPlan?.map((p: any) => (
+                  <option key={p.planId} value={p.planId}>{p.planTitle}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Mês Cancelamento:</label>
+              <MonthSelector currentMonth={filterMonth} />
+            </div>
+          </div>
+
+          {/* Canceled Table Grid */}
+          {loadingCanceled ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 20 }}>
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="skeleton" style={{ height: 40, width: '100%' }}></div>
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Data Cancelamento</th>
+                      <th>Nome</th>
+                      <th>Email</th>
+                      <th>Telefone</th>
+                      <th>Plano Cancelado</th>
+                      <th>Estágio CRM</th>
+                      <th>Responsável</th>
+                      <th style={{ textAlign: 'center' }}>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {canceledData.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--text-faint)' }}>
+                          Nenhum cliente cancelado encontrado.
+                        </td>
+                      </tr>
+                    ) : (
+                      canceledData.map((lead) => {
+                        const waLink = formatWhatsappLink(lead.phoneNumber);
+                        return (
+                          <tr key={lead.id}>
+                            <td>
+                              <span className="stat-mono" style={{ fontSize: 12 }}>
+                                {lead.canceledAt ? lead.canceledAt.slice(0, 10).split('-').reverse().join('/') : '-'}
+                              </span>
+                            </td>
+                            <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {lead.fullName}
+                                <span className="badge badge-down" style={{ fontSize: 9, padding: '2px 6px' }}>
+                                  🚫 Cancelado
+                                </span>
+                              </div>
+                            </td>
+                            <td><span className="stat-mono" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{lead.email}</span></td>
+                            <td>
+                              {lead.phoneNumber ? (
+                                waLink ? (
+                                  <a 
+                                    href={waLink} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    style={{ color: 'var(--green)', textDecoration: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+                                  >
+                                    🟢 {lead.phoneNumber}
+                                  </a>
+                                ) : lead.phoneNumber
+                              ) : (
+                                <span style={{ color: 'var(--text-faint)' }}>Sem fone</span>
+                              )}
+                            </td>
+                            <td>
+                              <span style={{ color: 'var(--text-primary)' }}>
+                                {lead.plan ? lead.plan.title : '-'}
+                              </span>
+                            </td>
+                            <td>
+                              <span 
+                                className="badge" 
+                                style={{ 
+                                  background: `${STAGE_COLORS[lead.stage] || '#888'}1A`, 
+                                  color: STAGE_COLORS[lead.stage] || '#888',
+                                  border: `1px solid ${STAGE_COLORS[lead.stage] || '#888'}33`
+                                }}
+                              >
+                                {STAGE_LABELS[lead.stage] || lead.stage}
+                              </span>
+                            </td>
+                            <td>
+                              <span style={{ color: lead.assignee ? 'var(--accent)' : 'var(--text-muted)', fontSize: 12 }}>
+                                {lead.assignee ? lead.assignee.name : 'Não Atribuído'}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button 
+                                onClick={() => openFastAcquisition(lead, true)}
+                                style={{
+                                  padding: '6px 12px', border: '1px solid var(--accent)', borderRadius: 8,
+                                  background: 'transparent', color: 'var(--accent)', fontSize: 12, fontWeight: 600,
+                                  cursor: 'pointer', transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = 'var(--accent)';
+                                  e.currentTarget.style.color = '#fff';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = 'transparent';
+                                  e.currentTarget.style.color = 'var(--accent)';
+                                }}
+                              >
+                                ⚡ Atender
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls */}
+              {canceledTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, padding: '10px 0' }}>
+                  <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
+                    Mostrando página <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{canceledPage}</span> de <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{canceledTotalPages}</span> ({canceledTotal} cancelados)
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      disabled={canceledPage === 1}
+                      onClick={() => setCanceledPage(prev => Math.max(1, prev - 1))}
+                      className="btn-action btn-action-outline"
+                      style={{ padding: '6px 12px', fontSize: 12, opacity: canceledPage === 1 ? 0.5 : 1, cursor: canceledPage === 1 ? 'not-allowed' : 'pointer' }}
+                    >
+                      ◀️ Anterior
+                    </button>
+                    {Array.from({ length: canceledTotalPages }, (_, idx) => idx + 1).map(p => {
+                      if (canceledTotalPages > 5 && Math.abs(p - canceledPage) > 2 && p !== 1 && p !== canceledTotalPages) {
+                        if (p === 2 || p === canceledTotalPages - 1) {
+                          return <span key={p} style={{ alignSelf: 'center', color: 'var(--text-faint)', padding: '0 4px' }}>...</span>;
+                        }
+                        return null;
+                      }
+                      return (
+                        <button
+                          key={p}
+                          onClick={() => setCanceledPage(p)}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: 12,
+                            borderRadius: 6,
+                            border: '1px solid var(--border)',
+                            cursor: 'pointer',
+                            background: canceledPage === p ? 'var(--accent)' : 'transparent',
+                            color: canceledPage === p ? '#fff' : 'var(--text-primary)'
+                          }}
+                        >
+                          {p}
+                        </button>
+                      );
+                    })}
+                    <button
+                      disabled={canceledPage === canceledTotalPages}
+                      onClick={() => setCanceledPage(prev => Math.min(canceledTotalPages, prev + 1))}
+                      className="btn-action btn-action-outline"
+                      style={{ padding: '6px 12px', fontSize: 12, opacity: canceledPage === canceledTotalPages ? 0.5 : 1, cursor: canceledPage === canceledTotalPages ? 'not-allowed' : 'pointer' }}
+                    >
+                      Próxima ▶️
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
