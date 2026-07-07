@@ -70,6 +70,7 @@ export default function DashboardContent({
   const canceledLimit = 10;
   const [canceledTotalPages, setCanceledTotalPages] = useState(1);
   const [loadingCanceled, setLoadingCanceled] = useState(false);
+  const [canceledFilterAllMonths, setCanceledFilterAllMonths] = useState(false);
 
   // Filters state
   const [filterPlan, setFilterPlan] = useState('all');
@@ -125,7 +126,10 @@ export default function DashboardContent({
     if (!isAdmin) return;
     setLoadingCanceled(true);
     try {
-      let url = `/api/leads/canceled?page=${canceledPage}&limit=${canceledLimit}&month=${filterMonth}`;
+      let url = `/api/leads/canceled?page=${canceledPage}&limit=${canceledLimit}`;
+      if (!canceledFilterAllMonths) {
+        url += `&month=${filterMonth}`;
+      }
       if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
       if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
 
@@ -153,7 +157,7 @@ export default function DashboardContent({
       fetchCanceledLeads();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth]);
+  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths]);
 
   useEffect(() => {
     if (activeTab === 'cancelados') {
@@ -164,7 +168,7 @@ export default function DashboardContent({
 
   useEffect(() => {
     setCanceledPage(1);
-  }, [filterMonth, filterPlan, filterSearch]);
+  }, [filterMonth, filterPlan, filterSearch, canceledFilterAllMonths]);
 
   // Handle Export
   const handleExport = (type: string) => {
@@ -1027,7 +1031,8 @@ export default function DashboardContent({
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <button 
                 onClick={() => {
-                  let url = `/api/leads/canceled?format=csv&month=${filterMonth}`;
+                  let url = `/api/leads/canceled?format=csv`;
+                  if (!canceledFilterAllMonths) url += `&month=${filterMonth}`;
                   if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
                   if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
                   window.open(url, '_blank');
@@ -1039,9 +1044,10 @@ export default function DashboardContent({
               </button>
               <button 
                 onClick={() => {
-                  let url = `/dashboard/canceled/print?month=${filterMonth}`;
-                  if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
-                  if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
+                  let url = `/dashboard/canceled/print?`;
+                  if (!canceledFilterAllMonths) url += `month=${filterMonth}&`;
+                  if (filterPlan !== 'all') url += `plan=${filterPlan}&`;
+                  if (filterSearch.trim() !== '') url += `search=${encodeURIComponent(filterSearch)}`;
                   window.open(url, '_blank');
                 }}
                 className="btn-action btn-action-purple"
@@ -1087,9 +1093,23 @@ export default function DashboardContent({
             </div>
 
             <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Mês Cancelamento:</label>
-              <MonthSelector currentMonth={filterMonth} />
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Período:</label>
+              <select 
+                value={canceledFilterAllMonths ? 'all' : 'month'} 
+                onChange={(e) => setCanceledFilterAllMonths(e.target.value === 'all')}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
+              >
+                <option value="month">Filtrar por Mês</option>
+                <option value="all">Todos os Meses (Geral)</option>
+              </select>
             </div>
+
+            {!canceledFilterAllMonths && (
+              <div>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Mês Cancelamento:</label>
+                <MonthSelector currentMonth={filterMonth} />
+              </div>
+            )}
           </div>
 
           {/* Canceled Table Grid */}
