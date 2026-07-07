@@ -22,12 +22,16 @@ export async function GET(request: Request) {
     const limit = Math.max(1, Number(searchParams.get('limit') || 10));
     const offset = (page - 1) * limit;
 
-    // We fetch users whose subscription is 'canceled'
+    // We fetch users whose subscription is 'canceled' and who do not currently have any active subscription
     let query = `
       FROM subscriptions s
       INNER JOIN people p ON s.personId = p.id
       INNER JOIN plans pl ON s.planId = pl.id
       WHERE s.status = 'canceled'
+        AND NOT EXISTS (
+          SELECT 1 FROM subscriptions s2
+          WHERE s2.personId = p.id AND s2.status = 'active'
+        )
     `;
     const params: any[] = [];
 
