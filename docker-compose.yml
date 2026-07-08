@@ -5,6 +5,7 @@ services:
       - "3035:3000"
     environment:
       - AUTH_TRUST_HOST=true
+      - REDIS_URL=redis://crm_redis:6379
     env_file:
       - .env.local
     volumes:
@@ -13,6 +14,13 @@ services:
       - db-clone_default
     restart: always
     container_name: dentalgo-bi
+
+  redis-queue:
+    image: redis:7-alpine
+    container_name: crm_redis
+    restart: always
+    networks:
+      - db-clone_default
 
 networks:
   db-clone_default:

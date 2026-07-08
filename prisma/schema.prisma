@@ -39,6 +39,9 @@ model User {
 
   // Pós-Venda relations
   assignedTasks    LeadPostSaleTask[]
+
+  // New CRM expansion relation
+  taskAlerts       TaskAlert[]
 }
 
 model Account {
@@ -86,14 +89,23 @@ model LeadState {
   stage             String
   assigneeId        String?
   updatedAt         DateTime          @updatedAt
+  createdAt         DateTime          @default(now())
   lastInteractionAt DateTime?
   interactionCount  Int               @default(0)
   lossReason        String?
   tag               String?
   scheduledFor      DateTime?
 
+  // New fields for expansion
+  frozenUntil       DateTime?
+  freezeReason      String?
+  lostReason        String?
+  campaignId        String?
+
   assignee     User?             @relation(fields: [assigneeId], references: [id])
   interactions LeadInteraction[]
+  campaign     Campaign?         @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  taskAlerts   TaskAlert[]
 }
 
 model LeadInteraction {
@@ -175,4 +187,45 @@ model LeadPostSaleTask {
   @@index([externalPersonId])
   @@index([status, scheduledFor])
   @@index([assignedToId, status])
+}
+
+model Campaign {
+  id          String      @id @default(cuid())
+  name        String
+  status      String      @default("ACTIVE") // "ACTIVE" | "PAUSED" | "COMPLETED"
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  leads       LeadState[]
+  flowSteps   FlowStep[]
+}
+
+model FlowStep {
+  id              String      @id @default(cuid())
+  campaignId      String
+  dayOffset       Int         // days after assignment
+  channel         String      // "WHATSAPP" | "EMAIL" | "CALL"
+  messageTemplate String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  campaign        Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  taskAlerts      TaskAlert[]
+}
+
+model TaskAlert {
+  id               String     @id @default(cuid())
+  leadStateId      String
+  assignedToId     String
+  stepId           String?
+  scheduledFor     DateTime
+  taskType         String     // "WHATSAPP" | "EMAIL" | "CALL" | "ABANDONED_CART" | "EXPIRATION"
+  status           String     @default("PENDING") // "PENDING" | "COMPLETED" | "SKIPPED"
+  completionNote   String?
+  completedAt      DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  leadState        LeadState  @relation(fields: [leadStateId], references: [id], onDelete: Cascade)
+  assignedTo       User       @relation(fields: [assignedToId], references: [id], onDelete: Cascade)
+  flowStep         FlowStep?  @relation(fields: [stepId], references: [id], onDelete: SetNull)
 }

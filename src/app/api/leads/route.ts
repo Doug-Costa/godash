@@ -183,7 +183,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { leadId, stage, note, assigneeId, type, lossReason, scheduledFor, tag } = body;
+    const { leadId, stage, note, assigneeId, type, lossReason, scheduledFor, tag, lostReason } = body;
 
     if (!leadId) {
       return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 });
@@ -218,6 +218,13 @@ export async function POST(request: Request) {
     // Explicit tag update if provided
     if (tag) {
       await crmRepository.updateLeadState(externalPersonId, { tag });
+    }
+
+    if (lostReason !== undefined) {
+      await prisma.leadState.update({
+        where: { externalPersonId },
+        data: { lostReason }
+      });
     }
 
     // 2. Assign Lead if provided (separate from quick disposition)
