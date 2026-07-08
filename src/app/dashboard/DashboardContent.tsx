@@ -1300,9 +1300,30 @@ export default function DashboardContent({
                                 </span>
                               )}
                             </div>
-                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
-                              {lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
+                              <strong>Plano:</strong> {lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}
                             </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', wordBreak: 'break-all', marginBottom: 4 }}>
+                              📧 {lead.email || 'Sem e-mail'}
+                            </div>
+                            {lead.phoneNumber ? (
+                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                                📞{' '}
+                                <a 
+                                  href={formatWhatsappLink(lead.phoneNumber) || '#'} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}
+                                >
+                                  {lead.phoneNumber} 🟢
+                                </a>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                                📞 Sem fone
+                              </div>
+                            )}
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
