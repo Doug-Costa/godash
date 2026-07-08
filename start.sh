@@ -14,6 +14,9 @@ cleanup() {
 # Trap termination signals
 trap cleanup TERM INT
 
+echo "⚙️ Syncing database schema with Prisma..."
+npx prisma db push --accept-data-loss
+
 echo "🚀 Starting Next.js Standalone Server..."
 node server.js &
 PID_SERVER=$!
