@@ -78,14 +78,14 @@ export async function GET() {
 
     // 3. Clientes à expirar (Assinaturas expirando nos próximos 30 dias que estão sem operador atribuído)
     const [expiringRows] = await pool.query(`
-      SELECT p.id, p.fullName, p.email, p.phoneNumber, s.expiresIn, pl.title as planTitle
+      SELECT p.id, p.fullName, p.email, p.phoneNumber, COALESCE(s.isValidUntil, s.expiresIn) as expiresIn, pl.title as planTitle
       FROM subscriptions s
       INNER JOIN people p ON s.personId = p.id
       INNER JOIN plans pl ON s.planId = pl.id
       WHERE s.status = 'active'
-        AND s.expiresIn IS NOT NULL
-        AND s.expiresIn >= CURDATE()
-        AND s.expiresIn <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+        AND COALESCE(s.isValidUntil, s.expiresIn) IS NOT NULL
+        AND COALESCE(s.isValidUntil, s.expiresIn) >= CURDATE()
+        AND COALESCE(s.isValidUntil, s.expiresIn) <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
     `);
 
     let expiringLeads: any[] = [];

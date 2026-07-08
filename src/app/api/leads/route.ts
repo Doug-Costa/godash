@@ -131,7 +131,7 @@ export async function GET(request: Request) {
         fullName: r.fullName || 'Sem Nome',
         email: r.email || '',
         phoneNumber: r.phoneNumber || '',
-        createdAt: r.createdAt.toISOString(),
+        createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
         plan: r.planId ? {
           id: r.planId,
           title: r.planTitle,
@@ -147,7 +147,7 @@ export async function GET(request: Request) {
         notes: (state?.interactions || []).map((i: any) => ({
           id: i.id,
           text: i.text,
-          date: i.createdAt.toISOString(),
+          date: i.createdAt ? new Date(i.createdAt).toISOString() : new Date().toISOString(),
           authorName: i.author?.name || 'Agente'
         }))
       };

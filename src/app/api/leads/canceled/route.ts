@@ -88,8 +88,8 @@ export async function GET(request: Request) {
         const name = (r.fullName || 'Sem Nome').replace(/"/g, '""');
         const email = r.email || '';
         const phone = r.phoneNumber || '';
-        const canceledDate = r.canceledAt ? r.canceledAt.toISOString().slice(0, 10) : '';
-        const startDate = r.subscriptionStart ? r.subscriptionStart.toISOString().slice(0, 10) : '';
+        const canceledDate = r.canceledAt ? new Date(r.canceledAt).toISOString().slice(0, 10) : '';
+        const startDate = r.subscriptionStart ? new Date(r.subscriptionStart).toISOString().slice(0, 10) : '';
         const planTitle = r.planTitle ? r.planTitle.replace(/"/g, '""') : '';
         const price = r.planPrice ? (r.planPrice / 100).toFixed(2) : '0.00';
         const stage = state?.stage || 'novo_cadastro';
@@ -162,8 +162,8 @@ export async function GET(request: Request) {
         fullName: r.fullName || 'Sem Nome',
         email: r.email || '',
         phoneNumber: r.phoneNumber || '',
-        canceledAt: r.canceledAt ? r.canceledAt.toISOString() : null,
-        createdAt: r.subscriptionStart ? r.subscriptionStart.toISOString() : null,
+        canceledAt: r.canceledAt ? new Date(r.canceledAt).toISOString() : null,
+        createdAt: r.subscriptionStart ? new Date(r.subscriptionStart).toISOString() : null,
         plan: {
           id: r.planId,
           title: r.planTitle,
@@ -179,7 +179,7 @@ export async function GET(request: Request) {
         notes: (state?.interactions || []).map((i: any) => ({
           id: i.id,
           text: i.text,
-          date: i.createdAt.toISOString(),
+          date: i.createdAt ? new Date(i.createdAt).toISOString() : new Date().toISOString(),
           authorName: i.author?.name || 'Agente'
         }))
       };
