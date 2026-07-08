@@ -722,6 +722,30 @@ export default function DashboardContent({
     }
   };
 
+  const handleDeleteCampaign = async (campaignId: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta campanha? Os leads vinculados que NÃO foram atendidos sumirão do Kanban, e os já atendidos serão mantidos no CRM sem o vínculo com a campanha.')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/campaigns?campaignId=${campaignId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        if (selectedKpiCampaignId === campaignId) {
+          setSelectedKpiCampaignId('');
+        }
+        fetchCampaigns();
+        fetchLeads();
+      } else {
+        const errorData = await res.json();
+        alert(`Erro ao excluir campanha: ${errorData.error}`);
+      }
+    } catch (err) {
+      console.error('Failed to delete campaign:', err);
+    }
+  };
+
   // Team Management: Save Agent (Create/Update)
   const handleSaveAgent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2199,8 +2223,20 @@ export default function DashboardContent({
                 {campaignsData.map((campaign: any) => (
                   <div key={campaign.id} style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 12, padding: 16 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 8 }}>
-                      <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{campaign.name}</span>
-                      <span className="badge badge-cyan" style={{ fontSize: 9 }}>{campaign.status}</span>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginRight: 12 }}>{campaign.name}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="badge badge-cyan" style={{ fontSize: 9 }}>{campaign.status}</span>
+                        <button
+                          onClick={() => handleDeleteCampaign(campaign.id)}
+                          style={{
+                            background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer',
+                            fontSize: 12, padding: '2px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}
+                          title="Excluir Campanha"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                     <div className="label-sm" style={{ fontSize: 11, marginBottom: 12 }}>
                       Criada em: {new Date(campaign.createdAt).toLocaleDateString('pt-BR')} &bull; {campaign._count?.leads || 0} leads vinculados

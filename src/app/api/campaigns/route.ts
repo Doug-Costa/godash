@@ -208,3 +208,72 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const session = await auth();
+    if (!session || (session.user as any)?.role !== 'ADMIN') {
+      return new Response('Unauthorized', { status: 403 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const campaignId = searchParams.get('campaignId');
+    if (!campaignId) {
+      return NextResponse.json({ success: false, error: 'campaignId é obrigatório para exclusão.' }, { status: 400 });
+    }
+
+    // 1. Encontrar todos os leads associados a essa campanha
+    const campaignLeads = await prisma.leadState.findMany({
+      where: { campaignId }
+    });
+
+    // Separar os atendidos dos não atendidos
+    // Não atendidos: stage = 'novo_cadastro' E interactionCount = 0
+    const unattendedLeadIds = campaignLeads
+      .filter(l => l.stage === 'novo_cadastro' && l.interactionCount === 0)
+      .map(l => l.id);
+
+    const attendedLeadIds = campaignLeads
+      .filter(l => !(l.stage === 'novo_cadastro' && l.interactionCount === 0))
+      .map(l => l.id);
+
+    // Iniciar transação no Prisma
+    await prisma.$transaction([
+      // Deletar todos os alertas de tarefa pendentes vinculados aos passos desta campanha
+      prisma.taskAlert.deleteMany({
+        where: {
+          leadStateId: { in: campaignLeads.map(l => l.id) },
+          flowStep: { campaignId }
+        }
+      }),
+
+      // Deletar os leads não atendidos da campanha
+      prisma.leadState.deleteMany({
+        where: {
+          id: { in: unattendedLeadIds }
+        }
+      }),
+
+      // Desassociar os leads atendidos da campanha (remover FK)
+      prisma.leadState.updateMany({
+        where: {
+          id: { in: attendedLeadIds }
+        },
+        data: {
+          campaignId: null,
+          joinedCampaignAt: null
+        }
+      }),
+
+      // Deletar a campanha em si (por cascata deleta os passos do fluxo)
+      prisma.campaign.delete({
+        where: { id: campaignId }
+      })
+    ]);
+
+    return NextResponse.json({ success: true, message: 'Campanha excluída e leads não atendidos limpos.' });
+  } catch (error: any) {
+    console.error('DELETE campaign error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
