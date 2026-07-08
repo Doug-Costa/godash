@@ -11,6 +11,7 @@
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
     "@prisma/client": "^6.19.3",
+    "@xyflow/react": "^12.11.2",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.79.3",
     "ioredis": "^5.11.1",

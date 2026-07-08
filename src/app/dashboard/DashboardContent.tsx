@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { signOut } from 'next-auth/react';
+import { ReactFlow, MiniMap, Controls, Background, Panel, MarkerType } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import KpiCard from '@/components/ui/KpiCard';
 import GrowthTrendChart from '@/components/charts/GrowthTrendChart';
 import ChurnChart from '@/components/charts/ChurnChart';
@@ -122,6 +125,22 @@ export default function DashboardContent({
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignCampaignId, setAssignCampaignId] = useState('');
   const [assignUserIds, setAssignUserIds] = useState<string[]>([]);
+
+  // Estados do Wizard de Campanhas
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [campaignPlansFilter, setCampaignPlansFilter] = useState<'all' | 'pagos' | 'cortesia'>('all');
+  const [campaignStatusFilter, setCampaignStatusFilter] = useState<'active' | 'canceled' | 'expired'>('active');
+  const [campaignExpiryDays, setCampaignExpiryDays] = useState<string>('30');
+  const [estimatedAudience, setEstimatedAudience] = useState<number>(0);
+  const [loadingEstimate, setLoadingEstimate] = useState<boolean>(false);
+  const [campaignAgentIds, setCampaignAgentIds] = useState<string[]>([]);
+  const [campaignLimitPerDay, setCampaignLimitPerDay] = useState<string>('');
+  const [campaignLimitEnabled, setCampaignLimitEnabled] = useState<boolean>(false);
+
+  // Estados do React Flow para a régua
+  const [nodes, setNodes] = useState<any[]>([]);
+  const [edges, setEdges] = useState<any[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   // Congelamento de leads
   const [showFreezeModal, setShowFreezeModal] = useState(false);
@@ -262,6 +281,37 @@ export default function DashboardContent({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId]);
+
+  // Fetch estimated audience for campaign wizard (debounced)
+  useEffect(() => {
+    if (!showCampaignModal) return;
+    
+    const delayDebounceFn = setTimeout(async () => {
+      setLoadingEstimate(true);
+      try {
+        const res = await fetch('/api/campaigns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'estimate',
+            plansFilter: campaignPlansFilter,
+            statusFilter: campaignStatusFilter,
+            expiryDays: campaignStatusFilter === 'expired' ? Number(campaignExpiryDays) : undefined
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setEstimatedAudience(data.count || 0);
+        }
+      } catch (err) {
+        console.error('Failed to estimate audience:', err);
+      } finally {
+        setLoadingEstimate(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [campaignPlansFilter, campaignStatusFilter, campaignExpiryDays, showCampaignModal]);
 
   useEffect(() => {
     if (activeTab === 'alerts') {
@@ -546,28 +596,102 @@ export default function DashboardContent({
     }
   };
 
-  // ── Ações de Campanhas ─────────────────────────────────────────────────────
-  const handleCreateCampaign = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!campaignName) return;
+  const handleAddFlowStep = (channel: 'WHATSAPP' | 'CALL' | 'EMAIL') => {
+    const id = String(Date.now());
+    const emoji = channel === 'WHATSAPP' ? '💬' : channel === 'CALL' ? '📞' : '📧';
+    
+    // Obter o último nó para posicionar abaixo
+    const lastNode = nodes[nodes.length - 1];
+    const lastY = lastNode ? lastNode.position.y : 50;
+    const newY = lastY + 80;
+    
+    const newNode = {
+      id,
+      data: { 
+        label: `${emoji} ${channel} (Dia ${nodes.length})`, 
+        channel, 
+        dayOffset: nodes.length, 
+        messageTemplate: '' 
+      },
+      position: { x: 200, y: newY },
+      style: {
+        background: 'var(--surface-raised)',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+        padding: 10,
+        width: 180,
+        textAlign: 'center' as const
+      }
+    };
+    
+    setNodes(prev => [...prev, newNode]);
+    
+    if (lastNode) {
+      const newEdge = {
+        id: `e-${lastNode.id}-${id}`,
+        source: lastNode.id,
+        target: id,
+        animated: true,
+        markerEnd: { type: MarkerType.ArrowClosed }
+      };
+      setEdges(prev => [...prev, newEdge]);
+    }
+    
+    setSelectedNodeId(id);
+  };
+
+  const handleLaunchCampaignSubmit = async () => {
+    if (nodes.length <= 1) {
+      alert('Por favor, adicione pelo menos um passo de ação na sua régua.');
+      return;
+    }
 
     try {
+      const flowSteps = nodes
+        .filter(n => n.id !== 'start')
+        .map(n => ({
+          dayOffset: Number(n.data.dayOffset) || 0,
+          channel: n.data.channel,
+          messageTemplate: n.data.messageTemplate || ''
+        }))
+        .sort((a, b) => a.dayOffset - b.dayOffset);
+
       const res = await fetch('/api/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'launch',
           name: campaignName,
-          flowSteps: campaignSteps
+          plansFilter: campaignPlansFilter,
+          statusFilter: campaignStatusFilter,
+          expiryDays: campaignStatusFilter === 'expired' ? Number(campaignExpiryDays) : undefined,
+          userIds: campaignAgentIds,
+          limitPerDay: campaignLimitEnabled && campaignLimitPerDay ? Number(campaignLimitPerDay) : null,
+          flowSteps,
+          flowGraph: JSON.stringify({ nodes, edges })
         })
       });
+
       if (res.ok) {
         setCampaignName('');
-        setCampaignSteps([{ dayOffset: 1, channel: 'WHATSAPP', messageTemplate: 'Olá {{nome}}, tudo bem?' }]);
+        setCampaignPlansFilter('all');
+        setCampaignStatusFilter('active');
+        setCampaignExpiryDays('30');
+        setCampaignAgentIds([]);
+        setCampaignLimitPerDay('');
+        setCampaignLimitEnabled(false);
+        setNodes([]);
+        setEdges([]);
+        setSelectedNodeId(null);
+        setWizardStep(1);
         setShowCampaignModal(false);
         fetchCampaigns();
+      } else {
+        const errorData = await res.json();
+        alert(`Erro: ${errorData.error}`);
       }
     } catch (err) {
-      console.error('Failed to create campaign:', err);
+      console.error('Failed to launch campaign:', err);
     }
   };
 
@@ -2134,6 +2258,81 @@ export default function DashboardContent({
                     <div className="label-sm">SLA Médio Equipe</div>
                     <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#f59e0b', margin: '6px 0' }}>{kpiData.summary.globalAvgSlaHours.toFixed(1)}h</div>
                     <div className="label-sm" style={{ color: 'var(--text-faint)' }}>Tempo até 1ª resposta</div>
+                </div>
+              </div>
+
+              {/* Visual conversion funnel and progress bar */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 8 }}>
+                  {/* Styled visual horizontal funnel */}
+                  <div style={{ background: 'var(--surface-raised)', borderRadius: 12, padding: 20, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>🎯 Funil Comercial da Campanha</div>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {/* Step 1: Total Leads */}
+                      <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <div style={{ width: 100, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Adicionados:</div>
+                        <div style={{ flex: 1, background: 'var(--border)', height: 24, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+                          <div style={{ background: 'var(--accent)', height: '100%', width: '100%', opacity: 0.3 }}></div>
+                          <div style={{ position: 'absolute', top: 0, left: 12, height: '100%', display: 'flex', alignItems: 'center', fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {kpiData.summary.totalLeads} leads (100%)
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 2: Attended */}
+                      {(() => {
+                        const attendedPct = kpiData.summary.totalLeads > 0 ? (kpiData.summary.attendedLeads / kpiData.summary.totalLeads) * 100 : 0;
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <div style={{ width: 100, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Contatados:</div>
+                            <div style={{ flex: 1, background: 'var(--border)', height: 24, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+                              <div style={{ background: 'var(--accent)', height: '100%', width: `${attendedPct}%` }}></div>
+                              <div style={{ position: 'absolute', top: 0, left: 12, height: '100%', display: 'flex', alignItems: 'center', fontSize: 11, fontWeight: 700, color: '#fff' }}>
+                                {kpiData.summary.attendedLeads} leads ({attendedPct.toFixed(0)}%)
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Step 3: Converted */}
+                      {(() => {
+                        const convertedPct = kpiData.summary.totalLeads > 0 ? (kpiData.summary.convertedLeads / kpiData.summary.totalLeads) * 100 : 0;
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <div style={{ width: 100, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Convertidos:</div>
+                            <div style={{ flex: 1, background: 'var(--border)', height: 24, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+                              <div style={{ background: 'var(--green)', height: '100%', width: `${convertedPct}%` }}></div>
+                              <div style={{ position: 'absolute', top: 0, left: 12, height: '100%', display: 'flex', alignItems: 'center', fontSize: 11, fontWeight: 700, color: '#fff' }}>
+                                {kpiData.summary.convertedLeads} leads ({convertedPct.toFixed(0)}%)
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Win Rate Progress circle or bar */}
+                  <div style={{ background: 'var(--surface-raised)', borderRadius: 12, padding: 20, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', marginBottom: 4 }}>📈 Taxa de Conversão (Win Rate)</div>
+                      <p style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Porcentagem de leads convertidos na campanha</p>
+                    </div>
+
+                    <div style={{ margin: '16px 0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+                        <span>Conversão</span>
+                        <span style={{ color: 'var(--green)' }}>{kpiData.summary.winRate.toFixed(1)}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: 12, background: 'var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+                        <div style={{ background: 'var(--green)', height: '100%', width: `${Math.min(100, kpiData.summary.winRate)}%`, borderRadius: 6 }}></div>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                      Média ideal de CS/Vendas Odonto: ~12% a 18%
+                    </div>
                   </div>
                 </div>
 
@@ -2173,27 +2372,71 @@ export default function DashboardContent({
                   </div>
 
                   {/* Objections Distribution */}
-                  <div style={{ background: 'var(--surface-raised)', borderRadius: 12, padding: 16, border: '1px solid var(--border)' }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', marginBottom: 12 }}>🚨 Motivos de Perda (Objeções)</div>
+                  <div style={{ background: 'var(--surface-raised)', borderRadius: 12, padding: 16, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>🚨 Motivos de Perda (Objeções)</div>
                     {kpiData.lostReasonsDistribution.length === 0 ? (
-                      <div style={{ fontSize: 12, color: 'var(--text-faint)', padding: 10 }}>Sem descartes na campanha selecionada.</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-faint)', padding: 10, textAlign: 'center' }}>Sem descartes na campanha selecionada.</div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {kpiData.lostReasonsDistribution.map((lrd: any) => {
-                          const labelMap: Record<string, string> = {
-                            PRICE_TOO_HIGH: 'Preço Elevado',
-                            GHOSTING: 'Não respondeu / Sem contato',
-                            MISSING_CONTENT: 'Falta de conteúdo relevante',
-                            UNQUALIFIED: 'Não qualificado / Sem perfil'
-                          };
-                          return (
-                            <div key={lrd.reason} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
-                              <span>{labelMap[lrd.reason] || lrd.reason}</span>
-                              <span style={{ fontWeight: 'bold', color: 'var(--red)' }}>{lrd.count} descartes</span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <>
+                        {/* Recharts Pie Chart */}
+                        <div style={{ width: '100%', height: 160 }}>
+                          <ResponsiveContainer>
+                            <PieChart>
+                              <Pie
+                                data={kpiData.lostReasonsDistribution.map((lrd: any) => {
+                                  const labelMap: Record<string, string> = {
+                                    PRICE_TOO_HIGH: 'Preço Elevado',
+                                    GHOSTING: 'Sem contato',
+                                    MISSING_CONTENT: 'Conteúdo',
+                                    UNQUALIFIED: 'Sem perfil'
+                                  };
+                                  return {
+                                    name: labelMap[lrd.reason] || lrd.reason,
+                                    value: lrd.count
+                                  };
+                                })}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={35}
+                                outerRadius={55}
+                                paddingAngle={3}
+                                dataKey="value"
+                                stroke="none"
+                              >
+                                {kpiData.lostReasonsDistribution.map((_: any, index: number) => (
+                                  <Cell key={`cell-${index}`} fill={['#F87171', '#FB923C', '#FBBF24', '#60A5FA', '#A78BFA', '#34D399'][index % 6]} />
+                                ))}
+                              </Pie>
+                              <RechartsTooltip 
+                                contentStyle={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8 }}
+                                itemStyle={{ color: 'var(--text-primary)', fontSize: 11 }}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+
+                        {/* Detailed count list */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                          {kpiData.lostReasonsDistribution.map((lrd: any, index: number) => {
+                            const labelMap: Record<string, string> = {
+                              PRICE_TOO_HIGH: 'Preço Elevado',
+                              GHOSTING: 'Não respondeu / Sem contato',
+                              MISSING_CONTENT: 'Falta de conteúdo relevante',
+                              UNQUALIFIED: 'Não qualificado / Sem perfil'
+                            };
+                            const dotColor = ['#F87171', '#FB923C', '#FBBF24', '#60A5FA', '#A78BFA', '#34D399'][index % 6];
+                            return (
+                              <div key={lrd.reason} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: dotColor }}></span>
+                                  {labelMap[lrd.reason] || lrd.reason}
+                                </span>
+                                <span style={{ fontWeight: 'bold', color: 'var(--red)' }}>{lrd.count} descartes</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -2798,128 +3041,396 @@ export default function DashboardContent({
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'var(--overlay)',
           backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
         }}>
-          <div className="card" style={{ width: '100%', maxWidth: '550px', background: 'var(--surface)', padding: 32, maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <h3 style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 700 }}>
-                🎯 Criar Nova Campanha
-              </h3>
+          <div className="card" style={{ width: '90%', maxWidth: '980px', height: '85vh', background: 'var(--surface)', padding: 24, display: 'flex', flexDirection: 'column' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 700 }}>
+                  🎯 Lançador de Campanhas Avançadas
+                </h3>
+                <p className="label-sm">Siga os 3 passos para segmentar seu público, definir a equipe de atendimento e desenhar a régua.</p>
+              </div>
               <button 
                 onClick={() => setShowCampaignModal(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer' }}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 24, cursor: 'pointer' }}
               >
                 &times;
               </button>
             </div>
 
-            <form onSubmit={handleCreateCampaign} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Nome da Campanha:</label>
-                <input 
-                  type="text" 
-                  required
-                  value={campaignName} 
-                  onChange={(e) => setCampaignName(e.target.value)}
-                  placeholder="Ex: Campanha Resgate Congresso DentalPress"
-                  style={{
-                    width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
-                    border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
+            {/* Stepper Header */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
+              {[1, 2, 3].map((s) => (
+                <div 
+                  key={s} 
+                  style={{ 
+                    flex: 1, display: 'flex', alignItems: 'center', gap: 8, 
+                    color: wizardStep === s ? 'var(--accent)' : 'var(--text-secondary)',
+                    fontWeight: wizardStep === s ? 700 : 500, fontSize: 13
                   }}
-                />
-              </div>
+                >
+                  <span style={{ 
+                    display: 'inline-flex', width: 24, height: 24, borderRadius: '50%', 
+                    background: wizardStep === s ? 'var(--accent)' : 'var(--surface-raised)',
+                    color: wizardStep === s ? '#fff' : 'var(--text-secondary)',
+                    alignItems: 'center', justifyContent: 'center', fontSize: 11
+                  }}>
+                    {s}
+                  </span>
+                  <span>{s === 1 ? 'Segmentação' : s === 2 ? 'Roteamento' : 'Régua de Relacionamento'}</span>
+                </div>
+              ))}
+            </div>
 
-              <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>
-                  Régua de Comunicação (Flow Steps):
-                </label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {campaignSteps.map((step, index) => (
-                    <div key={index} style={{ border: '1px solid var(--border)', padding: 12, borderRadius: 8, background: 'var(--surface-raised)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                        <div style={{ flex: 1 }}>
-                          <label className="label-sm" style={{ fontSize: 10 }}>Dia Offset:</label>
-                          <input 
-                            type="number" 
-                            min="0"
-                            required
-                            value={step.dayOffset}
-                            onChange={(e) => {
-                              const copy = [...campaignSteps];
-                              copy[index].dayOffset = Number(e.target.value);
-                              setCampaignSteps(copy);
-                            }}
-                            style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                          />
-                        </div>
-                        <div style={{ flex: 2 }}>
-                          <label className="label-sm" style={{ fontSize: 10 }}>Canal:</label>
-                          <select 
-                            value={step.channel}
-                            onChange={(e) => {
-                              const copy = [...campaignSteps];
-                              copy[index].channel = e.target.value;
-                              setCampaignSteps(copy);
-                            }}
-                            style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                          >
-                            <option value="WHATSAPP">💬 WhatsApp</option>
-                            <option value="EMAIL">📧 E-mail</option>
-                            <option value="CALL">📞 Ligação</option>
-                          </select>
-                        </div>
-                        {campaignSteps.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setCampaignSteps(campaignSteps.filter((_, idx) => idx !== index))}
-                            style={{ background: 'none', border: 'none', color: 'var(--red)', fontSize: 16, cursor: 'pointer', marginTop: 16 }}
-                          >
-                            🗑️
-                          </button>
-                        )}
+            {/* Content Body */}
+            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 16 }}>
+              {wizardStep === 1 && (
+                <div className="animate-fadeUp" style={{ display: 'flex', gap: 24 }}>
+                  <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div>
+                      <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Nome da Campanha:</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={campaignName} 
+                        onChange={(e) => setCampaignName(e.target.value)}
+                        placeholder="Ex: Campanha Resgate Congresso DentalPress"
+                        style={{
+                          width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
+                          border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Onde Buscar (Base de Clientes):</label>
+                        <select 
+                          value={campaignPlansFilter}
+                          onChange={(e) => setCampaignPlansFilter(e.target.value as any)}
+                          style={{ width: '100%', padding: '10px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
+                        >
+                          <option value="all">🌐 Geral (Todos os Planos)</option>
+                          <option value="pagos">💵 Planos Pagos</option>
+                          <option value="cortesia">🎁 Planos Cortesia / Parcerias</option>
+                        </select>
                       </div>
                       <div>
-                        <label className="label-sm" style={{ fontSize: 10 }}>Template da Mensagem:</label>
-                        <textarea
-                          value={step.messageTemplate}
-                          onChange={(e) => {
-                            const copy = [...campaignSteps];
-                            copy[index].messageTemplate = e.target.value;
-                            setCampaignSteps(copy);
-                          }}
-                          placeholder="Olá {{nome}}, tudo bem? Notei que você..."
-                          style={{ width: '100%', height: 50, padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, resize: 'none', outline: 'none' }}
-                        />
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Status no DentalGO:</label>
+                        <select 
+                          value={campaignStatusFilter}
+                          onChange={(e) => setCampaignStatusFilter(e.target.value as any)}
+                          style={{ width: '100%', padding: '10px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
+                        >
+                          <option value="active">🟢 Assinantes Ativos</option>
+                          <option value="expired">🟡 Assinantes Expirados</option>
+                          <option value="canceled">🔴 Assinantes Cancelados</option>
+                        </select>
                       </div>
                     </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCampaignSteps([...campaignSteps, { dayOffset: campaignSteps[campaignSteps.length - 1].dayOffset + 2, channel: 'WHATSAPP', messageTemplate: '' }])}
-                  className="btn-action btn-action-outline"
-                  style={{ width: '100%', marginTop: 12, fontSize: 12, padding: '8px' }}
-                >
-                  ➕ Adicionar Passo na Régua
-                </button>
-              </div>
 
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 12 }}>
-                <button 
-                  type="button" 
-                  onClick={() => setShowCampaignModal(false)} 
-                  className="btn-action btn-action-outline"
-                  style={{ padding: '8px 16px' }}
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn-action btn-action-purple"
-                  style={{ padding: '8px 16px' }}
-                >
-                  Criar Campanha
-                </button>
-              </div>
-            </form>
+                    {campaignStatusFilter === 'expired' && (
+                      <div className="animate-fadeUp">
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Expirados há mais de (Dias):</label>
+                        <input 
+                          type="number" 
+                          value={campaignExpiryDays} 
+                          onChange={(e) => setCampaignExpiryDays(e.target.value)}
+                          placeholder="Ex: 30"
+                          style={{
+                            width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
+                            border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Estimated Target Card */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: 'linear-gradient(135deg, rgba(var(--accent-rgb), 0.05), transparent)', border: '1px solid var(--accent-light)', borderRadius: 12, padding: 24, textAlign: 'center' }}>
+                    <div style={{ fontSize: 40, marginBottom: 12 }}>🎯</div>
+                    <h4 style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>Público-Alvo Estimado</h4>
+                    {loadingEstimate ? (
+                      <div className="skeleton" style={{ height: 32, width: 120, margin: '8px 0' }}></div>
+                    ) : (
+                      <div style={{ fontSize: 32, fontWeight: 900, color: 'var(--accent)', margin: '8px 0' }}>
+                        {estimatedAudience}
+                      </div>
+                    )}
+                    <p style={{ fontSize: 11, color: 'var(--text-secondary)', maxWidth: 200 }}>
+                      leads atendem às regras lógicas configuradas ao lado.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {wizardStep === 2 && (
+                <div className="animate-fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 8 }}>
+                      Atribuição da Equipe (Selecione um ou mais operadores comerciais):
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, background: 'var(--surface-raised)', padding: 16, borderRadius: 8, border: '1px solid var(--border)' }}>
+                      {teamList.map((agent: any) => {
+                        const checked = campaignAgentIds.includes(agent.id);
+                        return (
+                          <label key={agent.id} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)' }}>
+                            <input 
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                if (checked) {
+                                  setCampaignAgentIds(campaignAgentIds.filter(id => id !== agent.id));
+                                } else {
+                                  setCampaignAgentIds([...campaignAgentIds, agent.id]);
+                                }
+                              }}
+                              style={{ width: 16, height: 16, cursor: 'pointer' }}
+                            />
+                            <span>{agent.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <div>
+                        <h4 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Limitador de Leads Comercial</h4>
+                        <p style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                          Evite sobrecarregar o Alert Center das vendedoras dividindo os leads ao longo dos dias.
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span className="label-sm" style={{ fontSize: 11 }}>{campaignLimitEnabled ? 'Ativo' : 'Inativo'}</span>
+                        <div 
+                          onClick={() => setCampaignLimitEnabled(!campaignLimitEnabled)}
+                          style={{
+                            width: 44, height: 24, borderRadius: 12, background: campaignLimitEnabled ? 'var(--accent)' : 'var(--border)',
+                            position: 'relative', cursor: 'pointer', transition: 'background 0.2s'
+                          }}
+                        >
+                          <div style={{
+                            width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                            position: 'absolute', top: 2, left: campaignLimitEnabled ? 22 : 2, transition: 'left 0.2s'
+                          }}></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {campaignLimitEnabled && (
+                      <div className="animate-fadeUp" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span className="label-sm">Distribuir no máximo</span>
+                        <input 
+                          type="number"
+                          min="1"
+                          value={campaignLimitPerDay}
+                          onChange={(e) => setCampaignLimitPerDay(e.target.value)}
+                          placeholder="Ex: 5"
+                          style={{
+                            width: 80, padding: '6px 12px', background: 'var(--surface-raised)',
+                            border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
+                          }}
+                        />
+                        <span className="label-sm">leads por vendedor por dia (Round-Robin).</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {wizardStep === 3 && (
+                <div className="animate-fadeUp" style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr', gap: 16, height: '48vh' }}>
+                  {/* React Flow Board */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface-raised)', position: 'relative', overflow: 'hidden' }}>
+                    <ReactFlow
+                      nodes={nodes}
+                      edges={edges}
+                      onNodesChange={(changes) => {
+                        setNodes(prev => {
+                          const updated = [...prev];
+                          for (const change of changes) {
+                            if (change.type === 'position' && change.id) {
+                              const idx = updated.findIndex(n => n.id === change.id);
+                              if (idx !== -1 && change.position) {
+                                updated[idx].position = change.position;
+                              }
+                            }
+                          }
+                          return updated;
+                        });
+                      }}
+                      onNodeClick={(_, node) => {
+                        setSelectedNodeId(node.id);
+                      }}
+                      fitView
+                    >
+                      <Controls />
+                      <Background color="var(--border)" gap={16} size={1} />
+                      
+                      <Panel position="top-left" style={{ display: 'flex', gap: 8 }}>
+                        <button 
+                          type="button"
+                          onClick={() => handleAddFlowStep('WHATSAPP')}
+                          className="btn-action btn-action-purple"
+                          style={{ fontSize: 11, padding: '4px 8px' }}
+                        >
+                          💬 + WhatsApp
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => handleAddFlowStep('CALL')}
+                          className="btn-action btn-action-outline"
+                          style={{ fontSize: 11, padding: '4px 8px' }}
+                        >
+                          📞 + Ligação
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => handleAddFlowStep('EMAIL')}
+                          className="btn-action btn-action-neu"
+                          style={{ fontSize: 11, padding: '4px 8px' }}
+                        >
+                          📧 + E-mail
+                        </button>
+                      </Panel>
+                    </ReactFlow>
+                  </div>
+
+                  {/* Sidebar Node Editor */}
+                  <div style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <h4 style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+                      🛠️ Configuração do Passo
+                    </h4>
+                    {selectedNodeId && selectedNodeId !== 'start' ? (
+                      (() => {
+                        const nodeIndex = nodes.findIndex(n => n.id === selectedNodeId);
+                        if (nodeIndex === -1) return null;
+                        const node = nodes[nodeIndex];
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
+                            <div>
+                              <span className="label-sm" style={{ fontSize: 10 }}>Canal de Ação:</span>
+                              <div style={{ fontWeight: 600, color: 'var(--accent)', fontSize: 13, marginTop: 2 }}>
+                                {node.data.channel === 'WHATSAPP' ? '💬 WhatsApp' : node.data.channel === 'CALL' ? '📞 Ligação Telefônica' : '📧 E-mail'}
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Dia de execução (Offset após entrada):</label>
+                              <input 
+                                type="number"
+                                min="0"
+                                value={node.data.dayOffset}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value) || 0;
+                                  setNodes(prev => {
+                                    const copy = [...prev];
+                                    copy[nodeIndex].data = {
+                                      ...copy[nodeIndex].data,
+                                      dayOffset: val,
+                                      label: `${node.data.channel === 'WHATSAPP' ? '💬' : node.data.channel === 'CALL' ? '📞' : '📧'} ${node.data.channel} (Dia ${val})`
+                                    };
+                                    return copy;
+                                  });
+                                }}
+                                style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                              />
+                            </div>
+
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                              <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Template ou Notas de Script:</label>
+                              <textarea 
+                                value={node.data.messageTemplate}
+                                onChange={(e) => {
+                                  setNodes(prev => {
+                                    const copy = [...prev];
+                                    copy[nodeIndex].data = {
+                                      ...copy[nodeIndex].data,
+                                      messageTemplate: e.target.value
+                                    };
+                                    return copy;
+                                  });
+                                }}
+                                placeholder="Olá {nome}, vimos que seu plano expirou..."
+                                style={{ width: '100%', flex: 1, minHeight: 120, padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, resize: 'none', outline: 'none' }}
+                              />
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNodes(prev => prev.filter(n => n.id !== selectedNodeId));
+                                setEdges(prev => prev.filter(e => e.source !== selectedNodeId && e.target !== selectedNodeId));
+                                setSelectedNodeId(null);
+                              }}
+                              className="btn-action btn-action-outline"
+                              style={{ color: 'var(--red)', borderColor: 'var(--red-light)', fontSize: 11, padding: 6 }}
+                            >
+                              🗑️ Remover Passo
+                            </button>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', color: 'var(--text-faint)', fontSize: 11, textAlign: 'center', padding: 20 }}>
+                        Selecione um nó de ação na régua para editar as regras, templates e dias de atraso.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Stepper Footer Controls */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <button 
+                type="button" 
+                onClick={() => {
+                  if (wizardStep > 1) {
+                    setWizardStep((wizardStep - 1) as any);
+                  } else {
+                    setShowCampaignModal(false);
+                  }
+                }} 
+                className="btn-action btn-action-outline"
+                style={{ padding: '8px 16px' }}
+              >
+                {wizardStep === 1 ? 'Cancelar' : '◀️ Voltar'}
+              </button>
+
+              <button 
+                type="button" 
+                onClick={async () => {
+                  if (wizardStep === 1) {
+                    if (!campaignName) {
+                      alert('Por favor, informe o nome da campanha.');
+                      return;
+                    }
+                    setWizardStep(2);
+                  } else if (wizardStep === 2) {
+                    if (campaignAgentIds.length === 0) {
+                      alert('Selecione pelo menos um operador para atendimento.');
+                      return;
+                    }
+                    if (nodes.length === 0) {
+                      setNodes([
+                        { id: 'start', type: 'input', data: { label: '🚀 Início: Entrada na Campanha' }, position: { x: 200, y: 50 }, deletable: false, style: { background: 'var(--accent-glow)', border: '1px solid var(--accent)', borderRadius: 8, fontWeight: 700 } }
+                      ]);
+                      setEdges([]);
+                    }
+                    setWizardStep(3);
+                  } else {
+                    await handleLaunchCampaignSubmit();
+                  }
+                }} 
+                className="btn-action btn-action-purple"
+                style={{ padding: '8px 20px' }}
+              >
+                {wizardStep === 3 ? '🚀 Lançar & Ativar Campanha' : 'Continuar ▶️'}
+              </button>
+            </div>
           </div>
         </div>
       )}

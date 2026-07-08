@@ -6,30 +6,44 @@ export class AssignCampaignLeadsUseCase {
       throw new Error('Pelo menos um operador deve ser selecionado para a distribuição da campanha.');
     }
 
-    // 1. Buscar a campanha e seus passos do fluxo
+    // 1. Buscar a campanha
     const campaign = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-      include: { flowSteps: true }
+      where: { id: campaignId }
     });
 
     if (!campaign) {
       throw new Error('Campanha não encontrada.');
     }
 
+    const limitPerDay = campaign.limitPerDay;
     const operatorCount = userIds.length;
-    const now = new Date();
-    const results: { externalPersonId: number; assigneeId: string }[] = [];
+    const results: { externalPersonId: number; assigneeId: string; joinedCampaignAt: Date }[] = [];
+
+    // Contador de atribuições por operador para aplicar o limitador diário
+    const operatorAssignments: Record<string, number> = {};
+    for (const uid of userIds) {
+      operatorAssignments[uid] = 0;
+    }
 
     for (let i = 0; i < externalPersonIds.length; i++) {
       const externalPersonId = externalPersonIds[i];
       const assigneeId = userIds[i % operatorCount];
+      const countForAgent = operatorAssignments[assigneeId]++;
 
-      // 2. Upsert do LeadState para vincular ao operador e campanha
+      // Calcular o joinedCampaignAt com base no limitPerDay
+      const joinedCampaignAt = new Date();
+      if (limitPerDay && limitPerDay > 0) {
+        const daysDelay = Math.floor(countForAgent / limitPerDay);
+        joinedCampaignAt.setDate(joinedCampaignAt.getDate() + daysDelay);
+      }
+
+      // 2. Upsert do LeadState para vincular ao operador, campanha e definir a data de entrada
       const leadState = await prisma.leadState.upsert({
         where: { externalPersonId },
         update: {
           assigneeId,
           campaignId,
+          joinedCampaignAt,
           stage: 'novo_cadastro', // Reinicia como "novo_cadastro" (Sem Contato) para o rodízio
           frozenUntil: null,      // Remove qualquer congelamento pré-existente
           freezeReason: null,
@@ -39,6 +53,7 @@ export class AssignCampaignLeadsUseCase {
           externalPersonId,
           assigneeId,
           campaignId,
+          joinedCampaignAt,
           stage: 'novo_cadastro',
         }
       });
@@ -51,24 +66,7 @@ export class AssignCampaignLeadsUseCase {
         }
       });
 
-      // 4. Criar os novos TaskAlerts para cada passo do fluxo
-      for (const step of campaign.flowSteps) {
-        const scheduledFor = new Date();
-        scheduledFor.setDate(now.getDate() + step.dayOffset);
-
-        await prisma.taskAlert.create({
-          data: {
-            leadStateId: leadState.id,
-            assignedToId: assigneeId,
-            stepId: step.id,
-            scheduledFor,
-            taskType: step.channel, // "WHATSAPP" | "EMAIL" | "CALL"
-            status: 'PENDING',
-          }
-        });
-      }
-
-      results.push({ externalPersonId, assigneeId });
+      results.push({ externalPersonId, assigneeId, joinedCampaignAt });
     }
 
     return results;

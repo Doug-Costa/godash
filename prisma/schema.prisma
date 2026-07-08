@@ -101,6 +101,7 @@ model LeadState {
   freezeReason      String?
   lostReason        String?
   campaignId        String?
+  joinedCampaignAt  DateTime?
 
   assignee     User?             @relation(fields: [assigneeId], references: [id])
   interactions LeadInteraction[]
@@ -190,13 +191,16 @@ model LeadPostSaleTask {
 }
 
 model Campaign {
-  id          String      @id @default(cuid())
-  name        String
-  status      String      @default("ACTIVE") // "ACTIVE" | "PAUSED" | "COMPLETED"
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  leads       LeadState[]
-  flowSteps   FlowStep[]
+  id             String      @id @default(cuid())
+  name           String
+  status         String      @default("ACTIVE") // "ACTIVE" | "PAUSED" | "COMPLETED"
+  targetCriteria String?
+  limitPerDay    Int?
+  flowGraph      String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  leads          LeadState[]
+  flowSteps      FlowStep[]
 }
 
 model FlowStep {
