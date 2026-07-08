@@ -128,6 +128,17 @@ export default function DashboardContent({
   const [freezeUntil, setFreezeUntil] = useState('');
   const [freezeReason, setFreezeReason] = useState('');
 
+  // Paginação e filtros do Alert Center
+  const [taskPage, setTaskPage] = useState(1);
+  const [orphanPage, setOrphanPage] = useState(1);
+  const [orphanMonth, setOrphanMonth] = useState('all');
+  const [expiringPage, setExpiringPage] = useState(1);
+  const [alertsPagination, setAlertsPagination] = useState({
+    taskAlerts: { page: 1, limit: 10, total: 0, totalPages: 1 },
+    orphanedLeads: { page: 1, limit: 10, total: 0, totalPages: 1 },
+    expiringLeads: { page: 1, limit: 10, total: 0, totalPages: 1 }
+  });
+
   // Load leads based on current filters
   const fetchLeads = async () => {
     setLoadingLeads(true);
@@ -178,10 +189,13 @@ export default function DashboardContent({
   const fetchAlerts = async () => {
     setLoadingAlerts(true);
     try {
-      const res = await fetch('/api/alerts');
+      const res = await fetch(`/api/alerts?taskPage=${taskPage}&taskLimit=10&orphanPage=${orphanPage}&orphanLimit=10&orphanMonth=${orphanMonth}&expiringPage=${expiringPage}&expiringLimit=10`);
       if (res.ok) {
         const json = await res.json();
         setAlertsData(json.data || { taskAlerts: [], orphanedLeads: [], expiringLeads: [] });
+        if (json.pagination) {
+          setAlertsPagination(json.pagination);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch alerts:', err);
@@ -240,6 +254,13 @@ export default function DashboardContent({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths, activeTab, selectedKpiCampaignId]);
+
+  useEffect(() => {
+    if (activeTab === 'alerts') {
+      fetchAlerts();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, taskPage, orphanPage, orphanMonth, expiringPage]);
 
   useEffect(() => {
     if (activeTab === 'cancelados') {
@@ -1594,8 +1615,10 @@ export default function DashboardContent({
         <div className="animate-fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {/* Section: Task Alerts */}
           <div className="card">
-            <div className="label" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              🔔 Tarefas Pendentes <span className="badge badge-down" style={{ fontSize: 11 }}>{alertsData.taskAlerts.length}</span>
+            <div className="label" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                🔔 Tarefas Pendentes <span className="badge badge-down" style={{ fontSize: 11 }}>{alertsPagination.taskAlerts.total}</span>
+              </div>
             </div>
             <p className="label-sm" style={{ marginBottom: 16 }}>Abaixo estão as réguas de comunicação ativas de suas campanhas que demandam contato hoje.</p>
 
@@ -1606,68 +1629,128 @@ export default function DashboardContent({
                 Sem tarefas pendentes para hoje. Bom trabalho!
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-                {alertsData.taskAlerts.map((alert: any) => (
-                  <div key={alert.id} style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                        <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{alert.personName}</span>
-                        <span className="badge badge-cyan" style={{ fontSize: 10 }}>{alert.taskType}</span>
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+                  {alertsData.taskAlerts.map((alert: any) => (
+                    <div key={alert.id} style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                          <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{alert.personName}</span>
+                          <span className="badge badge-cyan" style={{ fontSize: 10 }}>{alert.taskType}</span>
+                        </div>
+                        <div className="label-sm" style={{ fontSize: 11, marginTop: 4 }}>{alert.personEmail} &middot; {alert.personPhone}</div>
                       </div>
-                      <div className="label-sm" style={{ fontSize: 11, marginTop: 4 }}>{alert.personEmail} &middot; {alert.personPhone}</div>
-                    </div>
 
-                    {alert.renderedMessage && (
-                      <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic', borderLeft: '3px solid var(--accent)' }}>
-                        "{alert.renderedMessage}"
-                      </div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
-                      {alert.personPhone && (
-                        <a 
-                          href={formatWhatsappLink(alert.personPhone) || '#'}
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="btn-action btn-action-outline"
-                          style={{ flex: 1, textAlign: 'center', fontSize: 11, padding: '8px 4px', textDecoration: 'none', background: 'rgba(34, 197, 94, 0.1)', color: 'var(--green)', border: '1px solid var(--green)' }}
-                        >
-                          🟢 WhatsApp
-                        </a>
+                      {alert.renderedMessage && (
+                        <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic', borderLeft: '3px solid var(--accent)' }}>
+                          "{alert.renderedMessage}"
+                        </div>
                       )}
+
+                      <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+                        {alert.personPhone && (
+                          <a 
+                            href={formatWhatsappLink(alert.personPhone) || '#'}
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="btn-action btn-action-outline"
+                            style={{ flex: 1, textAlign: 'center', fontSize: 11, padding: '8px 4px', textDecoration: 'none', background: 'rgba(34, 197, 94, 0.1)', color: 'var(--green)', border: '1px solid var(--green)' }}
+                          >
+                            🟢 WhatsApp
+                          </a>
+                        )}
+                        <button
+                          onClick={() => {
+                            const note = prompt('Alguma observação para a conclusão desta tarefa?');
+                            if (note !== null) handleCompleteAlert(alert.id, note);
+                          }}
+                          className="btn-action btn-action-purple"
+                          style={{ flex: 1, fontSize: 11, padding: '8px 4px' }}
+                        >
+                          ✅ Concluir
+                        </button>
+                        <button
+                          onClick={() => {
+                            const note = prompt('Por que deseja pular esta tarefa?');
+                            if (note !== null) handleSkipAlert(alert.id, note);
+                          }}
+                          className="btn-action btn-action-outline"
+                          style={{ fontSize: 11, padding: '8px 4px', color: 'var(--red)', border: '1px solid var(--red)' }}
+                        >
+                          Pular
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Task alerts pagination */}
+                {alertsPagination.taskAlerts.totalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      Mostrando página {taskPage} de {alertsPagination.taskAlerts.totalPages} (Total de {alertsPagination.taskAlerts.total} tarefas)
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
                       <button
-                        onClick={() => {
-                          const note = prompt('Alguma observação para a conclusão desta tarefa?');
-                          if (note !== null) handleCompleteAlert(alert.id, note);
-                        }}
-                        className="btn-action btn-action-purple"
-                        style={{ flex: 1, fontSize: 11, padding: '8px 4px' }}
+                        disabled={taskPage === 1}
+                        onClick={() => setTaskPage(prev => Math.max(1, prev - 1))}
+                        className="btn-action btn-action-outline"
+                        style={{ padding: '6px 12px', fontSize: 12, opacity: taskPage === 1 ? 0.5 : 1, cursor: taskPage === 1 ? 'not-allowed' : 'pointer' }}
                       >
-                        ✅ Concluir
+                        ◀️ Anterior
                       </button>
                       <button
-                        onClick={() => {
-                          const note = prompt('Por que deseja pular esta tarefa?');
-                          if (note !== null) handleSkipAlert(alert.id, note);
-                        }}
+                        disabled={taskPage === alertsPagination.taskAlerts.totalPages}
+                        onClick={() => setTaskPage(prev => Math.min(alertsPagination.taskAlerts.totalPages, prev + 1))}
                         className="btn-action btn-action-outline"
-                        style={{ fontSize: 11, padding: '8px 4px', color: 'var(--red)', border: '1px solid var(--red)' }}
+                        style={{ padding: '6px 12px', fontSize: 12, opacity: taskPage === alertsPagination.taskAlerts.totalPages ? 0.5 : 1, cursor: taskPage === alertsPagination.taskAlerts.totalPages ? 'not-allowed' : 'pointer' }}
                       >
-                        Pular
+                        Próxima ▶️
                       </button>
                     </div>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </div>
 
           {/* Section: Orphaned Leads */}
           <div className="card">
             <div className="label" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              🛒 Carrinhos Abandonados (Leads Livres) <span className="badge badge-cyan" style={{ fontSize: 11 }}>{alertsData.orphanedLeads.length}</span>
+              🛒 Carrinhos Abandonados (Leads Livres) <span className="badge badge-cyan" style={{ fontSize: 11 }}>{alertsPagination.orphanedLeads.total}</span>
             </div>
             <p className="label-sm" style={{ marginBottom: 16 }}>Leads sem plano ativo e sem nenhum operador comercial atribuído. Assuma para atender.</p>
+
+            {/* Selector for Month / All Months */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, background: 'var(--surface-raised)', padding: 12, borderRadius: 8 }}>
+              <span className="label-sm" style={{ fontWeight: 600 }}>Período de Cadastro:</span>
+              <select
+                value={orphanMonth}
+                onChange={(e) => {
+                  setOrphanMonth(e.target.value);
+                  setOrphanPage(1);
+                }}
+                style={{
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-primary)',
+                  borderRadius: 6,
+                  padding: '6px 12px',
+                  fontSize: 13,
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="all">Todos os Meses (Geral)</option>
+                <option value="2026-07">Julho 2026</option>
+                <option value="2026-06">Junho 2026</option>
+                <option value="2026-05">Maio 2026</option>
+                <option value="2026-04">Abril 2026</option>
+                <option value="2026-03">Março 2026</option>
+                <option value="2026-02">Fevereiro 2026</option>
+                <option value="2026-01">Janeiro 2026</option>
+              </select>
+            </div>
 
             {loadingAlerts ? (
               <div className="skeleton" style={{ height: 100, width: '100%' }}></div>
@@ -1676,45 +1759,74 @@ export default function DashboardContent({
                 Sem oportunidades órfãs de carrinho abandonado no momento.
               </div>
             ) : (
-              <div className="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Data Cadastro</th>
-                      <th>Nome</th>
-                      <th>Email</th>
-                      <th>Telefone</th>
-                      <th style={{ textAlign: 'center' }}>Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {alertsData.orphanedLeads.map((lead: any) => (
-                      <tr key={lead.id}>
-                        <td>{new Date(lead.createdAt).toLocaleDateString('pt-BR')}</td>
-                        <td>{lead.fullName}</td>
-                        <td>{lead.email}</td>
-                        <td>{lead.phoneNumber || 'Sem fone'}</td>
-                        <td style={{ textAlign: 'center' }}>
-                          <button
-                            onClick={() => handleClaimOrphaned(lead.id)}
-                            className="btn-action btn-action-purple"
-                            style={{ fontSize: 11, padding: '6px 12px' }}
-                          >
-                            ⚡ Atender Lead
-                          </button>
-                        </td>
+              <>
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Data Cadastro</th>
+                        <th>Nome</th>
+                        <th>Email</th>
+                        <th>Telefone</th>
+                        <th style={{ textAlign: 'center' }}>Ação</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {alertsData.orphanedLeads.map((lead: any) => (
+                        <tr key={lead.id}>
+                          <td>{new Date(lead.createdAt).toLocaleDateString('pt-BR')}</td>
+                          <td>{lead.fullName}</td>
+                          <td>{lead.email}</td>
+                          <td>{lead.phoneNumber || 'Sem fone'}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              onClick={() => handleClaimOrphaned(lead.id)}
+                              className="btn-action btn-action-purple"
+                              style={{ fontSize: 11, padding: '6px 12px' }}
+                            >
+                              ⚡ Atender Lead
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Orphaned leads pagination */}
+                {alertsPagination.orphanedLeads.totalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      Mostrando página {orphanPage} de {alertsPagination.orphanedLeads.totalPages} (Total de {alertsPagination.orphanedLeads.total} carrinhos)
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        disabled={orphanPage === 1}
+                        onClick={() => setOrphanPage(prev => Math.max(1, prev - 1))}
+                        className="btn-action btn-action-outline"
+                        style={{ padding: '6px 12px', fontSize: 12, opacity: orphanPage === 1 ? 0.5 : 1, cursor: orphanPage === 1 ? 'not-allowed' : 'pointer' }}
+                      >
+                        ◀️ Anterior
+                      </button>
+                      <button
+                        disabled={orphanPage === alertsPagination.orphanedLeads.totalPages}
+                        onClick={() => setOrphanPage(prev => Math.min(alertsPagination.orphanedLeads.totalPages, prev + 1))}
+                        className="btn-action btn-action-outline"
+                        style={{ padding: '6px 12px', fontSize: 12, opacity: orphanPage === alertsPagination.orphanedLeads.totalPages ? 0.5 : 1, cursor: orphanPage === alertsPagination.orphanedLeads.totalPages ? 'not-allowed' : 'pointer' }}
+                      >
+                        Próxima ▶️
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
           {/* Section: Expiring Leads */}
           <div className="card">
             <div className="label" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              ⏳ Planos a Vencer (Expiração Próxima) <span className="badge badge-down" style={{ fontSize: 11 }}>{alertsData.expiringLeads.length}</span>
+              ⏳ Planos a Vencer (Expiração Próxima) <span className="badge badge-down" style={{ fontSize: 11 }}>{alertsPagination.expiringLeads.total}</span>
             </div>
             <p className="label-sm" style={{ marginBottom: 16 }}>Assinaturas ativas prestes a vencer nos próximos 30 dias e que estão sem operador. Assuma para renovar.</p>
 
@@ -1725,42 +1837,71 @@ export default function DashboardContent({
                 Nenhuma assinatura próxima da expiração sem operador no momento.
               </div>
             ) : (
-              <div className="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Vence em</th>
-                      <th>Cliente</th>
-                      <th>Email</th>
-                      <th>Telefone</th>
-                      <th>Plano Atual</th>
-                      <th style={{ textAlign: 'center' }}>Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {alertsData.expiringLeads.map((lead: any) => (
-                      <tr key={lead.id}>
-                        <td style={{ fontWeight: 'bold', color: 'var(--red)' }}>
-                          {new Date(lead.expiresIn).toLocaleDateString('pt-BR')}
-                        </td>
-                        <td>{lead.fullName}</td>
-                        <td>{lead.email}</td>
-                        <td>{lead.phoneNumber || 'Sem fone'}</td>
-                        <td>{lead.planTitle}</td>
-                        <td style={{ textAlign: 'center' }}>
-                          <button
-                            onClick={() => handleClaimOrphaned(lead.id)}
-                            className="btn-action btn-action-purple"
-                            style={{ fontSize: 11, padding: '6px 12px' }}
-                          >
-                            ⚡ Atender Lead
-                          </button>
-                        </td>
+              <>
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Vence em</th>
+                        <th>Cliente</th>
+                        <th>Email</th>
+                        <th>Telefone</th>
+                        <th>Plano Atual</th>
+                        <th style={{ textAlign: 'center' }}>Ação</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {alertsData.expiringLeads.map((lead: any) => (
+                        <tr key={lead.id}>
+                          <td style={{ fontWeight: 'bold', color: 'var(--red)' }}>
+                            {new Date(lead.expiresIn).toLocaleDateString('pt-BR')}
+                          </td>
+                          <td>{lead.fullName}</td>
+                          <td>{lead.email}</td>
+                          <td>{lead.phoneNumber || 'Sem fone'}</td>
+                          <td>{lead.planTitle}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              onClick={() => handleClaimOrphaned(lead.id)}
+                              className="btn-action btn-action-purple"
+                              style={{ fontSize: 11, padding: '6px 12px' }}
+                            >
+                              ⚡ Atender Lead
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Expiring leads pagination */}
+                {alertsPagination.expiringLeads.totalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      Mostrando página {expiringPage} de {alertsPagination.expiringLeads.totalPages} (Total de {alertsPagination.expiringLeads.total} assinaturas)
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        disabled={expiringPage === 1}
+                        onClick={() => setExpiringPage(prev => Math.max(1, prev - 1))}
+                        className="btn-action btn-action-outline"
+                        style={{ padding: '6px 12px', fontSize: 12, opacity: expiringPage === 1 ? 0.5 : 1, cursor: expiringPage === 1 ? 'not-allowed' : 'pointer' }}
+                      >
+                        ◀️ Anterior
+                      </button>
+                      <button
+                        disabled={expiringPage === alertsPagination.expiringLeads.totalPages}
+                        onClick={() => setExpiringPage(prev => Math.min(alertsPagination.expiringLeads.totalPages, prev + 1))}
+                        className="btn-action btn-action-outline"
+                        style={{ padding: '6px 12px', fontSize: 12, opacity: expiringPage === alertsPagination.expiringLeads.totalPages ? 0.5 : 1, cursor: expiringPage === alertsPagination.expiringLeads.totalPages ? 'not-allowed' : 'pointer' }}
+                      >
+                        Próxima ▶️
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

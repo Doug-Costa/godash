@@ -3,7 +3,7 @@ import prisma from '@/lib/prisma';
 import pool from '@/lib/db';
 import { auth } from '@/auth';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await auth();
     if (!session || !session.user?.id) {
@@ -11,8 +11,31 @@ export async function GET() {
     }
 
     const userId = session.user.id;
+    const { searchParams } = new URL(request.url);
 
-    // 1. TaskAlerts do Usuário
+    // Parâmetros de Paginação
+    const taskPage = Math.max(1, Number(searchParams.get('taskPage') || 1));
+    const taskLimit = Math.max(1, Number(searchParams.get('taskLimit') || 10));
+    const taskOffset = (taskPage - 1) * taskLimit;
+
+    const orphanPage = Math.max(1, Number(searchParams.get('orphanPage') || 1));
+    const orphanLimit = Math.max(1, Number(searchParams.get('orphanLimit') || 10));
+    const orphanOffset = (orphanPage - 1) * orphanLimit;
+    const orphanMonth = searchParams.get('orphanMonth') || 'all';
+
+    const expiringPage = Math.max(1, Number(searchParams.get('expiringPage') || 1));
+    const expiringLimit = Math.max(1, Number(searchParams.get('expiringLimit') || 10));
+    const expiringOffset = (expiringPage - 1) * expiringLimit;
+
+    // 1. TaskAlerts do Usuário (Prisma - SQLite)
+    const taskAlertsCount = await prisma.taskAlert.count({
+      where: {
+        assignedToId: userId,
+        status: 'PENDING',
+        scheduledFor: { lte: new Date() }
+      }
+    });
+
     const alerts = await prisma.taskAlert.findMany({
       where: {
         assignedToId: userId,
@@ -23,7 +46,9 @@ export async function GET() {
         leadState: true,
         flowStep: true
       },
-      orderBy: { scheduledFor: 'asc' }
+      orderBy: { scheduledFor: 'asc' },
+      skip: taskOffset,
+      take: taskLimit
     });
 
     // Enriquecer TaskAlerts com dados do MySQL
@@ -51,34 +76,55 @@ export async function GET() {
     }
 
     // 2. Carrinhos Abandonados (Leads Órfãos)
-    const [orphans] = await pool.query(`
-      SELECT p.id, p.fullName, p.email, p.phoneNumber, p.createdAt 
+    // Buscamos quais leads já estão atribuídos a algum operador no SQLite
+    const assignedStates = await prisma.leadState.findMany({
+      where: { assigneeId: { not: null } },
+      select: { externalPersonId: true }
+    });
+    const assignedIds = assignedStates.map(s => s.externalPersonId);
+
+    let orphanBaseQuery = `
       FROM people p
       WHERE NOT EXISTS (
         SELECT 1 FROM subscriptions s 
         WHERE s.personId = p.id AND s.status = 'active'
       )
-      ORDER BY p.createdAt DESC
-      LIMIT 100
-    `);
+    `;
+    const orphanParams: any[] = [];
 
-    let orphanedLeads: any[] = [];
-    if ((orphans as any[]).length > 0) {
-      const orphanIds = (orphans as any[]).map(o => o.id);
-      const assignedLeadStates = await prisma.leadState.findMany({
-        where: {
-          externalPersonId: { in: orphanIds },
-          assigneeId: { not: null }
-        },
-        select: { externalPersonId: true }
-      });
-      const assignedIdsSet = new Set(assignedLeadStates.map(l => l.externalPersonId));
-      orphanedLeads = (orphans as any[]).filter(o => !assignedIdsSet.has(o.id));
+    if (assignedIds.length > 0) {
+      orphanBaseQuery += ` AND p.id NOT IN (?)`;
+      orphanParams.push(assignedIds);
     }
 
+    if (orphanMonth && orphanMonth !== 'all' && orphanMonth !== '') {
+      orphanBaseQuery += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
+      orphanParams.push(orphanMonth);
+    }
+
+    // Contar total de carrinhos abandonados
+    const [countOrphansRows] = await pool.query(`SELECT COUNT(*) as total ${orphanBaseQuery}`, orphanParams);
+    const orphanedCount = (countOrphansRows as any[])[0]?.total || 0;
+
+    // Buscar carrinhos abandonados paginados
+    const selectOrphansQuery = `
+      SELECT p.id, p.fullName, p.email, p.phoneNumber, p.createdAt 
+      ${orphanBaseQuery}
+      ORDER BY p.createdAt DESC
+      LIMIT ? OFFSET ?
+    `;
+    const [orphans] = await pool.query(selectOrphansQuery, [...orphanParams, orphanLimit, orphanOffset]);
+    const orphanedLeads = orphans as any[];
+
     // 3. Clientes à expirar (Assinaturas expirando nos próximos 30 dias que estão sem operador atribuído)
-    const [expiringRows] = await pool.query(`
-      SELECT p.id, p.fullName, p.email, p.phoneNumber, COALESCE(s.isValidUntil, s.expiresIn) as expiresIn, pl.title as planTitle
+    // Buscamos quais leads já estão atribuídos a algum operador no SQLite
+    const assignedExpiringStates = await prisma.leadState.findMany({
+      where: { assigneeId: { not: null } },
+      select: { externalPersonId: true }
+    });
+    const assignedExpiringIds = assignedExpiringStates.map(s => s.externalPersonId);
+
+    let expiringBaseQuery = `
       FROM subscriptions s
       INNER JOIN people p ON s.personId = p.id
       INNER JOIN plans pl ON s.planId = pl.id
@@ -86,21 +132,27 @@ export async function GET() {
         AND COALESCE(s.isValidUntil, s.expiresIn) IS NOT NULL
         AND COALESCE(s.isValidUntil, s.expiresIn) >= CURDATE()
         AND COALESCE(s.isValidUntil, s.expiresIn) <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
-    `);
+    `;
+    const expiringParams: any[] = [];
 
-    let expiringLeads: any[] = [];
-    if ((expiringRows as any[]).length > 0) {
-      const expiringIds = (expiringRows as any[]).map(e => e.id);
-      const assignedLeadStates = await prisma.leadState.findMany({
-        where: {
-          externalPersonId: { in: expiringIds },
-          assigneeId: { not: null }
-        },
-        select: { externalPersonId: true }
-      });
-      const assignedIdsSet = new Set(assignedLeadStates.map(l => l.externalPersonId));
-      expiringLeads = (expiringRows as any[]).filter(e => !assignedIdsSet.has(e.id));
+    if (assignedExpiringIds.length > 0) {
+      expiringBaseQuery += ` AND p.id NOT IN (?)`;
+      expiringParams.push(assignedExpiringIds);
     }
+
+    // Contar total de planos expirando
+    const [countExpiringRows] = await pool.query(`SELECT COUNT(*) as total ${expiringBaseQuery}`, expiringParams);
+    const expiringCount = (countExpiringRows as any[])[0]?.total || 0;
+
+    // Buscar planos expirando paginados
+    const selectExpiringQuery = `
+      SELECT p.id, p.fullName, p.email, p.phoneNumber, COALESCE(s.isValidUntil, s.expiresIn) as expiresIn, pl.title as planTitle
+      ${expiringBaseQuery}
+      ORDER BY COALESCE(s.isValidUntil, s.expiresIn) ASC
+      LIMIT ? OFFSET ?
+    `;
+    const [expiringRows] = await pool.query(selectExpiringQuery, [...expiringParams, expiringLimit, expiringOffset]);
+    const expiringLeads = expiringRows as any[];
 
     return NextResponse.json({
       success: true,
@@ -108,6 +160,26 @@ export async function GET() {
         taskAlerts: enrichedAlerts,
         orphanedLeads,
         expiringLeads
+      },
+      pagination: {
+        taskAlerts: {
+          page: taskPage,
+          limit: taskLimit,
+          total: taskAlertsCount,
+          totalPages: Math.ceil(taskAlertsCount / taskLimit)
+        },
+        orphanedLeads: {
+          page: orphanPage,
+          limit: orphanLimit,
+          total: orphanedCount,
+          totalPages: Math.ceil(orphanedCount / orphanLimit)
+        },
+        expiringLeads: {
+          page: expiringPage,
+          limit: expiringLimit,
+          total: expiringCount,
+          totalPages: Math.ceil(expiringCount / expiringLimit)
+        }
       }
     });
 
