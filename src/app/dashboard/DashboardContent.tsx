@@ -1716,13 +1716,13 @@ export default function DashboardContent({
             <div className="label" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
               ⏳ Planos a Vencer (Expiração Próxima) <span className="badge badge-down" style={{ fontSize: 11 }}>{alertsData.expiringLeads.length}</span>
             </div>
-            <p className="label-sm" style={{ marginBottom: 16 }}>Clientes sob seu atendimento cujas assinaturas vencem nos próximos 30 dias. Excelente oportunidade de renovação.</p>
+            <p className="label-sm" style={{ marginBottom: 16 }}>Assinaturas ativas prestes a vencer nos próximos 30 dias e que estão sem operador. Assuma para renovar.</p>
 
             {loadingAlerts ? (
               <div className="skeleton" style={{ height: 100, width: '100%' }}></div>
             ) : alertsData.expiringLeads.length === 0 ? (
               <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-faint)', border: '1px dashed var(--border)', borderRadius: 8 }}>
-                Nenhuma assinatura próxima da expiração para os clientes atribuídos a você.
+                Nenhuma assinatura próxima da expiração sem operador no momento.
               </div>
             ) : (
               <div className="table-container">
@@ -1749,18 +1749,11 @@ export default function DashboardContent({
                         <td>{lead.planTitle}</td>
                         <td style={{ textAlign: 'center' }}>
                           <button
-                            onClick={() => {
-                              const stateLead = leads.find(l => l.externalPersonId === lead.id);
-                              if (stateLead) {
-                                openTimeline(stateLead);
-                              } else {
-                                openTimeline({ id: lead.id, externalPersonId: lead.id, fullName: lead.fullName, email: lead.email, phoneNumber: lead.phoneNumber, stage: 'novo_cadastro' });
-                              }
-                            }}
-                            className="btn-action btn-action-outline"
+                            onClick={() => handleClaimOrphaned(lead.id)}
+                            className="btn-action btn-action-purple"
                             style={{ fontSize: 11, padding: '6px 12px' }}
                           >
-                            📖 Histórico / Timeline
+                            ⚡ Atender Lead
                           </button>
                         </td>
                       </tr>

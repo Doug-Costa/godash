@@ -76,27 +76,30 @@ export async function GET() {
       orphanedLeads = (orphans as any[]).filter(o => !assignedIdsSet.has(o.id));
     }
 
-    // 3. Clientes à expirar (Assinaturas expirando nos próximos 30 dias que pertencem a mim)
-    const myLeads = await prisma.leadState.findMany({
-      where: { assigneeId: userId },
-      select: { externalPersonId: true }
-    });
+    // 3. Clientes à expirar (Assinaturas expirando nos próximos 30 dias que estão sem operador atribuído)
+    const [expiringRows] = await pool.query(`
+      SELECT p.id, p.fullName, p.email, p.phoneNumber, s.expiresIn, pl.title as planTitle
+      FROM subscriptions s
+      INNER JOIN people p ON s.personId = p.id
+      INNER JOIN plans pl ON s.planId = pl.id
+      WHERE s.status = 'active'
+        AND s.expiresIn IS NOT NULL
+        AND s.expiresIn >= CURDATE()
+        AND s.expiresIn <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+    `);
 
     let expiringLeads: any[] = [];
-    if (myLeads.length > 0) {
-      const myLeadIds = myLeads.map(l => l.externalPersonId);
-      const [expiring] = await pool.query(`
-        SELECT p.id, p.fullName, p.email, p.phoneNumber, s.expiresIn, pl.title as planTitle
-        FROM subscriptions s
-        INNER JOIN people p ON s.personId = p.id
-        INNER JOIN plans pl ON s.planId = pl.id
-        WHERE s.status = 'active'
-          AND s.expiresIn IS NOT NULL
-          AND s.expiresIn >= CURDATE()
-          AND s.expiresIn <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
-          AND p.id IN (?)
-      `, [myLeadIds]);
-      expiringLeads = expiring as any[];
+    if ((expiringRows as any[]).length > 0) {
+      const expiringIds = (expiringRows as any[]).map(e => e.id);
+      const assignedLeadStates = await prisma.leadState.findMany({
+        where: {
+          externalPersonId: { in: expiringIds },
+          assigneeId: { not: null }
+        },
+        select: { externalPersonId: true }
+      });
+      const assignedIdsSet = new Set(assignedLeadStates.map(l => l.externalPersonId));
+      expiringLeads = (expiringRows as any[]).filter(e => !assignedIdsSet.has(e.id));
     }
 
     return NextResponse.json({
