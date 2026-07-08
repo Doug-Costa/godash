@@ -2637,7 +2637,27 @@ export default function DashboardContent({
                 <h3 style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontSize: '1.4rem', fontWeight: 700 }}>
                   Ficha de Atendimento Comercial
                 </h3>
-                <p className="label-sm" style={{ marginTop: 2 }}>{selectedLead.fullName} &middot; <span style={{ color: 'var(--text-muted)' }}>{selectedLead.email}</span></p>
+                <p className="label-sm" style={{ marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span>👤 {selectedLead.fullName}</span>
+                  <span>&bull;</span>
+                  <span>📧 {selectedLead.email || 'Sem e-mail'}</span>
+                  <span>&bull;</span>
+                  {selectedLead.phoneNumber ? (
+                    <span>
+                      📞{' '}
+                      <a 
+                        href={formatWhatsappLink(selectedLead.phoneNumber) || '#'} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}
+                      >
+                        {selectedLead.phoneNumber} 🟢 (WhatsApp)
+                      </a>
+                    </span>
+                  ) : (
+                    <span>📞 Sem telefone</span>
+                  )}
+                </p>
               </div>
               <button 
                 onClick={() => setShowTimelineModal(false)}
