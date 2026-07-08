@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const lossReason = searchParams.get('lossReason');
   const tag = searchParams.get('tag');
 
-  const targetMonth = month || new Date().toISOString().slice(0, 7);
+  const targetMonth = !month || month === 'all' ? new Date().toISOString().slice(0, 7) : month;
 
   try {
     let query = `
@@ -71,7 +71,7 @@ export async function GET(request: Request) {
     }
 
     // 2. Filter by date/month (MySQL)
-    if (month) {
+    if (month && month !== 'all') {
       query += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
       params.push(month);
     }
@@ -86,10 +86,10 @@ export async function GET(request: Request) {
       }
     }
 
-    // 4. Filter by name/email (MySQL)
+    // 4. Filter by name/email/phone (MySQL)
     if (search) {
-      query += ` AND (p.fullName LIKE ? OR p.email LIKE ?)`;
-      params.push(`%${search}%`, `%${search}%`);
+      query += ` AND (p.fullName LIKE ? OR p.email LIKE ? OR p.phoneNumber LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
     query += ` ORDER BY p.createdAt DESC LIMIT 1000`;

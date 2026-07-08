@@ -143,11 +143,15 @@ export default function DashboardContent({
   const [plansFilter, setPlansFilter] = useState('all');
   const [plansPage, setPlansPage] = useState(1);
 
+  // Filtro de período do Kanban
+  const [kanbanFilterAllMonths, setKanbanFilterAllMonths] = useState(false);
+
   // Load leads based on current filters
   const fetchLeads = async () => {
     setLoadingLeads(true);
     try {
-      let url = `/api/leads?month=${filterMonth}`;
+      const monthParam = (activeTab === 'kanban' && kanbanFilterAllMonths) ? 'all' : filterMonth;
+      let url = `/api/leads?month=${monthParam}`;
       if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
       if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
       if (filterStage !== '') url += `&stage=${filterStage}`;
@@ -257,7 +261,7 @@ export default function DashboardContent({
       fetchKpis();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths, activeTab, selectedKpiCampaignId]);
+  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId]);
 
   useEffect(() => {
     if (activeTab === 'alerts') {
@@ -1035,6 +1039,22 @@ export default function DashboardContent({
 
             {/* Kanban Filter Toolbar */}
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Search leads by name, email or phone */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="label-sm">Buscar:</span>
+                <input 
+                  type="text" 
+                  value={filterSearch} 
+                  onChange={(e) => setFilterSearch(e.target.value)}
+                  placeholder="Nome, e-mail ou fone..."
+                  style={{
+                    padding: '6px 12px', background: 'var(--surface-raised)',
+                    border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13,
+                    width: '180px'
+                  }}
+                />
+              </div>
+
               {isAdmin && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span className="label-sm">Agente:</span>
@@ -1068,9 +1088,23 @@ export default function DashboardContent({
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="label-sm">Mês:</span>
-                <MonthSelector currentMonth={filterMonth} />
+                <span className="label-sm">Período:</span>
+                <select
+                  value={kanbanFilterAllMonths ? 'all' : 'month'}
+                  onChange={(e) => setKanbanFilterAllMonths(e.target.value === 'all')}
+                  style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
+                >
+                  <option value="month">Filtrar por Mês</option>
+                  <option value="all">Geral (Todos os Meses)</option>
+                </select>
               </div>
+
+              {!kanbanFilterAllMonths && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="label-sm">Mês:</span>
+                  <MonthSelector currentMonth={filterMonth} />
+                </div>
+              )}
             </div>
           </div>
 
