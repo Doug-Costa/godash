@@ -139,6 +139,10 @@ export default function DashboardContent({
     expiringLeads: { page: 1, limit: 10, total: 0, totalPages: 1 }
   });
 
+  // Filtros e paginação da tabela de assinantes por plano
+  const [plansFilter, setPlansFilter] = useState('all');
+  const [plansPage, setPlansPage] = useState(1);
+
   // Load leads based on current filters
   const fetchLeads = async () => {
     setLoadingLeads(true);
@@ -884,29 +888,105 @@ export default function DashboardContent({
             
             {/* Top plans table */}
             <div className="card">
-              <div className="label" style={{ marginBottom: 16 }}>Quantidade de Assinantes por Plano</div>
-              <div className="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Nome do Plano</th>
-                      <th>Valor (Mensalidade)</th>
-                      <th>Intervalo</th>
-                      <th style={{ textAlign: 'right' }}>Assinantes Ativos</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {((users?.usersByPlan || []) as any[]).map((p, i) => (
-                      <tr key={i}>
-                        <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.planTitle}</td>
-                        <td>{formatBRL(p.price)}</td>
-                        <td><span className="badge badge-neu">{p.intervalType}</span></td>
-                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>{p.subscriberCount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              {(() => {
+                const filteredPlans = ((users?.usersByPlan || []) as any[]).filter(p => {
+                  if (plansFilter === 'pagos') return p.price > 100;
+                  if (plansFilter === 'cortesia') return p.price <= 100;
+                  return true;
+                });
+                const totalFiltered = filteredPlans.length;
+                const plansLimit = 10;
+                const plansTotalPages = Math.ceil(totalFiltered / plansLimit);
+                const paginatedPlans = filteredPlans.slice((plansPage - 1) * plansLimit, plansPage * plansLimit);
+
+                return (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+                      <div className="label">Quantidade de Assinantes por Plano</div>
+                      <select
+                        value={plansFilter}
+                        onChange={(e) => {
+                          setPlansFilter(e.target.value);
+                          setPlansPage(1);
+                        }}
+                        style={{
+                          background: 'var(--surface-raised)',
+                          border: '1px solid var(--border)',
+                          color: 'var(--text-primary)',
+                          borderRadius: 8,
+                          padding: '6px 12px',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          outline: 'none'
+                        }}
+                      >
+                        <option value="all">🌐 Geral (Todos)</option>
+                        <option value="pagos">💵 Planos Pagos</option>
+                        <option value="cortesia">🎁 Planos Cortesia</option>
+                      </select>
+                    </div>
+
+                    <div className="table-container">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Nome do Plano</th>
+                            <th>Valor (Mensalidade)</th>
+                            <th>Intervalo</th>
+                            <th style={{ textAlign: 'right' }}>Assinantes Ativos</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedPlans.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                                Nenhum plano encontrado correspondente ao filtro.
+                              </td>
+                            </tr>
+                          ) : (
+                            paginatedPlans.map((p, i) => (
+                              <tr key={i}>
+                                <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.planTitle}</td>
+                                <td>{formatBRL(p.price)}</td>
+                                <td><span className="badge badge-neu">{p.intervalType}</span></td>
+                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>{p.subscriberCount}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination */}
+                    {plansTotalPages > 1 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                          Página {plansPage} de {plansTotalPages} ({totalFiltered} planos)
+                        </span>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            disabled={plansPage === 1}
+                            onClick={() => setPlansPage(prev => Math.max(1, prev - 1))}
+                            className="btn-action btn-action-outline"
+                            style={{ padding: '6px 12px', fontSize: 12, opacity: plansPage === 1 ? 0.5 : 1, cursor: plansPage === 1 ? 'not-allowed' : 'pointer' }}
+                          >
+                            ◀️ Anterior
+                          </button>
+                          <button
+                            disabled={plansPage === plansTotalPages}
+                            onClick={() => setPlansPage(prev => Math.min(plansTotalPages, prev + 1))}
+                            className="btn-action btn-action-outline"
+                            style={{ padding: '6px 12px', fontSize: 12, opacity: plansPage === plansTotalPages ? 0.5 : 1, cursor: plansPage === plansTotalPages ? 'not-allowed' : 'pointer' }}
+                          >
+                            Próxima ▶️
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
 
