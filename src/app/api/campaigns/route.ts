@@ -101,12 +101,12 @@ export async function POST(request: Request) {
 
     // 3. Ação de Lançamento / Ativação Direta (Wizard Finalizado)
     if (action === 'launch') {
-      const { name, plansFilter, selectedPlans, statusFilter, expiryDays, userIds, limitPerDay, flowSteps, flowGraph } = body;
+      const { name, plansFilter, selectedPlans, statusFilter, expiryDays, userIds, limitPerDay, flowSteps, flowGraph, startDate } = body;
       if (!name || !userIds || !Array.isArray(userIds) || userIds.length === 0) {
         return NextResponse.json({ success: false, error: 'Nome da campanha e operadores são obrigatórios.' }, { status: 400 });
       }
 
-      const targetCriteria = JSON.stringify({ plansFilter, selectedPlans, statusFilter, expiryDays });
+      const targetCriteria = JSON.stringify({ plansFilter, selectedPlans, statusFilter, expiryDays, startDate });
 
       // Criar campanha
       const campaign = await prisma.campaign.create({
@@ -168,7 +168,7 @@ export async function POST(request: Request) {
       let resultsCount = 0;
       if (externalPersonIds.length > 0) {
         const useCase = new AssignCampaignLeadsUseCase();
-        const results = await useCase.execute(externalPersonIds, campaign.id, userIds);
+        const results = await useCase.execute(externalPersonIds, campaign.id, userIds, startDate);
         resultsCount = results.length;
       }
 

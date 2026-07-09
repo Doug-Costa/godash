@@ -134,6 +134,13 @@ export default function DashboardContent({
   const [loadingPlans, setLoadingPlans] = useState(false);
   const [campaignStatusFilter, setCampaignStatusFilter] = useState<'active' | 'canceled' | 'expired'>('active');
   const [campaignExpiryDays, setCampaignExpiryDays] = useState<string>('30');
+  const [campaignStartDate, setCampaignStartDate] = useState(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
   const [estimatedAudience, setEstimatedAudience] = useState<number>(0);
   const [loadingEstimate, setLoadingEstimate] = useState<boolean>(false);
   const [campaignAgentIds, setCampaignAgentIds] = useState<string[]>([]);
@@ -692,6 +699,7 @@ export default function DashboardContent({
         body: JSON.stringify({
           action: 'launch',
           name: campaignName,
+          startDate: campaignStartDate,
           plansFilter: campaignPlansFilter,
           selectedPlans: campaignSelectedPlans,
           statusFilter: campaignStatusFilter,
@@ -709,6 +717,13 @@ export default function DashboardContent({
         setCampaignSelectedPlans([]);
         setCampaignStatusFilter('active');
         setCampaignExpiryDays('30');
+        setCampaignStartDate(() => {
+          const d = new Date();
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        });
         setCampaignAgentIds([]);
         setCampaignLimitPerDay('');
         setCampaignLimitEnabled(false);
@@ -3196,19 +3211,34 @@ export default function DashboardContent({
               {wizardStep === 1 && (
                 <div className="animate-fadeUp" style={{ display: 'flex', gap: 24 }}>
                   <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <div>
-                      <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Nome da Campanha:</label>
-                      <input 
-                        type="text" 
-                        required
-                        value={campaignName} 
-                        onChange={(e) => setCampaignName(e.target.value)}
-                        placeholder="Ex: Campanha Resgate Congresso DentalPress"
-                        style={{
-                          width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
-                          border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
-                        }}
-                      />
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Nome da Campanha:</label>
+                        <input 
+                          type="text" 
+                          required
+                          value={campaignName} 
+                          onChange={(e) => setCampaignName(e.target.value)}
+                          placeholder="Ex: Campanha Resgate Congresso DentalPress"
+                          style={{
+                            width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
+                            border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Data de Início:</label>
+                        <input 
+                          type="date" 
+                          required
+                          value={campaignStartDate} 
+                          onChange={(e) => setCampaignStartDate(e.target.value)}
+                          style={{
+                            width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
+                            border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
+                          }}
+                        />
+                      </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
