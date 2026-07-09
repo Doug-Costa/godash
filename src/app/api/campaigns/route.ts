@@ -55,7 +55,7 @@ export async function POST(request: Request) {
 
     // 2. Ação de Estimativa de Público em Tempo Real (Passo 1 do Wizard)
     if (action === 'estimate') {
-      const { plansFilter, statusFilter, expiryDays } = body;
+      const { plansFilter, selectedPlans, statusFilter, expiryDays } = body;
 
       let query = `
         SELECT COUNT(DISTINCT p.id) as count
@@ -67,10 +67,15 @@ export async function POST(request: Request) {
       const params: any[] = [];
 
       // Filtro de planos pagos / cortesias
-      if (plansFilter === 'pagos') {
-        query += ` AND pl.price > 100`;
-      } else if (plansFilter === 'cortesia') {
-        query += ` AND pl.price <= 100`;
+      if (selectedPlans && Array.isArray(selectedPlans) && selectedPlans.length > 0) {
+        query += ` AND pl.id IN (${selectedPlans.map(() => '?').join(',')})`;
+        params.push(...selectedPlans);
+      } else {
+        if (plansFilter === 'pagos') {
+          query += ` AND pl.price > 100`;
+        } else if (plansFilter === 'cortesia') {
+          query += ` AND pl.price <= 100`;
+        }
       }
 
       // Filtro de status da assinatura
@@ -96,12 +101,12 @@ export async function POST(request: Request) {
 
     // 3. Ação de Lançamento / Ativação Direta (Wizard Finalizado)
     if (action === 'launch') {
-      const { name, plansFilter, statusFilter, expiryDays, userIds, limitPerDay, flowSteps, flowGraph } = body;
+      const { name, plansFilter, selectedPlans, statusFilter, expiryDays, userIds, limitPerDay, flowSteps, flowGraph } = body;
       if (!name || !userIds || !Array.isArray(userIds) || userIds.length === 0) {
         return NextResponse.json({ success: false, error: 'Nome da campanha e operadores são obrigatórios.' }, { status: 400 });
       }
 
-      const targetCriteria = JSON.stringify({ plansFilter, statusFilter, expiryDays });
+      const targetCriteria = JSON.stringify({ plansFilter, selectedPlans, statusFilter, expiryDays });
 
       // Criar campanha
       const campaign = await prisma.campaign.create({
@@ -131,10 +136,15 @@ export async function POST(request: Request) {
       `;
       const targetParams: any[] = [];
 
-      if (plansFilter === 'pagos') {
-        targetQuery += ` AND pl.price > 100`;
-      } else if (plansFilter === 'cortesia') {
-        targetQuery += ` AND pl.price <= 100`;
+      if (selectedPlans && Array.isArray(selectedPlans) && selectedPlans.length > 0) {
+        targetQuery += ` AND pl.id IN (${selectedPlans.map(() => '?').join(',')})`;
+        targetParams.push(...selectedPlans);
+      } else {
+        if (plansFilter === 'pagos') {
+          targetQuery += ` AND pl.price > 100`;
+        } else if (plansFilter === 'cortesia') {
+          targetQuery += ` AND pl.price <= 100`;
+        }
       }
 
       if (statusFilter === 'active') {

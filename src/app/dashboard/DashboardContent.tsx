@@ -129,6 +129,9 @@ export default function DashboardContent({
   // Estados do Wizard de Campanhas
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [campaignPlansFilter, setCampaignPlansFilter] = useState<'all' | 'pagos' | 'cortesia'>('all');
+  const [plansList, setPlansList] = useState<any[]>([]);
+  const [campaignSelectedPlans, setCampaignSelectedPlans] = useState<any[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(false);
   const [campaignStatusFilter, setCampaignStatusFilter] = useState<'active' | 'canceled' | 'expired'>('active');
   const [campaignExpiryDays, setCampaignExpiryDays] = useState<string>('30');
   const [estimatedAudience, setEstimatedAudience] = useState<number>(0);
@@ -282,6 +285,32 @@ export default function DashboardContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId]);
 
+  // Fetch plans list when campaign modal is open
+  useEffect(() => {
+    if (showCampaignModal && plansList.length === 0) {
+      const fetchPlans = async () => {
+        setLoadingPlans(true);
+        try {
+          const res = await fetch('/api/plans');
+          if (res.ok) {
+            const data = await res.json();
+            setPlansList(data.data || []);
+          }
+        } catch (err) {
+          console.error('Failed to fetch plans list:', err);
+        } finally {
+          setLoadingPlans(false);
+        }
+      };
+      fetchPlans();
+    }
+  }, [showCampaignModal, plansList.length]);
+
+  // Reset selected plans when plans filter category changes
+  useEffect(() => {
+    setCampaignSelectedPlans([]);
+  }, [campaignPlansFilter]);
+
   // Fetch estimated audience for campaign wizard (debounced)
   useEffect(() => {
     if (!showCampaignModal) return;
@@ -295,6 +324,7 @@ export default function DashboardContent({
           body: JSON.stringify({
             action: 'estimate',
             plansFilter: campaignPlansFilter,
+            selectedPlans: campaignSelectedPlans,
             statusFilter: campaignStatusFilter,
             expiryDays: campaignStatusFilter === 'expired' ? Number(campaignExpiryDays) : undefined
           })
@@ -311,7 +341,7 @@ export default function DashboardContent({
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [campaignPlansFilter, campaignStatusFilter, campaignExpiryDays, showCampaignModal]);
+  }, [campaignPlansFilter, campaignSelectedPlans, campaignStatusFilter, campaignExpiryDays, showCampaignModal]);
 
   useEffect(() => {
     if (activeTab === 'alerts') {
@@ -663,6 +693,7 @@ export default function DashboardContent({
           action: 'launch',
           name: campaignName,
           plansFilter: campaignPlansFilter,
+          selectedPlans: campaignSelectedPlans,
           statusFilter: campaignStatusFilter,
           expiryDays: campaignStatusFilter === 'expired' ? Number(campaignExpiryDays) : undefined,
           userIds: campaignAgentIds,
@@ -675,6 +706,7 @@ export default function DashboardContent({
       if (res.ok) {
         setCampaignName('');
         setCampaignPlansFilter('all');
+        setCampaignSelectedPlans([]);
         setCampaignStatusFilter('active');
         setCampaignExpiryDays('30');
         setCampaignAgentIds([]);
@@ -3205,6 +3237,97 @@ export default function DashboardContent({
                         </select>
                       </div>
                     </div>
+
+                    {campaignPlansFilter !== 'all' && (() => {
+                      const filteredPlans = plansList.filter(p => {
+                        if (campaignPlansFilter === 'pagos') return Number(p.price) > 100;
+                        if (campaignPlansFilter === 'cortesia') return Number(p.price) <= 100;
+                        return false;
+                      });
+                      return (
+                        <div className="animate-fadeUp" style={{ marginTop: 12 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <label className="label-sm" style={{ display: 'block', margin: 0 }}>
+                              {campaignPlansFilter === 'pagos' ? 'Selecione os Planos Pagos:' : 'Selecione os Planos Cortesia:'}
+                            </label>
+                            {filteredPlans.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const allIds = filteredPlans.map(p => p.id);
+                                  const allSelected = allIds.every(id => campaignSelectedPlans.includes(id));
+                                  if (allSelected) {
+                                    setCampaignSelectedPlans(campaignSelectedPlans.filter(id => !allIds.includes(id)));
+                                  } else {
+                                    const uniqueIds = Array.from(new Set([...campaignSelectedPlans, ...allIds]));
+                                    setCampaignSelectedPlans(uniqueIds);
+                                  }
+                                }}
+                                style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, cursor: 'pointer', padding: 0, fontWeight: 500 }}
+                              >
+                                {filteredPlans.map(p => p.id).every(id => campaignSelectedPlans.includes(id)) ? 'Desmarcar Todos' : 'Selecionar Todos'}
+                              </button>
+                            )}
+                          </div>
+                          
+                          {loadingPlans ? (
+                            <div className="skeleton" style={{ height: 100, width: '100%', borderRadius: 8 }}></div>
+                          ) : filteredPlans.length === 0 ? (
+                            <div style={{ padding: 12, fontSize: 12, color: 'var(--text-faint)', textAlign: 'center', border: '1px dashed var(--border)', borderRadius: 8 }}>
+                              Nenhum plano cadastrado nesta categoria.
+                            </div>
+                          ) : (
+                            <div style={{ 
+                              maxHeight: 150, 
+                              overflowY: 'auto', 
+                              background: 'var(--surface-raised)', 
+                              border: '1px solid var(--border)', 
+                              borderRadius: 8, 
+                              padding: '8px 12px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 6
+                            }}>
+                              {filteredPlans.map((p) => {
+                                const isChecked = campaignSelectedPlans.includes(p.id);
+                                return (
+                                  <label 
+                                    key={p.id} 
+                                    style={{ 
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      gap: 8, 
+                                      fontSize: 12, 
+                                      cursor: 'pointer', 
+                                      color: isChecked ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                      transition: 'color 0.2s',
+                                      padding: '2px 0'
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setCampaignSelectedPlans([...campaignSelectedPlans, p.id]);
+                                        } else {
+                                          setCampaignSelectedPlans(campaignSelectedPlans.filter(id => id !== p.id));
+                                        }
+                                      }}
+                                      style={{ accentColor: 'var(--accent)' }}
+                                    />
+                                    <span>{p.title}</span>
+                                    <span style={{ color: 'var(--text-faint)', fontSize: 11, marginLeft: 'auto' }}>
+                                      {p.price > 0 ? `R$ ${Number(p.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Cortesia'}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {campaignStatusFilter === 'expired' && (
                       <div className="animate-fadeUp">
