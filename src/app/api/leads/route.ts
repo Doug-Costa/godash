@@ -17,6 +17,7 @@ export async function GET(request: Request) {
   const assigneeId = searchParams.get('assigneeId'); // agent user id or 'unassigned'
   const lossReason = searchParams.get('lossReason');
   const tag = searchParams.get('tag');
+  const leadId = searchParams.get('leadId');
 
   const targetMonth = !month || month === 'all' ? new Date().toISOString().slice(0, 7) : month;
 
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
     const hasLossReason = lossReason && lossReason !== 'all' && lossReason !== '';
     const hasTag = tag && tag !== 'all' && tag !== '';
 
-    if (hasStage || hasAssignee || hasLossReason || hasTag) {
+    if (!leadId && (hasStage || hasAssignee || hasLossReason || hasTag)) {
       const crmFilter: any = {};
       if (hasStage) crmFilter.stage = stage;
       if (hasAssignee) {
@@ -71,9 +72,15 @@ export async function GET(request: Request) {
     }
 
     // 2. Filter by date/month (MySQL)
-    if (month && month !== 'all') {
+    if (month && month !== 'all' && !leadId) {
       query += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
       params.push(month);
+    }
+
+    // Filter by leadId directly if provided (MySQL)
+    if (leadId) {
+      query += ` AND p.id = ?`;
+      params.push(Number(leadId));
     }
 
     // 3. Filter by plan (MySQL)
@@ -101,7 +108,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, data: [] });
     }
 
-    // Fetch corresponding states and interactions from SQLite
+    // Fetch corresponding states, interactions, campaign and alerts from SQLite
     const leadStates = await prisma.leadState.findMany({
       where: {
         externalPersonId: { in: personIds }
@@ -115,6 +122,12 @@ export async function GET(request: Request) {
         },
         assignee: {
           select: { id: true, name: true }
+        },
+        campaign: {
+          select: { id: true, name: true }
+        },
+        taskAlerts: {
+          where: { status: 'PENDING' }
         }
       }
     });
@@ -144,6 +157,11 @@ export async function GET(request: Request) {
           id: state.assignee.id,
           name: state.assignee.name
         } : null,
+        campaign: state?.campaign ? {
+          id: state.campaign.id,
+          name: state.campaign.name
+        } : null,
+        hasPendingAlert: (state?.taskAlerts || []).length > 0,
         notes: (state?.interactions || []).map((i: any) => ({
           id: i.id,
           text: i.text,
@@ -209,6 +227,29 @@ export async function POST(request: Request) {
       // Manual updates fallback (old behavior)
       if (stage) {
         await crmRepository.updateStage(externalPersonId, stage);
+        
+        if (stage === 'ganho' || stage === 'perdido') {
+          const ls = await prisma.leadState.findUnique({
+            where: { externalPersonId }
+          });
+          if (ls) {
+            await prisma.leadState.update({
+              where: { externalPersonId },
+              data: {
+                campaignId: null,
+                joinedCampaignAt: null,
+                frozenUntil: null,
+                freezeReason: null
+              }
+            });
+            await prisma.taskAlert.deleteMany({
+              where: {
+                leadStateId: ls.id,
+                status: 'PENDING'
+              }
+            });
+          }
+        }
       }
       if (note && note.trim() !== '') {
         await crmRepository.addInteraction(externalPersonId, note, authorId);

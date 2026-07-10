@@ -1,6 +1,7 @@
 import { ICrmRepository, InteractionType, LossReason } from '@/lib/domain/crm.types';
 import { PrismaCrmRepository } from '@/lib/repositories/PrismaCrmRepository';
 import { CrmEventDispatcher } from '@/lib/domain/crm.events';
+import prisma from '@/lib/prisma';
 
 export class RegisterLeadInteractionService {
   private crmRepo: ICrmRepository;
@@ -65,6 +66,49 @@ export class RegisterLeadInteractionService {
       lastInteractionAt: new Date(),
       scheduledFor: finalScheduledFor,
     });
+
+    const dbLead = await prisma.leadState.findUnique({
+      where: { externalPersonId }
+    });
+
+    const isFinalStage = nextStage === 'ganho' || nextStage === 'perdido' || type === 'LOST' || type === 'RECOVERED';
+    if (isFinalStage && dbLead) {
+      await prisma.leadState.update({
+        where: { id: dbLead.id },
+        data: {
+          campaignId: null,
+          joinedCampaignAt: null,
+          frozenUntil: null,
+          freezeReason: null
+        }
+      });
+      await prisma.taskAlert.deleteMany({
+        where: {
+          leadStateId: dbLead.id,
+          status: 'PENDING'
+        }
+      });
+    }
+
+    if (type === 'MEETING_SCHEDULED' && scheduledFor && dbLead) {
+      await prisma.taskAlert.deleteMany({
+        where: {
+          leadStateId: dbLead.id,
+          status: 'PENDING',
+          stepId: null
+        }
+      });
+
+      await prisma.taskAlert.create({
+        data: {
+          leadStateId: dbLead.id,
+          assignedToId: authorId,
+          scheduledFor: new Date(scheduledFor),
+          taskType: 'RETORNO',
+          status: 'PENDING'
+        }
+      });
+    }
 
     // 6. Dispatch domain event
     CrmEventDispatcher.dispatch({

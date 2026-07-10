@@ -15,12 +15,13 @@ export const postSalesWorker = new Worker('PostSalesAlerts', async (job) => {
       console.log(`[Worker] Encontradas ${activeCampaigns.length} campanhas ativas para processar.`);
 
       for (const campaign of activeCampaigns) {
-        // 2. Buscar todos os leads vinculados à campanha com data de entrada definida
+        // 2. Buscar todos os leads vinculados à campanha com data de entrada definida, ignorando finalizados (ganho/perdido)
         const leads = await prisma.leadState.findMany({
           where: {
             campaignId: campaign.id,
             joinedCampaignAt: { not: null },
-            assigneeId: { not: null }
+            assigneeId: { not: null },
+            stage: { notIn: ['ganho', 'perdido'] }
           }
         });
 

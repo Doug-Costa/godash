@@ -32,7 +32,11 @@ export async function GET(request: Request) {
       where: {
         assignedToId: userId,
         status: 'PENDING',
-        scheduledFor: { lte: new Date() }
+        scheduledFor: { lte: new Date() },
+        OR: [
+          { leadState: { frozenUntil: null } },
+          { leadState: { frozenUntil: { lt: new Date() } } }
+        ]
       }
     });
 
@@ -40,10 +44,18 @@ export async function GET(request: Request) {
       where: {
         assignedToId: userId,
         status: 'PENDING',
-        scheduledFor: { lte: new Date() }
+        scheduledFor: { lte: new Date() },
+        OR: [
+          { leadState: { frozenUntil: null } },
+          { leadState: { frozenUntil: { lt: new Date() } } }
+        ]
       },
       include: {
-        leadState: true,
+        leadState: {
+          include: {
+            campaign: { select: { name: true } }
+          }
+        },
         flowStep: true
       },
       orderBy: { scheduledFor: 'asc' },
@@ -61,6 +73,19 @@ export async function GET(request: Request) {
       );
       const peopleMap = new Map((peopleRows as any[]).map(p => [p.id, p]));
 
+      // Buscar última interação para cada lead para usar de fallback se não houver flowStep
+      const leadStateIds = alerts.map(a => a.leadStateId);
+      const latestInteractions = await prisma.leadInteraction.findMany({
+        where: { leadStateId: { in: leadStateIds } },
+        orderBy: { createdAt: 'desc' }
+      });
+      const interactionMap = new Map();
+      latestInteractions.forEach(i => {
+        if (!interactionMap.has(i.leadStateId)) {
+          interactionMap.set(i.leadStateId, i.text);
+        }
+      });
+
       enrichedAlerts = alerts.map(alert => {
         const person = peopleMap.get(alert.leadState.externalPersonId);
         return {
@@ -68,9 +93,10 @@ export async function GET(request: Request) {
           personName: person?.fullName || 'Cliente Indefinido',
           personEmail: person?.email || '',
           personPhone: person?.phoneNumber || '',
+          campaignName: alert.leadState.campaign?.name || null,
           renderedMessage: alert.flowStep?.messageTemplate
             ? alert.flowStep.messageTemplate.replace(/\{\{nome\}\}/gi, person?.fullName || 'Doutor(a)')
-            : ''
+            : (interactionMap.get(alert.leadStateId) || 'Retorno agendado.')
         };
       });
     }
@@ -189,6 +215,43 @@ export async function GET(request: Request) {
   }
 }
 
+async function checkAndExitCampaignIfLastStep(leadStateId: string, stepId: string | null) {
+  if (!stepId) return;
+
+  const step = await prisma.flowStep.findUnique({
+    where: { id: stepId },
+    include: {
+      campaign: {
+        include: {
+          flowSteps: {
+            orderBy: { dayOffset: 'desc' }
+          }
+        }
+      }
+    }
+  });
+
+  if (!step || !step.campaign || step.campaign.flowSteps.length === 0) return;
+
+  const lastStep = step.campaign.flowSteps[0];
+  if (step.id === lastStep.id) {
+    await prisma.leadState.update({
+      where: { id: leadStateId },
+      data: {
+        campaignId: null,
+        joinedCampaignAt: null
+      }
+    });
+
+    await prisma.taskAlert.deleteMany({
+      where: {
+        leadStateId,
+        status: 'PENDING'
+      }
+    });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -258,6 +321,8 @@ export async function POST(request: Request) {
         }
       });
 
+      await checkAndExitCampaignIfLastStep(alert.leadStateId, alert.stepId);
+
       return NextResponse.json({ success: true, data: alert });
     }
 
@@ -286,6 +351,50 @@ export async function POST(request: Request) {
       });
 
       return NextResponse.json({ success: true, data: alert });
+    }
+
+    // 4. Atender alerta
+    if (action === 'atender') {
+      const { alertId } = body;
+      if (!alertId) {
+        return NextResponse.json({ success: false, error: 'alertId é obrigatório' }, { status: 400 });
+      }
+
+      const alert = await prisma.taskAlert.findUnique({
+        where: { id: alertId }
+      });
+
+      if (!alert) {
+        return NextResponse.json({ success: false, error: 'Alerta não encontrado' }, { status: 404 });
+      }
+
+      const updatedAlert = await prisma.taskAlert.update({
+        where: { id: alertId },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+          completionNote: 'Atendimento iniciado pelo operador.'
+        }
+      });
+
+      const updatedLeadState = await prisma.leadState.update({
+        where: { id: alert.leadStateId },
+        data: {
+          stage: 'primeiro_contato'
+        }
+      });
+
+      await prisma.leadInteraction.create({
+        data: {
+          leadStateId: alert.leadStateId,
+          authorId: userId,
+          text: `Iniciou atendimento da campanha. Alerta (${alert.taskType}) marcado como concluído.`
+        }
+      });
+
+      await checkAndExitCampaignIfLastStep(alert.leadStateId, alert.stepId);
+
+      return NextResponse.json({ success: true, data: { alert: updatedAlert, leadState: updatedLeadState } });
     }
 
     return NextResponse.json({ success: false, error: 'Ação inválida' }, { status: 400 });

@@ -617,6 +617,30 @@ export default function DashboardContent({
     }
   };
 
+  const handleAtenderAlert = async (alert: any) => {
+    try {
+      const res = await fetch('/api/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'atender', alertId: alert.id })
+      });
+      if (res.ok) {
+        const leadId = alert.leadState.externalPersonId;
+        const leadRes = await fetch(`/api/leads?leadId=${leadId}`);
+        if (leadRes.ok) {
+          const leadJson = await leadRes.json();
+          if (leadJson.success && leadJson.data.length > 0) {
+            openTimeline(leadJson.data[0]);
+          }
+        }
+        fetchAlerts();
+        fetchLeads();
+      }
+    } catch (err) {
+      console.error('Failed to atender alert:', err);
+    }
+  };
+
   const handleSkipAlert = async (alertId: string, note: string) => {
     try {
       const res = await fetch('/api/alerts', {
@@ -1370,6 +1394,16 @@ export default function DashboardContent({
                                   🚫 Cancelado
                                 </span>
                               )}
+                              {lead.campaign && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--cyan)', border: '1px solid var(--cyan)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  🎯 {lead.campaign.name}
+                                </span>
+                              )}
+                              {lead.hasPendingAlert && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--red)', border: '1px solid var(--red)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  ⚠️ Alerta!
+                                </span>
+                              )}
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
                               <strong>Plano:</strong> {lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}
@@ -1965,7 +1999,14 @@ export default function DashboardContent({
                     <div key={alert.id} style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
                       <div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                          <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{alert.personName}</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{alert.personName}</span>
+                            {alert.campaignName && (
+                              <span style={{ fontSize: 10, color: 'var(--cyan)', fontWeight: 600 }}>
+                                🎯 {alert.campaignName}
+                              </span>
+                            )}
+                          </div>
                           <span className="badge badge-cyan" style={{ fontSize: 10 }}>{alert.taskType}</span>
                         </div>
                         <div className="label-sm" style={{ fontSize: 11, marginTop: 4 }}>{alert.personEmail} &middot; {alert.personPhone}</div>
@@ -1990,14 +2031,11 @@ export default function DashboardContent({
                           </a>
                         )}
                         <button
-                          onClick={() => {
-                            const note = prompt('Alguma observação para a conclusão desta tarefa?');
-                            if (note !== null) handleCompleteAlert(alert.id, note);
-                          }}
+                          onClick={() => handleAtenderAlert(alert)}
                           className="btn-action btn-action-purple"
-                          style={{ flex: 1, fontSize: 11, padding: '8px 4px' }}
+                          style={{ flex: 1, fontSize: 11, padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
                         >
-                          ✅ Concluir
+                          ⚡ Atender
                         </button>
                         <button
                           onClick={() => {
