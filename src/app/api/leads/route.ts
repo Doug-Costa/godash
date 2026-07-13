@@ -41,7 +41,11 @@ export async function GET(request: Request) {
         pl.id as planId,
         pl.title as planTitle,
         pl.price as planPrice,
-        pl.intervalType as planInterval
+        pl.intervalType as planInterval,
+        s.status as subStatus,
+        s.canceledAt as subCanceledAt,
+        s.expiresIn as subExpiresIn,
+        s.isValidUntil as subIsValidUntil
       FROM people p
       LEFT JOIN subscriptions s ON s.personId = p.id 
         AND s.createdAt <= LAST_DAY(CONCAT(?, '-01')) 
@@ -170,6 +174,22 @@ export async function GET(request: Request) {
 
     const data = (rows as any[]).map(r => {
       const state = stateMap.get(r.id);
+
+      let subBadge = 'expirado';
+      if (r.planId) {
+        const now = new Date();
+        const expiresDate = r.subIsValidUntil ? new Date(r.subIsValidUntil) : (r.subExpiresIn ? new Date(r.subExpiresIn) : null);
+        const isCanceled = r.subStatus === 'canceled' || r.subCanceledAt !== null;
+        
+        if (isCanceled) {
+          subBadge = 'cancelado';
+        } else if (expiresDate && expiresDate < now) {
+          subBadge = 'expirado';
+        } else {
+          subBadge = 'ativo';
+        }
+      }
+
       return {
         id: r.id,
         fullName: r.fullName || 'Sem Nome',
@@ -200,7 +220,8 @@ export async function GET(request: Request) {
           authorName: i.author?.name || 'Agente',
           type: inferInteractionType(i.text)
         })),
-        metadata: state?.metadata || {}
+        metadata: state?.metadata || {},
+        subscriptionStatus: subBadge
       };
     });
 

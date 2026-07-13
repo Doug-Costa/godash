@@ -107,6 +107,14 @@ export default function DashboardContent({
   const [metaSpecialty, setMetaSpecialty] = useState('');
   const [isSavingMeta, setIsSavingMeta] = useState(false);
   const [metaSaved, setMetaSaved] = useState(false);
+  const [isEditingInst, setIsEditingInst] = useState(false);
+
+  // RapidFire States
+  const [activeRapidFireTab, setActiveRapidFireTab] = useState<'whatsapp' | 'email' | 'voip' | null>(null);
+  const [waPasteText, setWaPasteText] = useState('');
+  const [emailSubject, setEmailSubject] = useState('DentalGO - Atendimento Comercial');
+  const [emailBodyText, setEmailBodyText] = useState('');
+  const [isSendingRapidFire, setIsSendingRapidFire] = useState(false);
 
   // Funnel exit lostReason state variables
   const [showLossReasonSelection, setShowLossReasonSelection] = useState(false);
@@ -118,9 +126,14 @@ export default function DashboardContent({
       const meta = selectedLead.metadata || {};
       setMetaInstagram(meta.instagram || '');
       setMetaSpecialty(meta.specialty || '');
+      setActiveRapidFireTab(null);
+      setWaPasteText('');
+      setEmailSubject('DentalGO - Atendimento Comercial');
+      setEmailBodyText('');
     } else {
       setMetaInstagram('');
       setMetaSpecialty('');
+      setActiveRapidFireTab(null);
     }
   }, [selectedLead]);
 
@@ -130,6 +143,25 @@ export default function DashboardContent({
   const [editingAgent, setEditingAgent] = useState<any | null>(null);
   const [agentForm, setAgentForm] = useState({ name: '', email: '', password: '', role: 'AGENT', isActive: true });
   const [agentError, setAgentError] = useState<string | null>(null);
+
+  // Administration Settings states
+  const [settingsForm, setSettingsForm] = useState({
+    smtpHost: '',
+    smtpPort: '587',
+    smtpUser: '',
+    smtpPassword: '',
+    smtpFrom: '',
+    voipProvider: 'twilio',
+    voipApiKey: '',
+    voipAccountSid: '',
+    voipLineNumber: '',
+    whatsappUrl: '',
+    whatsappApiKey: '',
+    whatsappInstance: ''
+  });
+  const [loadingSettings, setLoadingSettings] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsSavedFeedback, setSettingsSavedFeedback] = useState(false);
 
   // Novas variáveis de estado da Expansão do CRM
   const [alertsData, setAlertsData] = useState<{ taskAlerts: any[], orphanedLeads: any[], expiringLeads: any[] }>({ taskAlerts: [], orphanedLeads: [], expiringLeads: [] });
@@ -317,6 +349,9 @@ export default function DashboardContent({
     if (activeTab === 'campanhas') {
       fetchCampaigns();
       fetchKpis();
+    }
+    if (activeTab === 'team') {
+      fetchSettings();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId, activePipelineId]);
@@ -632,9 +667,11 @@ export default function DashboardContent({
     }
   };
 
-  const handleSaveMetadata = async () => {
+  const handleSaveMetadata = async (inst?: string, spec?: string) => {
     if (!selectedLead) return;
     setIsSavingMeta(true);
+    const targetInst = inst !== undefined ? inst : metaInstagram;
+    const targetSpec = spec !== undefined ? spec : metaSpecialty;
     try {
       const res = await fetch('/api/leads', {
         method: 'POST',
@@ -642,8 +679,8 @@ export default function DashboardContent({
         body: JSON.stringify({
           leadId: selectedLead.id,
           metadata: {
-            instagram: metaInstagram,
-            specialty: metaSpecialty,
+            instagram: targetInst,
+            specialty: targetSpec,
           }
         })
       });
@@ -661,6 +698,42 @@ export default function DashboardContent({
       console.error('Failed to save metadata:', err);
     } finally {
       setIsSavingMeta(false);
+    }
+  };
+
+  const fetchSettings = async () => {
+    setLoadingSettings(true);
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) {
+          setSettingsForm(json.data);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch settings:', err);
+    } finally {
+      setLoadingSettings(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settingsForm)
+      });
+      if (res.ok) {
+        setSettingsSavedFeedback(true);
+        setTimeout(() => setSettingsSavedFeedback(false), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -1105,7 +1178,7 @@ export default function DashboardContent({
                 transition: 'all 0.2s'
               }}
             >
-              👥 Equipe CRM
+              ⚙️ Administração
             </button>
           )}
           {isAdmin && (
@@ -1531,6 +1604,21 @@ export default function DashboardContent({
                               {lead.tag === 'CANCELED_CLIENT' && (
                                 <span className="badge badge-down" style={{ fontSize: 9, padding: '2px 6px' }}>
                                   🚫 Cancelado
+                                </span>
+                              )}
+                              {lead.subscriptionStatus === 'ativo' && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  🟢 Ativo
+                                </span>
+                              )}
+                              {lead.subscriptionStatus === 'cancelado' && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  🔴 Cancelado
+                                </span>
+                              )}
+                              {lead.subscriptionStatus === 'expirado' && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  🟡 Expirado
                                 </span>
                               )}
                               {lead.campaign && (
@@ -2738,72 +2826,246 @@ export default function DashboardContent({
       )}
 
       {/* 4. Gerenciar Equipe (ADMIN Only) */}
+      {/* 4. Administração (ADMIN Only) */}
       {activeTab === 'team' && isAdmin && (
-        <div className="card animate-fadeUp">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }} className="animate-fadeUp">
+          {/* Coluna 1: Configuração de Serviços */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div>
-              <div className="label" style={{ marginBottom: 4 }}>Gerenciar Equipe do CRM</div>
-              <div className="label-sm">Cadastre, altere cargos, defina senhas e gerencie acessos de colaboradores.</div>
+              <div className="label" style={{ marginBottom: 4 }}>⚙️ Configurações do Sistema</div>
+              <div className="label-sm">Configure as conexões externas de SMTP, VoIP e WhatsApp.</div>
             </div>
-            <button onClick={openAddAgent} className="btn-action btn-action-purple">
-              ➕ Novo Colaborador
-            </button>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', maxHeight: '70vh', paddingRight: 8 }}>
+              {/* Seção SMTP */}
+              <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 12 }}>📧 Servidor SMTP (E-mail RapidFire)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>SMTP Host:</label>
+                    <input
+                      type="text"
+                      value={settingsForm.smtpHost}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, smtpHost: e.target.value })}
+                      placeholder="smtp.mailtrap.io"
+                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                    />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
+                    <div>
+                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Porta:</label>
+                      <input
+                        type="text"
+                        value={settingsForm.smtpPort}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, smtpPort: e.target.value })}
+                        placeholder="587"
+                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                      />
+                    </div>
+                    <div>
+                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>E-mail Remetente (From):</label>
+                      <input
+                        type="text"
+                        value={settingsForm.smtpFrom}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, smtpFrom: e.target.value })}
+                        placeholder="crm@dentalgo.com"
+                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>SMTP Usuário:</label>
+                      <input
+                        type="text"
+                        value={settingsForm.smtpUser}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, smtpUser: e.target.value })}
+                        placeholder="user123"
+                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                      />
+                    </div>
+                    <div>
+                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>SMTP Senha:</label>
+                      <input
+                        type="password"
+                        value={settingsForm.smtpPassword}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, smtpPassword: e.target.value })}
+                        placeholder="••••••••"
+                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção VoIP */}
+              <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 12 }}>📞 Provedor VoIP (Telefone RapidFire)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Serviço VoIP Externo:</label>
+                    <select
+                      value={settingsForm.voipProvider}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, voipProvider: e.target.value })}
+                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                    >
+                      <option value="twilio">Twilio VoIP Link</option>
+                      <option value="zenvia">Zenvia Voz</option>
+                      <option value="vonage">Vonage Voice API</option>
+                      <option value="custom">Outro (Integração Direta)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Token/API Key:</label>
+                    <input
+                      type="password"
+                      value={settingsForm.voipApiKey}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, voipApiKey: e.target.value })}
+                      placeholder="sk_live_..."
+                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                    />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Account SID / ID:</label>
+                      <input
+                        type="text"
+                        value={settingsForm.voipAccountSid}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, voipAccountSid: e.target.value })}
+                        placeholder="AC..."
+                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                      />
+                    </div>
+                    <div>
+                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Linha VoIP / Ramal:</label>
+                      <input
+                        type="text"
+                        value={settingsForm.voipLineNumber}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, voipLineNumber: e.target.value })}
+                        placeholder="+55119999999"
+                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção WhatsApp Evolution */}
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 12 }}>💬 WhatsApp Evolution API (Alert Center)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>URL da API:</label>
+                    <input
+                      type="text"
+                      value={settingsForm.whatsappUrl}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, whatsappUrl: e.target.value })}
+                      placeholder="https://api.evolution.dentalgo.com"
+                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                    />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 10 }}>
+                    <div>
+                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>API Key (Token):</label>
+                      <input
+                        type="password"
+                        value={settingsForm.whatsappApiKey}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, whatsappApiKey: e.target.value })}
+                        placeholder="Bearer token..."
+                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                      />
+                    </div>
+                    <div>
+                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Instância:</label>
+                      <input
+                        type="text"
+                        value={settingsForm.whatsappInstance}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, whatsappInstance: e.target.value })}
+                        placeholder="DentalGO_CRM"
+                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
+              {settingsSavedFeedback && <span style={{ color: '#4ADE80', fontSize: 13, fontWeight: 600 }}>✓ Configurações Salvas!</span>}
+              <button
+                type="button"
+                onClick={handleSaveSettings}
+                disabled={savingSettings}
+                className="btn-action btn-action-purple"
+                style={{ padding: '8px 24px', fontSize: 13, borderRadius: 8 }}
+              >
+                {savingSettings ? 'Salvando...' : '💾 Salvar Configurações'}
+              </button>
+            </div>
           </div>
 
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Nome do Colaborador</th>
-                  <th>E-mail de Acesso</th>
-                  <th>Cargo / Role</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: 'center' }}>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {teamList.map((agent) => (
-                  <tr key={agent.id}>
-                    <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{agent.name}</td>
-                    <td><span className="stat-mono" style={{ fontSize: 12 }}>{agent.email}</span></td>
-                    <td>
-                      <span className={`badge ${agent.role === 'ADMIN' ? 'badge-cyan' : 'badge-neu'}`}>
-                        {agent.role === 'ADMIN' ? 'Administrador' : 'Agente Comercial'}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`badge ${agent.isActive ? 'badge-up' : 'badge-down'}`}>
-                        {agent.isActive ? 'Ativo' : 'Desativado'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                        <button 
-                          onClick={() => openEditAgent(agent)}
-                          style={{
-                            padding: '6px 12px', border: '1px solid var(--border)', borderRadius: 8,
-                            background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600,
-                            cursor: 'pointer', transition: 'all 0.2s'
-                          }}
-                        >
-                          Editar
-                        </button>
-                        <button 
-                          onClick={() => handleToggleAgentStatus(agent)}
-                          style={{
-                            padding: '6px 12px', border: '1px solid var(--border)', borderRadius: 8,
-                            background: 'transparent', color: agent.isActive ? 'var(--red)' : 'var(--green)', fontSize: 12, fontWeight: 600,
-                            cursor: 'pointer', transition: 'all 0.2s'
-                          }}
-                        >
-                          {agent.isActive ? 'Desativar' : 'Ativar'}
-                        </button>
-                      </div>
-                    </td>
+          {/* Coluna 2: Gerenciar Equipe */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div>
+                <div className="label" style={{ marginBottom: 4 }}>👥 Gerenciar Equipe</div>
+                <div className="label-sm">Cadastre e gerencie acessos de colaboradores.</div>
+              </div>
+              <button onClick={openAddAgent} className="btn-action btn-action-purple" style={{ padding: '6px 12px', fontSize: 12 }}>
+                ➕ Novo Colaborador
+              </button>
+            </div>
+
+            <div className="table-container" style={{ overflowY: 'auto', maxHeight: '70vh' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Cargo / Role</th>
+                    <th style={{ textAlign: 'center' }}>Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {teamList.map((agent) => (
+                    <tr key={agent.id}>
+                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                        <div>{agent.name}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 'normal' }}>{agent.email}</div>
+                      </td>
+                      <td>
+                        <span className={`badge ${agent.role === 'ADMIN' ? 'badge-cyan' : 'badge-neu'}`} style={{ fontSize: 10, padding: '2px 6px' }}>
+                          {agent.role === 'ADMIN' ? 'Administrador' : 'Agente'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                          <button 
+                            onClick={() => openEditAgent(agent)}
+                            style={{
+                              padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6,
+                              background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 11,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Editar
+                          </button>
+                          <button 
+                            onClick={() => handleToggleAgentStatus(agent)}
+                            style={{
+                              padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6,
+                              background: 'transparent', color: agent.isActive ? 'var(--red)' : 'var(--green)', fontSize: 11,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {agent.isActive ? 'Bloquear' : 'Ativar'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -3107,46 +3369,341 @@ export default function DashboardContent({
             {/* Informações do Perfil (Metadata) */}
             <div style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24,
-              padding: 16, background: 'var(--surface-raised)', borderRadius: 12, border: '1px solid var(--border)'
+              padding: 16, background: 'var(--surface-raised)', borderRadius: 12, border: '1px solid var(--border)',
+              position: 'relative'
             }}>
               <div>
                 <label className="label-sm" style={{ display: 'block', marginBottom: 6, color: 'var(--text-secondary)' }}>Instagram:</label>
-                <input
-                  type="text"
-                  value={metaInstagram}
-                  onChange={(e) => setMetaInstagram(e.target.value)}
-                  placeholder="@usuario"
-                  style={{
-                    width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)',
-                    borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none'
-                  }}
-                />
+                {isEditingInst ? (
+                  <input
+                    type="text"
+                    value={metaInstagram}
+                    onChange={(e) => setMetaInstagram(e.target.value)}
+                    onBlur={() => {
+                      setIsEditingInst(false);
+                      handleSaveMetadata(metaInstagram, metaSpecialty);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    autoFocus
+                    placeholder="@usuario"
+                    style={{
+                      width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)',
+                      borderRadius: 8, color: 'var(--text-muted)', fontSize: 13, outline: 'none'
+                    }}
+                  />
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38 }}>
+                    {metaInstagram ? (
+                      <>
+                        <a
+                          href={`https://instagram.com/${metaInstagram.replace('@', '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            color: '#E1306C', fontWeight: 600, fontSize: 13, textDecoration: 'none'
+                          }}
+                        >
+                          <svg style={{ width: 16, height: 16, fill: '#E1306C' }} viewBox="0 0 24 24">
+                            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
+                          </svg>
+                          <span>{metaInstagram.startsWith('@') ? metaInstagram : `@${metaInstagram}`}</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingInst(true)}
+                          style={{
+                            background: 'none', border: 'none', color: 'var(--text-muted)',
+                            fontSize: 11, cursor: 'pointer', textDecoration: 'underline', padding: 0
+                          }}
+                        >
+                          Editar
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingInst(true)}
+                        style={{
+                          background: 'none', border: '1px dashed var(--border)', color: 'var(--text-muted)',
+                          padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4
+                        }}
+                      >
+                        <span>➕</span> <span>Adicionar Instagram</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="label-sm" style={{ display: 'block', marginBottom: 6, color: 'var(--text-secondary)' }}>Especialidade / Atuação:</label>
-                <input
-                  type="text"
+                <select
                   value={metaSpecialty}
-                  onChange={(e) => setMetaSpecialty(e.target.value)}
-                  placeholder="Ortodontia, Implante..."
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMetaSpecialty(val);
+                    handleSaveMetadata(metaInstagram, val);
+                  }}
                   style={{
                     width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)',
-                    borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none'
+                    borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none', cursor: 'pointer'
                   }}
-                />
+                >
+                  <option value="">Selecione a especialidade...</option>
+                  <option value="Ortodontia">Ortodontia</option>
+                  <option value="Implantodontia">Implantodontia</option>
+                  <option value="Odontopediatria">Odontopediatria</option>
+                  <option value="Harmonização Orofacial (HOF)">Harmonização Orofacial (HOF)</option>
+                  <option value="Endodontia">Endodontia</option>
+                  <option value="Periodontia">Periodontia</option>
+                  <option value="Clínico Geral">Clínico Geral</option>
+                  <option value="Prótese Dentária">Prótese Dentária</option>
+                  <option value="Outra">Outra</option>
+                </select>
               </div>
-              <div style={{ gridColumn: 'span 2', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
-                {metaSaved && <span style={{ color: '#4ADE80', fontSize: 12, fontWeight: 600 }}>✓ Salvo!</span>}
+
+              {/* Success Indicator inside card (autosave feedback) */}
+              <div style={{ position: 'absolute', right: 12, top: 4 }}>
+                {metaSaved && <span style={{ color: '#4ADE80', fontSize: 11, fontWeight: 600 }}>✓ Salvo!</span>}
+                {isSavingMeta && <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Salvando...</span>}
+              </div>
+            </div>
+
+            {/* RapidFire Communications Hub */}
+            <div style={{
+              background: 'var(--surface-raised)', border: '1px solid var(--border)',
+              borderRadius: 12, padding: 16, marginBottom: 24
+            }}>
+              <div className="label-sm" style={{ fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)' }}>
+                ⚡ RapidFire Hub (Canais de Alta Velocidade)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: activeRapidFireTab ? 16 : 0 }}>
                 <button
                   type="button"
-                  onClick={handleSaveMetadata}
-                  disabled={isSavingMeta}
-                  className="btn-action btn-action-purple"
-                  style={{ padding: '6px 16px', fontSize: 12, borderRadius: 6, cursor: 'pointer' }}
+                  onClick={() => {
+                    setActiveRapidFireTab(activeRapidFireTab === 'whatsapp' ? null : 'whatsapp');
+                    if (selectedLead.phoneNumber) {
+                      window.open(formatWhatsappLink(selectedLead.phoneNumber) || '#', '_blank', 'width=1000,height=750,noopener,noreferrer');
+                    }
+                  }}
+                  className={`btn-action ${activeRapidFireTab === 'whatsapp' ? 'btn-action-purple' : 'btn-action-outline'}`}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, padding: '8px 12px' }}
                 >
-                  {isSavingMeta ? 'Salvando...' : '💾 Salvar Perfil'}
+                  💬 WhatsApp Rapid
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveRapidFireTab(activeRapidFireTab === 'email' ? null : 'email')}
+                  className={`btn-action ${activeRapidFireTab === 'email' ? 'btn-action-purple' : 'btn-action-outline'}`}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, padding: '8px 12px' }}
+                >
+                  📧 E-mail Rapid
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveRapidFireTab(activeRapidFireTab === 'voip' ? null : 'voip')}
+                  className={`btn-action ${activeRapidFireTab === 'voip' ? 'btn-action-purple' : 'btn-action-outline'}`}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, padding: '8px 12px' }}
+                >
+                  📞 VoIP Telefone
                 </button>
               </div>
+
+              {/* Sub-panels for active tabs */}
+              {activeRapidFireTab === 'whatsapp' && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <p className="label-sm" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    O chat de WhatsApp foi aberto em uma janela popup. Copie as mensagens relevantes e cole abaixo para arquivar na timeline do cliente.
+                  </p>
+                  <textarea
+                    value={waPasteText}
+                    onChange={(e) => setWaPasteText(e.target.value)}
+                    placeholder="Cole aqui o texto ou conversa do WhatsApp..."
+                    style={{
+                      width: '100%', height: 90, padding: '10px', background: 'var(--surface)',
+                      border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)',
+                      fontSize: 12, outline: 'none', resize: 'none'
+                    }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                    {waPasteText && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(waPasteText);
+                          alert('Texto copiado para a área de transferência!');
+                        }}
+                        className="btn-action btn-action-outline"
+                        style={{ fontSize: 11, padding: '6px 12px' }}
+                      >
+                        📋 Copiar Selecionado
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!waPasteText || isSendingRapidFire}
+                      onClick={async () => {
+                        if (!waPasteText) return;
+                        setIsSendingRapidFire(true);
+                        try {
+                          const res = await fetch('/api/crm', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              emailOrId: selectedLead.id,
+                              note: `💬 [WhatsApp RapidFire]:\n"${waPasteText}"`,
+                              stage: selectedLead.stage
+                            })
+                          });
+                          if (res.ok) {
+                            setWaPasteText('');
+                            // Reload timeline
+                            const leadsRes = await fetch(`/api/leads?leadId=${selectedLead.id}`);
+                            if (leadsRes.ok) {
+                              const json = await leadsRes.json();
+                              if (json.data && json.data.length > 0) {
+                                setSelectedLead(json.data[0]);
+                              }
+                            }
+                            fetchLeads();
+                          }
+                        } catch (err) {
+                          console.error(err);
+                        } finally {
+                          setIsSendingRapidFire(false);
+                        }
+                      }}
+                      className="btn-action btn-action-purple"
+                      style={{ fontSize: 11, padding: '6px 12px' }}
+                    >
+                      {isSendingRapidFire ? 'Salvando...' : '📥 Registrar na Timeline'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeRapidFireTab === 'email' && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <p className="label-sm" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    Dispare e-mails diretos integrados ao servidor SMTP de sua equipe.
+                  </p>
+                  <input
+                    type="text"
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    placeholder="Assunto do E-mail"
+                    style={{
+                      width: '100%', padding: '8px 12px', background: 'var(--surface)',
+                      border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)',
+                      fontSize: 12, outline: 'none'
+                    }}
+                  />
+                  <textarea
+                    value={emailBodyText}
+                    onChange={(e) => setEmailBodyText(e.target.value)}
+                    placeholder="Corpo da mensagem do e-mail..."
+                    style={{
+                      width: '100%', height: 90, padding: '10px', background: 'var(--surface)',
+                      border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)',
+                      fontSize: 12, outline: 'none', resize: 'none'
+                    }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      disabled={!emailSubject || !emailBodyText || isSendingRapidFire}
+                      onClick={async () => {
+                        setIsSendingRapidFire(true);
+                        try {
+                          const res = await fetch('/api/leads/email', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              leadId: selectedLead.id,
+                              subject: emailSubject,
+                              emailBody: emailBodyText
+                            })
+                          });
+                          if (res.ok) {
+                            setEmailBodyText('');
+                            // Reload timeline
+                            const leadsRes = await fetch(`/api/leads?leadId=${selectedLead.id}`);
+                            if (leadsRes.ok) {
+                              const json = await leadsRes.json();
+                              if (json.data && json.data.length > 0) {
+                                setSelectedLead(json.data[0]);
+                              }
+                            }
+                            fetchLeads();
+                          }
+                        } catch (err) {
+                          console.error(err);
+                        } finally {
+                          setIsSendingRapidFire(false);
+                        }
+                      }}
+                      className="btn-action btn-action-purple"
+                      style={{ fontSize: 11, padding: '6px 12px' }}
+                    >
+                      {isSendingRapidFire ? 'Enviando...' : '📤 Disparar E-mail'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeRapidFireTab === 'voip' && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <p className="label-sm" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    Iniciar chamada de áudio VoIP direta.
+                  </p>
+                  <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-primary)', fontWeight: 600 }}>
+                      📞 {selectedLead.phoneNumber || 'Sem número cadastrado'}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={!selectedLead.phoneNumber || isSendingRapidFire}
+                      onClick={async () => {
+                        setIsSendingRapidFire(true);
+                        try {
+                          const res = await fetch('/api/leads/call', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              leadId: selectedLead.id
+                            })
+                          });
+                          if (res.ok) {
+                            // Reload timeline
+                            const leadsRes = await fetch(`/api/leads?leadId=${selectedLead.id}`);
+                            if (leadsRes.ok) {
+                              const json = await leadsRes.json();
+                              if (json.data && json.data.length > 0) {
+                                setSelectedLead(json.data[0]);
+                              }
+                            }
+                            fetchLeads();
+                          }
+                        } catch (err) {
+                          console.error(err);
+                        } finally {
+                          setIsSendingRapidFire(false);
+                        }
+                      }}
+                      className="btn-action btn-action-purple"
+                      style={{ fontSize: 11, padding: '6px 12px' }}
+                    >
+                      {isSendingRapidFire ? 'Chamando...' : '📞 Discar VoIP'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Timeline Notes Area */}
