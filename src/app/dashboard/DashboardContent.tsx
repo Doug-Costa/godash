@@ -75,6 +75,10 @@ export default function DashboardContent({
   // Leads data state (loaded dynamically for Kanban & Leads Table)
   const [leads, setLeads] = useState<any[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
+  const [leadsPage, setLeadsPage] = useState(1);
+  const [leadsLimit, setLeadsLimit] = useState(10);
+  const [leadsTotal, setLeadsTotal] = useState(0);
+  const [leadsTotalPages, setLeadsTotalPages] = useState(1);
 
   // Canceled data state (loaded dynamically with pagination)
   const [canceledData, setCanceledData] = useState<any[]>([]);
@@ -244,22 +248,48 @@ export default function DashboardContent({
     setLoadingLeads(true);
     try {
       const monthParam = (activeTab === 'kanban' && kanbanFilterAllMonths) ? 'all' : filterMonth;
-      let url = `/api/leads?month=${monthParam}`;
+      
+      const useLimit = atendimentoViewMode === 'kanban' ? 1000 : leadsLimit;
+      const usePage = atendimentoViewMode === 'kanban' ? 1 : leadsPage;
+
+      let url = `/api/leads?month=${monthParam}&page=${usePage}&limit=${useLimit}`;
       if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
       if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
       if (filterStage !== '') url += `&stage=${filterStage}`;
       if (filterAssignee !== 'all') url += `&assigneeId=${filterAssignee}`;
       if (activePipelineId !== '') url += `&pipelineId=${activePipelineId}`;
+      if (activeTab === 'atendimento') url += `&atendimentoFila=${atendimentoFila}`;
 
       const res = await fetch(url);
       if (res.ok) {
         const json = await res.json();
         setLeads(json.data || []);
+        if (json.pagination) {
+          setLeadsTotal(json.pagination.total || 0);
+          setLeadsTotalPages(json.pagination.totalPages || 1);
+        }
+        if (activeTab === 'atendimento') {
+          fetchFilaCounts();
+        }
       }
     } catch (err) {
       console.error('Error fetching leads:', err);
     } finally {
       setLoadingLeads(false);
+    }
+  };
+
+  const fetchFilaCounts = async () => {
+    try {
+      const res = await fetch('/api/leads/counts');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setFilaCounts(json.data);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching fila counts:', err);
     }
   };
 
@@ -344,6 +374,9 @@ export default function DashboardContent({
 
   useEffect(() => {
     fetchLeads();
+    if (activeTab === 'atendimento') {
+      fetchFilaCounts();
+    }
     if (activeTab === 'cancelados') {
       fetchCanceledLeads();
     }
@@ -358,7 +391,11 @@ export default function DashboardContent({
       fetchSettings();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId, activePipelineId]);
+  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId, activePipelineId, leadsPage, leadsLimit, atendimentoFila, atendimentoViewMode]);
+
+  useEffect(() => {
+    setLeadsPage(1);
+  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, activeTab, atendimentoFila, atendimentoViewMode]);
 
   // Fetch plans list when campaign modal is open
   useEffect(() => {
@@ -1089,28 +1126,7 @@ export default function DashboardContent({
   };
 
   const renderAtendimento = () => {
-    let filteredLeads = [...leads];
-
-    if (atendimentoFila === 'campanhas') {
-      filteredLeads = leads.filter(l => l.campaign);
-    } else if (atendimentoFila === 'alerts') {
-      const taskLeadEmails = new Set(alertsData?.taskAlerts?.map((t: any) => t.personEmail));
-      filteredLeads = leads.filter(l => l.hasPendingAlert || taskLeadEmails.has(l.email));
-    } else if (atendimentoFila === 'cancelados') {
-      filteredLeads = leads.filter(l => l.subscriptionStatus === 'cancelado' || l.tag === 'CANCELED_CLIENT');
-    } else if (atendimentoFila === 'expirar') {
-      filteredLeads = leads.filter(l => {
-        if (l.subscriptionStatus === 'expirado') return true;
-        if (l.expiresIn) {
-          const diffTime = new Date(l.expiresIn).getTime() - new Date().getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          return diffDays >= 0 && diffDays <= 30;
-        }
-        return false;
-      });
-    } else if (atendimentoFila === 'abandonados') {
-      filteredLeads = leads.filter(l => !l.assignee && (!l.plan || l.plan.title.toLowerCase().includes('grátis') || l.plan.title.toLowerCase().includes('free')));
-    }
+    const filteredLeads = leads;
 
     return (
       <div className="animate-fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -1628,6 +1644,79 @@ export default function DashboardContent({
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Pagination Controls */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Exibir:</span>
+                <select
+                  value={leadsLimit}
+                  onChange={(e) => {
+                    setLeadsLimit(Number(e.target.value));
+                    setLeadsPage(1);
+                  }}
+                  style={{
+                    background: 'var(--surface-raised)', border: '1px solid var(--border)',
+                    color: 'var(--text-primary)', borderRadius: 6, padding: '4px 8px', fontSize: 12, outline: 'none', cursor: 'pointer'
+                  }}
+                >
+                  <option value={10}>10 por página</option>
+                  <option value={25}>25 por página</option>
+                  <option value={50}>50 por página</option>
+                </select>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginLeft: 8 }}>
+                  Mostrando {filteredLeads.length} de {leadsTotal} contatos
+                </span>
+              </div>
+
+              {leadsTotalPages > 1 && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    disabled={leadsPage === 1}
+                    onClick={() => setLeadsPage(prev => Math.max(1, prev - 1))}
+                    className="btn-action btn-action-outline"
+                    style={{ padding: '6px 12px', fontSize: 12, opacity: leadsPage === 1 ? 0.5 : 1, cursor: leadsPage === 1 ? 'not-allowed' : 'pointer' }}
+                  >
+                    ◀️ Anterior
+                  </button>
+
+                  {Array.from({ length: leadsTotalPages }, (_, idx) => idx + 1).map(p => {
+                    if (leadsTotalPages > 5 && Math.abs(p - leadsPage) > 2 && p !== 1 && p !== leadsTotalPages) {
+                      if (p === 2 || p === leadsTotalPages - 1) {
+                        return <span key={p} style={{ alignSelf: 'center', color: 'var(--text-faint)', padding: '0 4px' }}>...</span>;
+                      }
+                      return null;
+                    }
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => setLeadsPage(p)}
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: 12,
+                          borderRadius: 6,
+                          border: '1px solid var(--border)',
+                          cursor: 'pointer',
+                          background: leadsPage === p ? 'var(--accent)' : 'transparent',
+                          color: leadsPage === p ? '#fff' : 'var(--text-primary)'
+                        }}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    disabled={leadsPage === leadsTotalPages}
+                    onClick={() => setLeadsPage(prev => Math.min(leadsTotalPages, prev + 1))}
+                    className="btn-action btn-action-outline"
+                    style={{ padding: '6px 12px', fontSize: 12, opacity: leadsPage === leadsTotalPages ? 0.5 : 1, cursor: leadsPage === leadsTotalPages ? 'not-allowed' : 'pointer' }}
+                  >
+                    Próxima ▶️
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

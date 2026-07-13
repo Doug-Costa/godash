@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
 import pool from '@/lib/db';
+import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
 
 export async function GET(request: Request) {
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const userId = session.user.id;
     const isAgent = role === 'AGENT' || role === 'POST_SALES';
 
-    // 1. Campanhas Count
+    // 1. Campanhas (leads com tarefas pendentes de automação)
     const campanhasCount = await prisma.customer.count({
       where: {
         assigneeId: isAgent ? userId : undefined,
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
       }
     });
 
-    // 2. Alertas Count
+    // 2. Alertas (alerts - leads com qualquer tarefa pendente)
     const alertsCount = await prisma.customer.count({
       where: {
         assigneeId: isAgent ? userId : undefined,
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
       }
     });
 
-    // 3. Cancelados Count
+    // 3. Cancelados
     const canceladosCount = await prisma.customer.count({
       where: {
         assigneeId: isAgent ? userId : undefined,
@@ -47,49 +47,51 @@ export async function GET(request: Request) {
       }
     });
 
-    // 4. A Expirar Count
-    // Pegar IDs atribuídos no Postgres (se for agente, apenas os dele; se admin, todos)
-    const assignedStates = await prisma.customer.findMany({
-      where: isAgent ? { assigneeId: userId } : { assigneeId: { not: null } },
-      select: { externalPersonId: true }
-    });
-    const assignedIds = assignedStates.map(s => s.externalPersonId);
-
-    let expiringQuery = `
-      SELECT COUNT(DISTINCT p.id) as total 
-      FROM subscriptions s
-      INNER JOIN people p ON s.personId = p.id
+    // 4. A Expirar (assinaturas ativas expirando em 30 dias)
+    let expirarQuery = `
+      SELECT COUNT(DISTINCT p.id) as total
+      FROM people p
+      INNER JOIN subscriptions s ON s.personId = p.id
       WHERE s.status = 'active'
         AND COALESCE(s.isValidUntil, s.expiresIn) >= CURDATE()
         AND COALESCE(s.isValidUntil, s.expiresIn) <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
     `;
-    const expiringParams: any[] = [];
+    const expirarParams: any[] = [];
     if (isAgent) {
-      if (assignedIds.length > 0) {
-        expiringQuery += ` AND p.id IN (?)`;
-        expiringParams.push(assignedIds);
+      const assigned = await prisma.customer.findMany({
+        where: { assigneeId: userId },
+        select: { externalPersonId: true }
+      });
+      const ids = assigned.map(c => c.externalPersonId);
+      if (ids.length > 0) {
+        expirarQuery += ` AND p.id IN (?)`;
+        expirarParams.push(ids);
       } else {
-        expiringQuery += ` AND 1=0`; // Agente sem clientes não vê nenhum
+        expirarQuery += ` AND 1=0`;
       }
     }
+    const [expirarRows] = await pool.query(expirarQuery, expirarParams);
+    const expirarCount = (expirarRows as any[])[0]?.total || 0;
 
-    const [expiringRows] = await pool.query(expiringQuery, expiringParams);
-    const expirarCount = (expiringRows as any[])[0]?.total || 0;
-
-    // 5. Abandonados Count (Oportunidades gerais: sem responsável atribuído)
-    const assignedCustomers = await prisma.customer.findMany({
+    // 5. Abandonados (sem operador e sem plano ativo)
+    const assigned = await prisma.customer.findMany({
       where: { assigneeId: { not: null } },
       select: { externalPersonId: true }
     });
-    const allAssignedIds = assignedCustomers.map(c => c.externalPersonId);
+    const assignedIds = assigned.map(c => c.externalPersonId);
 
-    let abandonadosQuery = `SELECT COUNT(*) as total FROM people p WHERE 1=1`;
+    let abandonadosQuery = `
+      SELECT COUNT(DISTINCT p.id) as total
+      FROM people p
+      LEFT JOIN subscriptions s ON s.personId = p.id
+      LEFT JOIN plans pl ON s.planId = pl.id
+      WHERE pl.id IS NULL
+    `;
     const abandonadosParams: any[] = [];
-    if (allAssignedIds.length > 0) {
+    if (assignedIds.length > 0) {
       abandonadosQuery += ` AND p.id NOT IN (?)`;
-      abandonadosParams.push(allAssignedIds);
+      abandonadosParams.push(assignedIds);
     }
-
     const [abandonadosRows] = await pool.query(abandonadosQuery, abandonadosParams);
     const abandonadosCount = (abandonadosRows as any[])[0]?.total || 0;
 
@@ -103,8 +105,8 @@ export async function GET(request: Request) {
         abandonados: abandonadosCount
       }
     });
-  } catch (error: any) {
-    console.error('Error fetching leads counts:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (err: any) {
+    console.error('Counts API error:', err);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }

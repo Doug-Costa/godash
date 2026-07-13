@@ -28,41 +28,47 @@ export async function GET(request: Request) {
   const leadId = searchParams.get('leadId');
   const pipelineId = searchParams.get('pipelineId');
   const atendimentoFila = searchParams.get('atendimentoFila');
+  const page = searchParams.get('page') ? Number(searchParams.get('page')) : 1;
+  const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : 10;
+  const offset = (page - 1) * limit;
 
   const targetMonth = !month || month === 'all' ? new Date().toISOString().slice(0, 7) : month;
 
   try {
-    let query = `
-      SELECT 
-        p.id, 
-        p.fullName, 
-        p.email, 
-        p.phoneNumber, 
-        p.createdAt,
-        pl.id as planId,
-        pl.title as planTitle,
-        pl.price as planPrice,
-        pl.intervalType as planInterval,
-        s.status as subStatus,
-        s.canceledAt as subCanceledAt,
-        s.expiresIn as subExpiresIn,
-        s.isValidUntil as subIsValidUntil,
-        EXISTS(
-          SELECT 1 
-          FROM purchases pur
-          LEFT JOIN purchase_items pi ON pi.purchaseId = pur.id
-          LEFT JOIN product_items pit ON pi.productItemId = pit.id
-          LEFT JOIN plans spl ON pit.productId = spl.id
-          WHERE pur.personId = p.id AND pur.status = 'success'
-            AND (LOWER(spl.title) LIKE '%livro%' OR LOWER(spl.title) LIKE '%ebook%' OR LOWER(spl.title) LIKE '%book%' OR LOWER(spl.title) LIKE '%revista%')
-        ) as hasBookPurchase
+    let selectFields = `
+      p.id, 
+      p.fullName, 
+      p.email, 
+      p.phoneNumber, 
+      p.createdAt,
+      pl.id as planId,
+      pl.title as planTitle,
+      pl.price as planPrice,
+      pl.intervalType as planInterval,
+      s.status as subStatus,
+      s.canceledAt as subCanceledAt,
+      s.expiresIn as subExpiresIn,
+      s.isValidUntil as subIsValidUntil,
+      EXISTS(
+        SELECT 1 
+        FROM purchases pur
+        LEFT JOIN purchase_items pi ON pi.purchaseId = pur.id
+        LEFT JOIN product_items pit ON pi.productItemId = pit.id
+        LEFT JOIN plans spl ON pit.productId = spl.id
+        WHERE pur.personId = p.id AND pur.status = 'success'
+          AND (LOWER(spl.title) LIKE '%livro%' OR LOWER(spl.title) LIKE '%ebook%' OR LOWER(spl.title) LIKE '%book%' OR LOWER(spl.title) LIKE '%revista%')
+      ) as hasBookPurchase
+    `;
+
+    let fromAndJoin = `
       FROM people p
       LEFT JOIN subscriptions s ON s.personId = p.id 
         AND s.createdAt <= LAST_DAY(CONCAT(?, '-01')) 
         AND (s.canceledAt IS NULL OR s.canceledAt > LAST_DAY(CONCAT(?, '-01')))
       LEFT JOIN plans pl ON s.planId = pl.id
-      WHERE 1=1
     `;
+
+    let whereClause = ' WHERE 1=1';
     const params: any[] = [];
 
     // 1. Filter by CRM state from Postgres (stage, assignee, lossReason, tag)
@@ -148,7 +154,7 @@ export async function GET(request: Request) {
         });
         const assignedIds = assignedCustomers.map(c => c.externalPersonId);
         if (assignedIds.length > 0) {
-          query += ` AND p.id NOT IN (?)`;
+          whereClause += ` AND p.id NOT IN (?)`;
           params.push(assignedIds);
         }
       } else {
@@ -160,56 +166,62 @@ export async function GET(request: Request) {
           
           const matchingIds = matchingStates.map(s => s.externalPersonId);
           if (matchingIds.length === 0) {
-            return NextResponse.json({ success: true, data: [] });
+            return NextResponse.json({ success: true, data: [], pagination: { total: 0, page, limit, totalPages: 0 } });
           }
           
-          query += ` AND p.id IN (?)`;
+          whereClause += ` AND p.id IN (?)`;
           params.push(matchingIds);
         }
       }
     }
 
-    // 2. Filter by date/month (MySQL)
-    if (month && month !== 'all' && !leadId) {
-      query += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
+    // 2. Filter by date/month (MySQL) - IGNORADO SE HOUVER FILA DE ATENDIMENTO ATIVA
+    if (month && month !== 'all' && !leadId && !atendimentoFila) {
+      whereClause += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
       params.push(month);
     }
 
     // Filter by leadId directly if provided (MySQL)
     if (leadId) {
-      query += ` AND p.id = ?`;
+      whereClause += ` AND p.id = ?`;
       params.push(Number(leadId));
     }
 
     // 3. Filter by plan (MySQL)
     if (plan) {
       if (plan === 'none') {
-        query += ` AND pl.id IS NULL`;
+        whereClause += ` AND pl.id IS NULL`;
       } else {
-        query += ` AND pl.id = ?`;
+        whereClause += ` AND pl.id = ?`;
         params.push(Number(plan));
       }
     }
 
     if (atendimentoFila === 'expirar') {
-      query += ` AND s.status = 'active'
+      whereClause += ` AND s.status = 'active'
                  AND COALESCE(s.isValidUntil, s.expiresIn) >= CURDATE()
                  AND COALESCE(s.isValidUntil, s.expiresIn) <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)`;
     }
 
     // 4. Filter by name/email/phone (MySQL)
     if (search) {
-      query += ` AND (p.fullName LIKE ? OR p.email LIKE ? OR p.phoneNumber LIKE ?)`;
+      whereClause += ` AND (p.fullName LIKE ? OR p.email LIKE ? OR p.phoneNumber LIKE ?)`;
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    query += ` ORDER BY p.createdAt DESC LIMIT 1000`;
+    // EXECUTAR CONTAGEM PARA PAGINAÇÃO
+    const countQuery = `SELECT COUNT(DISTINCT p.id) as total ${fromAndJoin} ${whereClause}`;
+    const [countRows] = await pool.query(countQuery, [targetMonth, targetMonth, ...params]);
+    const totalRecords = (countRows as any[])[0]?.total || 0;
 
-    const [rows] = await pool.query(query, [targetMonth, targetMonth, ...params]);
+    // EXECUTAR CONSULTA DOS DADOS PAGINADOS
+    const mainQuery = `SELECT ${selectFields} ${fromAndJoin} ${whereClause} ORDER BY p.createdAt DESC LIMIT ? OFFSET ?`;
+    const [rows] = await pool.query(mainQuery, [targetMonth, targetMonth, ...params, limit, offset]);
+
     const personIds = (rows as any[]).map(r => r.id);
 
     if (personIds.length === 0) {
-      return NextResponse.json({ success: true, data: [] });
+      return NextResponse.json({ success: true, data: [], pagination: { total: totalRecords, page, limit, totalPages: Math.ceil(totalRecords / limit) } });
     }
 
     // Fetch corresponding states, interactions, campaign and alerts from Postgres
@@ -295,7 +307,16 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({
+      success: true,
+      data,
+      pagination: {
+        total: totalRecords,
+        page,
+        limit,
+        totalPages: Math.ceil(totalRecords / limit)
+      }
+    });
   } catch (error: any) {
     console.error('Leads GET error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
