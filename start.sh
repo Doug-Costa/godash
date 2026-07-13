@@ -17,7 +17,13 @@ cleanup() {
 trap cleanup TERM INT
 
 echo "⚙️ Syncing database schema with Prisma..."
-npx prisma db push --accept-data-loss
+MAX_RETRIES=30
+RETRIES=0
+until npx prisma db push --accept-data-loss || [ $RETRIES -eq $MAX_RETRIES ]; do
+  echo "Prisma sync failed (Postgres might not be ready yet) - retrying in 2 seconds ($RETRIES/$MAX_RETRIES)..."
+  sleep 2
+  RETRIES=$((RETRIES + 1))
+done
 
 echo "🚀 Starting Next.js Standalone Server..."
 node server.js &
