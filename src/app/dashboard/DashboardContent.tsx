@@ -43,7 +43,7 @@ interface DashboardContentProps {
   month: string;
   currentUser: { id: string; name: string; email: string; role: string } | null;
   agents: Array<{ id: string; name: string; email: string; role: string; isActive: boolean }>;
-  pipelines?: Array<{ id: string; name: string; description: string | null }>;
+  pipelines?: Array<{ id: string; name: string; description: string | null; stages?: any[] }>;
 }
 
 export default function DashboardContent({
@@ -61,9 +61,13 @@ export default function DashboardContent({
   const isAdmin = currentUser?.role === 'ADMIN';
 
   // State Management
-  const [activeTab, setActiveTab] = useState<'financeiro' | 'kanban' | 'leads' | 'team' | 'cancelados' | 'alerts' | 'campanhas'>(
-    isAdmin ? 'financeiro' : 'alerts'
+  const [activeTab, setActiveTab] = useState<'financeiro' | 'kanban' | 'leads' | 'team' | 'cancelados' | 'alerts' | 'campanhas' | 'atendimento'>(
+    isAdmin ? 'financeiro' : 'atendimento'
   );
+
+  const [atendimentoViewMode, setAtendimentoViewMode] = useState<'kanban' | 'list'>('kanban');
+  const [atendimentoFila, setAtendimentoFila] = useState<'campanhas' | 'alerts' | 'cancelados' | 'expirar' | 'abandonados'>('campanhas');
+  const [filaCounts, setFilaCounts] = useState({ campanhas: 0, alerts: 0, cancelados: 0, expirar: 0, abandonados: 0 });
   
   const defaultPipeline = pipelines.find(p => p.name === 'Vendas') || pipelines[0];
   const [activePipelineId, setActivePipelineId] = useState<string>(defaultPipeline?.id || '');
@@ -1084,6 +1088,553 @@ export default function DashboardContent({
     return `https://wa.me/${finalPhone}`;
   };
 
+  const renderAtendimento = () => {
+    let filteredLeads = [...leads];
+
+    if (atendimentoFila === 'campanhas') {
+      filteredLeads = leads.filter(l => l.campaign);
+    } else if (atendimentoFila === 'alerts') {
+      const taskLeadEmails = new Set(alertsData?.taskAlerts?.map((t: any) => t.personEmail));
+      filteredLeads = leads.filter(l => l.hasPendingAlert || taskLeadEmails.has(l.email));
+    } else if (atendimentoFila === 'cancelados') {
+      filteredLeads = leads.filter(l => l.subscriptionStatus === 'cancelado' || l.tag === 'CANCELED_CLIENT');
+    } else if (atendimentoFila === 'expirar') {
+      filteredLeads = leads.filter(l => {
+        if (l.subscriptionStatus === 'expirado') return true;
+        if (l.expiresIn) {
+          const diffTime = new Date(l.expiresIn).getTime() - new Date().getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          return diffDays >= 0 && diffDays <= 30;
+        }
+        return false;
+      });
+    } else if (atendimentoFila === 'abandonados') {
+      filteredLeads = leads.filter(l => !l.assignee && (!l.plan || l.plan.title.toLowerCase().includes('grátis') || l.plan.title.toLowerCase().includes('free')));
+    }
+
+    return (
+      <div className="animate-fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Header principal do Atendimento */}
+        <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontSize: '1.4rem', fontWeight: 800, letterSpacing: '-0.02em' }}>
+                Central de Atendimento
+              </h2>
+              <p className="label-sm" style={{ marginTop: 2 }}>Gerencie leads, atenda alertas, reverta cancelados e controle as suas oportunidades em uma única fila.</p>
+            </div>
+
+            {/* Seletor "Ver como" */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface-raised)', padding: 4, borderRadius: 8, border: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, paddingLeft: 8, color: 'var(--text-secondary)' }}>Ver como:</span>
+              <button
+                type="button"
+                onClick={() => setAtendimentoViewMode('kanban')}
+                style={{
+                  padding: '6px 12px', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  background: atendimentoViewMode === 'kanban' ? 'var(--accent)' : 'transparent',
+                  color: atendimentoViewMode === 'kanban' ? '#fff' : 'var(--text-secondary)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                📋 Kanban
+              </button>
+              <button
+                type="button"
+                onClick={() => setAtendimentoViewMode('list')}
+                style={{
+                  padding: '6px 12px', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  background: atendimentoViewMode === 'list' ? 'var(--accent)' : 'transparent',
+                  color: atendimentoViewMode === 'list' ? '#fff' : 'var(--text-secondary)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                📄 Lista
+              </button>
+            </div>
+          </div>
+
+          {/* Filas de Atendimento (Row 2) */}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => setAtendimentoFila('campanhas')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
+                borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                background: atendimentoFila === 'campanhas' ? 'var(--accent-glow)' : 'var(--surface)',
+                borderColor: atendimentoFila === 'campanhas' ? 'var(--accent)' : 'var(--border)',
+                color: atendimentoFila === 'campanhas' ? 'var(--accent)' : 'var(--text-secondary)'
+              }}
+            >
+              🎯 Campanhas
+              {filaCounts.campanhas > 0 && (
+                <span className="badge" style={{ background: 'var(--accent)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
+                  {filaCounts.campanhas}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAtendimentoFila('alerts')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
+                borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                background: atendimentoFila === 'alerts' ? 'var(--accent-glow)' : 'var(--surface)',
+                borderColor: atendimentoFila === 'alerts' ? 'var(--accent)' : 'var(--border)',
+                color: atendimentoFila === 'alerts' ? 'var(--accent)' : 'var(--text-secondary)'
+              }}
+            >
+              🔔 Alertas / Tarefas
+              {filaCounts.alerts > 0 && (
+                <span className="badge" style={{ background: 'var(--accent)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
+                  {filaCounts.alerts}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAtendimentoFila('cancelados')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
+                borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                background: atendimentoFila === 'cancelados' ? 'rgba(239, 68, 68, 0.1)' : 'var(--surface)',
+                borderColor: atendimentoFila === 'cancelados' ? '#EF4444' : 'var(--border)',
+                color: atendimentoFila === 'cancelados' ? '#EF4444' : 'var(--text-secondary)'
+              }}
+            >
+              🚫 Cancelados
+              {filaCounts.cancelados > 0 && (
+                <span className="badge" style={{ background: '#EF4444', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
+                  {filaCounts.cancelados}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAtendimentoFila('expirar')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
+                borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                background: atendimentoFila === 'expirar' ? 'rgba(245, 158, 11, 0.1)' : 'var(--surface)',
+                borderColor: atendimentoFila === 'expirar' ? '#F59E0B' : 'var(--border)',
+                color: atendimentoFila === 'expirar' ? '#F59E0B' : 'var(--text-secondary)'
+              }}
+            >
+              ⏳ A Expirar
+              {filaCounts.expirar > 0 && (
+                <span className="badge" style={{ background: '#F59E0B', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
+                  {filaCounts.expirar}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAtendimentoFila('abandonados')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
+                borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                background: atendimentoFila === 'abandonados' ? 'rgba(6, 182, 212, 0.1)' : 'var(--surface)',
+                borderColor: atendimentoFila === 'abandonados' ? 'var(--cyan)' : 'var(--border)',
+                color: atendimentoFila === 'abandonados' ? 'var(--cyan)' : 'var(--text-secondary)'
+              }}
+            >
+              🛒 Abandonados (Fila Geral)
+              {filaCounts.abandonados > 0 && (
+                <span className="badge" style={{ background: 'var(--cyan)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
+                  {filaCounts.abandonados}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Controles de Filtro e Busca Unificados */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+            gap: 12, padding: 16, background: 'var(--surface-raised)', borderRadius: 12, border: '1px solid var(--border)'
+          }}>
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>🔍 Buscar Nome/Email/Telefone:</label>
+              <input 
+                type="text" 
+                value={filterSearch} 
+                onChange={(e) => setFilterSearch(e.target.value)}
+                placeholder="Ex: Carlos Silva..."
+                style={{
+                  width: '100%', padding: '8px 12px', background: 'var(--surface)',
+                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
+                }}
+              />
+            </div>
+
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Plano:</label>
+              <select 
+                value={filterPlan} 
+                onChange={(e) => setFilterPlan(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
+              >
+                <option value="all">Todos os Planos</option>
+                <option value="none">Cadastro Grátis (Sem Plano)</option>
+                {users?.usersByPlan?.map((p: any) => (
+                  <option key={p.planId} value={p.planId}>{p.planTitle}</option>
+                ))}
+              </select>
+            </div>
+
+            {isAdmin && (
+              <div>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Responsável:</label>
+                <select
+                  value={filterAssignee}
+                  onChange={(e) => setFilterAssignee(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
+                >
+                  <option value="all">Todos os Colaboradores</option>
+                  <option value="unassigned">Não Atribuídos</option>
+                  {teamList.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Competência:</label>
+              <MonthSelector currentMonth={filterMonth} />
+            </div>
+          </div>
+        </div>
+
+        {/* Abas de Funis (Pipelines) - Apenas se no Kanban */}
+        {atendimentoViewMode === 'kanban' && (
+          <div style={{ display: 'flex', gap: 8, background: 'var(--surface-raised)', padding: 6, borderRadius: 10, width: 'fit-content', border: '1px solid var(--border)' }}>
+            {pipelines.map((pipeline) => (
+              <button
+                key={pipeline.id}
+                onClick={() => setActivePipelineId(pipeline.id)}
+                style={{
+                  padding: '6px 16px', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  background: activePipelineId === pipeline.id ? 'var(--accent)' : 'transparent',
+                  color: activePipelineId === pipeline.id ? '#fff' : 'var(--text-secondary)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                ⚡ Funil: {pipeline.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Renderização conforme View Mode */}
+        {loadingLeads ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 20 }}>
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="skeleton" style={{ height: 50, width: '100%' }}></div>
+            ))}
+          </div>
+        ) : atendimentoViewMode === 'kanban' ? (
+          /* ==================== RENDERING KANBAN ==================== */
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, overflowX: 'auto', minHeight: '60vh' }}>
+            {(() => {
+              const currentPipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0];
+              const stages = currentPipeline ? currentPipeline.stages : [
+                { key: 'novo_cadastro', label: 'Novo Cadastro' },
+                { key: 'contato_inicial', label: 'Contato Inicial' },
+                { key: 'negociacao', label: 'Em Negociação' },
+                { key: 'convertido', label: 'Convertido / Ganho' },
+                { key: 'perdido', label: 'Perdido / Descarte' }
+              ];
+              const STAGE_LABELS: Record<string, string> = {};
+              stages?.forEach((s: any) => {
+                STAGE_LABELS[s.key] = s.label;
+              });
+
+              return (stages as any[]).map((stage: any) => {
+                const stageKey = stage.key;
+                const stageLeads = filteredLeads.filter((l) => l.stage === stageKey);
+
+                return (
+                  <div 
+                    key={stageKey}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => handleDrop(e, stageKey)}
+                    style={{
+                      background: 'var(--surface)', border: '1px solid var(--border)',
+                      borderRadius: 12, padding: 14, minWidth: 220, display: 'flex', flexDirection: 'column'
+                    }}
+                  >
+                    {/* Column Header */}
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      marginBottom: 16, paddingBottom: 8, borderBottom: '2px solid ' + STAGE_COLORS[stageKey]
+                    }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: STAGE_COLORS[stageKey] }}></span>
+                        {STAGE_LABELS[stageKey]}
+                      </span>
+                      <span className="badge badge-neu" style={{ fontSize: 11 }}>{stageLeads.length}</span>
+                    </div>
+
+                    {/* Cards Container */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, overflowY: 'auto', maxHeight: '75vh' }}>
+                      {stageLeads.length === 0 ? (
+                        <div style={{
+                          textAlign: 'center', padding: '30px 10px', fontSize: 11,
+                          color: 'var(--text-faint)', border: '1px dashed var(--border)', borderRadius: 8
+                        }}>
+                          Sem contatos
+                        </div>
+                      ) : (
+                        stageLeads.map((lead) => (
+                          <div 
+                            key={lead.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, lead.id)}
+                            onClick={() => openTimeline(lead)}
+                            style={{
+                              background: 'var(--surface-raised)', border: '1px solid var(--border)',
+                              borderRadius: 8, padding: 12, cursor: 'grab',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.1)', transition: 'transform 0.2s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'none'}
+                          >
+                            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span>{lead.fullName}</span>
+                              {lead.tag === 'CANCELED_CLIENT' && (
+                                <span className="badge badge-down" style={{ fontSize: 9, padding: '2px 6px' }}>
+                                  🚫 Cancelado
+                                </span>
+                              )}
+                              {lead.isBookPurchase && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(236, 72, 153, 0.15)', color: '#EC4899', border: '1px solid rgba(236, 72, 153, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  📖 [Livro]
+                                </span>
+                              )}
+                              {lead.subscriptionStatus === 'ativo' && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  🟢 Ativo
+                                </span>
+                              )}
+                              {lead.subscriptionStatus === 'cancelado' && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  🔴 Cancelado
+                                </span>
+                              )}
+                              {lead.subscriptionStatus === 'expirado' && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  🟡 Expirado
+                                </span>
+                              )}
+                              {lead.campaign && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--cyan)', border: '1px solid var(--cyan)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  🎯 {lead.campaign.name}
+                                </span>
+                              )}
+                              {lead.hasPendingAlert && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--red)', border: '1px solid var(--red)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  ⚠️ Alerta!
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
+                              <strong>Plano:</strong> {lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', wordBreak: 'break-all', marginBottom: 4 }}>
+                              📧 {lead.email || 'Sem e-mail'}
+                            </div>
+                            {lead.phoneNumber ? (
+                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                                📞 {lead.phoneNumber}
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8 }}>
+                                📞 Sem telefone
+                              </div>
+                            )}
+                            
+                            {/* Botão de claim se for abandonado/sem responsável */}
+                            {!lead.assignee && (
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const res = await fetch('/api/alerts', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        action: 'claim',
+                                        personId: lead.id
+                                      })
+                                    });
+                                    if (res.ok) {
+                                      fetchLeads();
+                                    }
+                                  } catch (err) {
+                                    console.error(err);
+                                  }
+                                }}
+                                className="btn-action btn-action-purple"
+                                style={{ width: '100%', fontSize: 11, padding: '4px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+                              >
+                                📥 Assumir Atendimento
+                              </button>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        ) : (
+          /* ==================== RENDERING LIST ==================== */
+          <div className="card">
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Filas / Badges</th>
+                    <th>E-mail</th>
+                    <th>Telefone</th>
+                    <th>Plano Ativo</th>
+                    <th>Estágio Funil</th>
+                    <th>Responsável</th>
+                    <th style={{ textAlign: 'center' }}>Ação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredLeads.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--text-faint)' }}>
+                        Nenhum lead correspondente à fila foi encontrado.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredLeads.map((lead) => {
+                      return (
+                        <tr key={lead.id} onClick={() => openTimeline(lead)} style={{ cursor: 'pointer' }}>
+                          <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{lead.fullName}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {lead.tag === 'CANCELED_CLIENT' && (
+                                <span className="badge badge-down" style={{ fontSize: 9, padding: '2px 6px' }}>
+                                  🚫 Cancelado
+                                </span>
+                              )}
+                              {lead.isBookPurchase && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(236, 72, 153, 0.15)', color: '#EC4899', border: '1px solid rgba(236, 72, 153, 0.3)' }}>
+                                  📖 [Livro]
+                                </span>
+                              )}
+                              {lead.subscriptionStatus === 'ativo' && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                                  Ativo
+                                </span>
+                              )}
+                              {lead.subscriptionStatus === 'cancelado' && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                                  Cancelado
+                                </span>
+                              )}
+                              {lead.subscriptionStatus === 'expirado' && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                                  Expirado
+                                </span>
+                              )}
+                              {lead.campaign && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--cyan)', border: '1px solid var(--cyan)' }}>
+                                  🎯 {lead.campaign.name}
+                                </span>
+                              )}
+                              {lead.hasPendingAlert && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--red)', border: '1px solid var(--red)', fontWeight: 'bold' }}>
+                                  ⚠️ Alerta
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td><span className="stat-mono" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{lead.email}</span></td>
+                          <td><span className="stat-mono" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{lead.phoneNumber || 'Sem fone'}</span></td>
+                          <td>{lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}</td>
+                          <td>
+                            <span 
+                              className="badge" 
+                              style={{ 
+                                background: `${STAGE_COLORS[lead.stage]}1A`, 
+                                color: STAGE_COLORS[lead.stage],
+                                border: `1px solid ${STAGE_COLORS[lead.stage]}33`,
+                                fontSize: 11
+                              }}
+                            >
+                              {STAGE_LABELS[lead.stage]}
+                            </span>
+                          </td>
+                          <td>
+                            <span style={{ color: lead.assignee ? 'var(--accent)' : 'var(--text-muted)', fontSize: 12 }}>
+                              {lead.assignee ? lead.assignee.name : 'Não Atribuído'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => openTimeline(lead)}
+                                className="btn-action btn-action-outline"
+                                style={{ fontSize: 11, padding: '4px 10px' }}
+                              >
+                                ⚡ Atender
+                              </button>
+                              {!lead.assignee && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      const res = await fetch('/api/alerts', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                          action: 'claim',
+                                          personId: lead.id
+                                        })
+                                      });
+                                      if (res.ok) {
+                                        fetchLeads();
+                                      }
+                                    } catch (err) {
+                                      console.error(err);
+                                    }
+                                  }}
+                                  className="btn-action btn-action-purple"
+                                  style={{ fontSize: 11, padding: '4px 10px' }}
+                                >
+                                  📥 Assumir
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={{ minHeight: '100vh', padding: '24px 24px 64px' }}>
       
@@ -1123,37 +1674,15 @@ export default function DashboardContent({
             </button>
           )}
           <button 
-            onClick={() => setActiveTab('kanban')}
+            onClick={() => setActiveTab('atendimento')}
             style={{
               padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              background: activeTab === 'kanban' ? 'var(--accent-glow)' : 'transparent',
-              color: activeTab === 'kanban' ? 'var(--accent)' : 'var(--text-secondary)',
+              background: activeTab === 'atendimento' ? 'var(--accent-glow)' : 'transparent',
+              color: activeTab === 'atendimento' ? 'var(--accent)' : 'var(--text-secondary)',
               transition: 'all 0.2s'
             }}
           >
-            📋 Funil Kanban
-          </button>
-          <button 
-            onClick={() => setActiveTab('leads')}
-            style={{
-              padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              background: activeTab === 'leads' ? 'var(--accent-glow)' : 'transparent',
-              color: activeTab === 'leads' ? 'var(--accent)' : 'var(--text-secondary)',
-              transition: 'all 0.2s'
-            }}
-          >
-            🔍 Fila de Leads
-          </button>
-          <button 
-            onClick={() => setActiveTab('alerts')}
-            style={{
-              padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              background: activeTab === 'alerts' ? 'var(--accent-glow)' : 'transparent',
-              color: activeTab === 'alerts' ? 'var(--accent)' : 'var(--text-secondary)',
-              transition: 'all 0.2s'
-            }}
-          >
-            🔔 Alert Center
+            🎧 Atendimento
           </button>
           {isAdmin && (
             <button 
@@ -1181,19 +1710,7 @@ export default function DashboardContent({
               ⚙️ Administração
             </button>
           )}
-          {isAdmin && (
-            <button 
-              onClick={() => setActiveTab('cancelados')}
-              style={{
-                padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                background: activeTab === 'cancelados' ? 'var(--accent-glow)' : 'transparent',
-                color: activeTab === 'cancelados' ? 'var(--accent)' : 'var(--text-secondary)',
-                transition: 'all 0.2s'
-              }}
-            >
-              🚫 Cancelados
-            </button>
-          )}
+
           {(isAdmin || currentUser?.role === 'POST_SALES') && (
             <button 
               onClick={() => window.location.href = '/dashboard/post-sales'}
@@ -1428,1084 +1945,12 @@ export default function DashboardContent({
         </div>
       )}
 
-      {/* 2. Quadro Kanban (ADMIN & AGENT) */}
-      {activeTab === 'kanban' && (
-        <div className="animate-fadeUp">
-          {/* Kanban Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
-            <div>
-              <h2 style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 700 }}>
-                Funil de CRM Comercial
-              </h2>
-              <p className="label-sm" style={{ marginTop: 2 }}>Arraste os cards para alterar a etapa ou clique para registrar notas de contato.</p>
-            </div>
+      {/* 2. Atendimento Hub (ADMIN & AGENT) */}
+      {activeTab === 'atendimento' && renderAtendimento()}
 
-            {/* Kanban Filter Toolbar */}
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-              {/* Search leads by name, email or phone */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="label-sm">Buscar:</span>
-                <input 
-                  type="text" 
-                  value={filterSearch} 
-                  onChange={(e) => setFilterSearch(e.target.value)}
-                  placeholder="Nome, e-mail ou fone..."
-                  style={{
-                    padding: '6px 12px', background: 'var(--surface-raised)',
-                    border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13,
-                    width: '180px'
-                  }}
-                />
-              </div>
 
-              {isAdmin && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="label-sm">Agente:</span>
-                  <select 
-                    value={filterAssignee} 
-                    onChange={(e) => setFilterAssignee(e.target.value)}
-                    style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
-                  >
-                    <option value="all">Fila Geral (Todos)</option>
-                    <option value="unassigned">Sem Responsável</option>
-                    {teamList.map(t => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="label-sm">Plano:</span>
-                <select 
-                  value={filterPlan} 
-                  onChange={(e) => setFilterPlan(e.target.value)}
-                  style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
-                >
-                  <option value="all">Todos os Planos</option>
-                  <option value="none">Sem Plano (Grátis)</option>
-                  {users?.usersByPlan?.map((p: any) => (
-                    <option key={p.planId} value={p.planId}>{p.planTitle}</option>
-                  ))}
-                </select>
-              </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="label-sm">Período:</span>
-                <select
-                  value={kanbanFilterAllMonths ? 'all' : 'month'}
-                  onChange={(e) => setKanbanFilterAllMonths(e.target.value === 'all')}
-                  style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
-                >
-                  <option value="month">Filtrar por Mês</option>
-                  <option value="all">Geral (Todos os Meses)</option>
-                </select>
-              </div>
-
-              {!kanbanFilterAllMonths && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="label-sm">Mês:</span>
-                  <MonthSelector currentMonth={filterMonth} />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Pipeline Tabs */}
-          {pipelines.length > 0 && (
-            <div style={{
-              display: 'flex', gap: 8, marginBottom: 24, padding: 4,
-              background: 'var(--surface-raised)', borderRadius: 12, border: '1px solid var(--border)',
-              width: 'fit-content'
-            }}>
-              {pipelines.map((pipe) => {
-                const isActive = activePipelineId === pipe.id;
-                return (
-                  <button
-                    key={pipe.id}
-                    onClick={() => setActivePipelineId(pipe.id)}
-                    style={{
-                      padding: '8px 16px', borderRadius: 8, border: 'none',
-                      background: isActive ? 'var(--accent-glow)' : 'transparent',
-                      color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-                      fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    📋 {pipe.name === 'CS' ? 'CS (Pós-Venda)' : pipe.name}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Kanban Board Grid */}
-          {loadingLeads ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, height: 400 }}>
-              {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="skeleton" style={{ height: '100%', borderRadius: 12 }}></div>
-              ))}
-            </div>
-          ) : (
-            <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: 12, alignItems: 'start'
-            }}>
-              {Object.keys(STAGE_LABELS).map((stageKey) => {
-                const stageLeads = leads.filter(l => l.stage === stageKey);
-                return (
-                  <div 
-                    key={stageKey}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => handleDrop(e, stageKey)}
-                    style={{
-                      background: 'var(--surface)', border: '1px solid var(--border)',
-                      borderRadius: 12, padding: 12, minHeight: 480
-                    }}
-                  >
-                    {/* Stage Header */}
-                    <div style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      marginBottom: 16, borderBottom: `2px solid ${STAGE_COLORS[stageKey]}`,
-                      paddingBottom: 8
-                    }}>
-                      <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
-                        {STAGE_LABELS[stageKey]}
-                      </span>
-                      <span className="badge badge-neu" style={{ fontSize: 11 }}>{stageLeads.length}</span>
-                    </div>
-
-                    {/* Cards Container */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {stageLeads.length === 0 ? (
-                        <div style={{
-                          textAlign: 'center', padding: '30px 10px', fontSize: 11,
-                          color: 'var(--text-faint)', border: '1px dashed var(--border)', borderRadius: 8
-                        }}>
-                          Sem contatos
-                        </div>
-                      ) : (
-                        stageLeads.map((lead) => (
-                          <div 
-                            key={lead.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, lead.id)}
-                            onClick={() => openTimeline(lead)}
-                            style={{
-                              background: 'var(--surface-raised)', border: '1px solid var(--border)',
-                              borderRadius: 8, padding: 12, cursor: 'grab',
-                              boxShadow: '0 2px 4px rgba(0,0,0,0.1)', transition: 'transform 0.2s'
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                            onMouseLeave={(e) => e.currentTarget.style.transform = 'none'}
-                          >
-                            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <span>{lead.fullName}</span>
-                              {lead.tag === 'CANCELED_CLIENT' && (
-                                <span className="badge badge-down" style={{ fontSize: 9, padding: '2px 6px' }}>
-                                  🚫 Cancelado
-                                </span>
-                              )}
-                              {lead.subscriptionStatus === 'ativo' && (
-                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                                  🟢 Ativo
-                                </span>
-                              )}
-                              {lead.subscriptionStatus === 'cancelado' && (
-                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                                  🔴 Cancelado
-                                </span>
-                              )}
-                              {lead.subscriptionStatus === 'expirado' && (
-                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                                  🟡 Expirado
-                                </span>
-                              )}
-                              {lead.campaign && (
-                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--cyan)', border: '1px solid var(--cyan)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                                  🎯 {lead.campaign.name}
-                                </span>
-                              )}
-                              {lead.hasPendingAlert && (
-                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--red)', border: '1px solid var(--red)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                                  ⚠️ Alerta!
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
-                              <strong>Plano:</strong> {lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}
-                            </div>
-                            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', wordBreak: 'break-all', marginBottom: 4 }}>
-                              📧 {lead.email || 'Sem e-mail'}
-                            </div>
-                            {lead.phoneNumber ? (
-                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
-                                📞{' '}
-                                <a 
-                                  href={formatWhatsappLink(lead.phoneNumber) || '#'} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}
-                                >
-                                  {lead.phoneNumber} 🟢
-                                </a>
-                              </div>
-                            ) : (
-                              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
-                                📞 Sem fone
-                              </div>
-                            )}
-
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                                {lead.notes?.length || 0} notas
-                              </span>
-                              {lead.assignee && (
-                                <span className="badge badge-cyan" style={{ fontSize: 9, padding: '2px 6px' }}>
-                                  👤 {lead.assignee.name.split(' ')[0]}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 3. Fila de Leads (ADMIN & AGENT) */}
-      {activeTab === 'leads' && (
-        <div className="card animate-fadeUp">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
-            <div>
-              <div className="label" style={{ marginBottom: 4 }}>Fila Unificada de Leads</div>
-              <div className="label-sm">Filtre cadastros da base core e inicie interações rápidas.</div>
-            </div>
-            <span className="badge badge-cyan">{leads.length} leads carregados</span>
-          </div>
-
-          {/* Filtering Bar */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-            gap: 12, marginBottom: 20, padding: 16, background: 'var(--surface-raised)', borderRadius: 12
-          }}>
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Buscar Nome/Email:</label>
-              <input 
-                type="text" 
-                value={filterSearch} 
-                onChange={(e) => setFilterSearch(e.target.value)}
-                placeholder="Ex: Carlos Silva..."
-                style={{
-                  width: '100%', padding: '8px 12px', background: 'var(--surface)',
-                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
-                }}
-              />
-            </div>
-
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Plano:</label>
-              <select 
-                value={filterPlan} 
-                onChange={(e) => setFilterPlan(e.target.value)}
-                style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
-              >
-                <option value="all">Todos os Planos</option>
-                <option value="none">Cadastro Grátis (Sem Plano)</option>
-                {users?.usersByPlan?.map((p: any) => (
-                  <option key={p.planId} value={p.planId}>{p.planTitle}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Estágio CRM:</label>
-              <select 
-                value={filterStage} 
-                onChange={(e) => setFilterStage(e.target.value)}
-                style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
-              >
-                <option value="">Todos os Estágios</option>
-                {Object.entries(STAGE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-            </div>
-
-            {isAdmin && (
-              <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Responsável:</label>
-                <select 
-                  value={filterAssignee} 
-                  onChange={(e) => setFilterAssignee(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
-                >
-                  <option value="all">Todos os Agentes</option>
-                  <option value="unassigned">Sem Responsável</option>
-                  {teamList.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Competência:</label>
-              <MonthSelector currentMonth={filterMonth} />
-            </div>
-          </div>
-
-          {/* Floating Action Bar for Selected Leads */}
-          {isAdmin && selectedLeadIds.length > 0 && (
-            <div style={{
-              background: 'var(--accent-glow)', border: '1px solid var(--accent)', padding: '12px 20px',
-              borderRadius: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16
-            }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>
-                🎯 {selectedLeadIds.length} leads selecionados para campanhas
-              </span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={() => {
-                    setAssignCampaignId('');
-                    setAssignUserIds([]);
-                    setShowAssignModal(true);
-                  }}
-                  className="btn-action btn-action-purple"
-                  style={{ fontSize: 12, padding: '6px 12px' }}
-                >
-                  🚀 Distribuir em Campanha
-                </button>
-                <button
-                  onClick={() => setSelectedLeadIds([])}
-                  className="btn-action btn-action-outline"
-                  style={{ fontSize: 12, padding: '6px 12px' }}
-                >
-                  Limpar Seleção
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Leads Table Grid */}
-          {loadingLeads ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 20 }}>
-              {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="skeleton" style={{ height: 40, width: '100%' }}></div>
-              ))}
-            </div>
-          ) : (
-            <div className="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    {isAdmin && (
-                      <th style={{ width: 40, textAlign: 'center' }}>
-                        <input 
-                          type="checkbox"
-                          checked={leads.length > 0 && selectedLeadIds.length === leads.length}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedLeadIds(leads.map(l => l.id));
-                            } else {
-                              setSelectedLeadIds([]);
-                            }
-                          }}
-                        />
-                      </th>
-                    )}
-                    <th>Data Cadastro</th>
-                    <th>Nome</th>
-                    <th>Email</th>
-                    <th>Telefone</th>
-                    <th>Plano Ativo</th>
-                    <th>Etapa CRM</th>
-                    <th>Responsável</th>
-                    <th style={{ textAlign: 'center' }}>Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leads.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--text-faint)' }}>
-                        Nenhum lead correspondente aos filtros foi encontrado.
-                      </td>
-                    </tr>
-                  ) : (
-                    leads.map((lead) => {
-                      const waLink = formatWhatsappLink(lead.phoneNumber);
-                      return (
-                        <tr key={lead.id}>
-                          {isAdmin && (
-                            <td style={{ textAlign: 'center' }}>
-                              <input 
-                                type="checkbox"
-                                checked={selectedLeadIds.includes(lead.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedLeadIds([...selectedLeadIds, lead.id]);
-                                  } else {
-                                    setSelectedLeadIds(selectedLeadIds.filter(id => id !== lead.id));
-                                  }
-                                }}
-                              />
-                            </td>
-                          )}
-                          <td><span className="stat-mono" style={{ fontSize: 12 }}>{lead.createdAt.slice(0, 10)}</span></td>
-                          <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              {lead.fullName}
-                              {lead.tag === 'CANCELED_CLIENT' && (
-                                <span className="badge badge-down" style={{ fontSize: 9, padding: '2px 6px' }}>
-                                  🚫 Cancelado
-                                </span>
-                              )}
-                              {lead.campaign && (
-                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--cyan)', border: '1px solid var(--cyan)' }}>
-                                  🎯 {lead.campaign.name}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td><span className="stat-mono" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{lead.email}</span></td>
-                          <td>
-                            {lead.phoneNumber ? (
-                              waLink ? (
-                                <a 
-                                  href={waLink} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  style={{ color: 'var(--green)', textDecoration: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
-                                >
-                                  🟢 {lead.phoneNumber}
-                                </a>
-                              ) : lead.phoneNumber
-                            ) : (
-                              <span style={{ color: 'var(--text-faint)' }}>Sem fone</span>
-                            )}
-                          </td>
-                          <td>
-                            <span style={{ color: lead.plan ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                              {lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}
-                            </span>
-                          </td>
-                          <td>
-                            <span 
-                              className="badge" 
-                              style={{ 
-                                background: `${STAGE_COLORS[lead.stage]}1A`, 
-                                color: STAGE_COLORS[lead.stage],
-                                border: `1px solid ${STAGE_COLORS[lead.stage]}33`
-                              }}
-                            >
-                              {STAGE_LABELS[lead.stage]}
-                            </span>
-                          </td>
-                          <td>
-                            <span style={{ color: lead.assignee ? 'var(--accent)' : 'var(--text-muted)', fontSize: 12 }}>
-                              {lead.assignee ? lead.assignee.name : 'Não Atribuído'}
-                            </span>
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <button 
-                              onClick={() => openFastAcquisition(lead)}
-                              style={{
-                                padding: '6px 12px', border: '1px solid var(--accent)', borderRadius: 8,
-                                background: 'transparent', color: 'var(--accent)', fontSize: 12, fontWeight: 600,
-                                cursor: 'pointer', transition: 'all 0.2s'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = 'var(--accent)';
-                                e.currentTarget.style.color = '#fff';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = 'transparent';
-                                e.currentTarget.style.color = 'var(--accent)';
-                              }}
-                            >
-                              ⚡ Atender
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Aba de Cancelados (ADMIN Only) */}
-      {activeTab === 'cancelados' && isAdmin && (
-        <div className="card animate-fadeUp">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
-            <div>
-              <div className="label" style={{ marginBottom: 4 }}>🚫 Clientes Cancelados (Churn)</div>
-              <div className="label-sm">Filtre cadastros de clientes com assinaturas canceladas, gerencie no CRM ou exporte relatórios.</div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button 
-                onClick={() => {
-                  let url = `/api/leads/canceled?format=csv`;
-                  if (!canceledFilterAllMonths) url += `&month=${filterMonth}`;
-                  if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
-                  if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
-                  window.open(url, '_blank');
-                }}
-                className="btn-action btn-action-outline"
-                style={{ fontSize: 12, padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                📥 Exportar CSV
-              </button>
-              <button 
-                onClick={() => {
-                  let url = `/dashboard/canceled/print?`;
-                  if (!canceledFilterAllMonths) url += `month=${filterMonth}&`;
-                  if (filterPlan !== 'all') url += `plan=${filterPlan}&`;
-                  if (filterSearch.trim() !== '') url += `search=${encodeURIComponent(filterSearch)}`;
-                  window.open(url, '_blank');
-                }}
-                className="btn-action btn-action-purple"
-                style={{ fontSize: 12, padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                🖨️ Gerar PDF
-              </button>
-              <span className="badge badge-cyan">{canceledTotal} cancelados</span>
-            </div>
-          </div>
-
-          {/* Filtering Bar */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-            gap: 12, marginBottom: 20, padding: 16, background: 'var(--surface-raised)', borderRadius: 12
-          }}>
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Buscar Nome/Email:</label>
-              <input 
-                type="text" 
-                value={filterSearch} 
-                onChange={(e) => setFilterSearch(e.target.value)}
-                placeholder="Ex: Carlos Silva..."
-                style={{
-                  width: '100%', padding: '8px 12px', background: 'var(--surface)',
-                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
-                }}
-              />
-            </div>
-
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Plano Cancelado:</label>
-              <select 
-                value={filterPlan} 
-                onChange={(e) => setFilterPlan(e.target.value)}
-                style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
-              >
-                <option value="all">Todos os Planos</option>
-                {users?.usersByPlan?.map((p: any) => (
-                  <option key={p.planId} value={p.planId}>{p.planTitle}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Período:</label>
-              <select 
-                value={canceledFilterAllMonths ? 'all' : 'month'} 
-                onChange={(e) => setCanceledFilterAllMonths(e.target.value === 'all')}
-                style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
-              >
-                <option value="month">Filtrar por Mês</option>
-                <option value="all">Todos os Meses (Geral)</option>
-              </select>
-            </div>
-
-            {!canceledFilterAllMonths && (
-              <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Mês Cancelamento:</label>
-                <MonthSelector currentMonth={filterMonth} />
-              </div>
-            )}
-          </div>
-
-          {/* Canceled Table Grid */}
-          {loadingCanceled ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 20 }}>
-              {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="skeleton" style={{ height: 40, width: '100%' }}></div>
-              ))}
-            </div>
-          ) : (
-            <>
-              <div className="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Data Cancelamento</th>
-                      <th>Nome</th>
-                      <th>Email</th>
-                      <th>Telefone</th>
-                      <th>Plano Cancelado</th>
-                      <th>Estágio CRM</th>
-                      <th>Responsável</th>
-                      <th style={{ textAlign: 'center' }}>Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {canceledData.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--text-faint)' }}>
-                          Nenhum cliente cancelado encontrado.
-                        </td>
-                      </tr>
-                    ) : (
-                      canceledData.map((lead) => {
-                        const waLink = formatWhatsappLink(lead.phoneNumber);
-                        return (
-                          <tr key={lead.id}>
-                            <td>
-                              <span className="stat-mono" style={{ fontSize: 12 }}>
-                                {lead.canceledAt ? lead.canceledAt.slice(0, 10).split('-').reverse().join('/') : '-'}
-                              </span>
-                            </td>
-                            <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                {lead.fullName}
-                                <span className="badge badge-down" style={{ fontSize: 9, padding: '2px 6px' }}>
-                                  🚫 Cancelado
-                                </span>
-                              </div>
-                            </td>
-                            <td><span className="stat-mono" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{lead.email}</span></td>
-                            <td>
-                              {lead.phoneNumber ? (
-                                waLink ? (
-                                  <a 
-                                    href={waLink} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    style={{ color: 'var(--green)', textDecoration: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
-                                  >
-                                    🟢 {lead.phoneNumber}
-                                  </a>
-                                ) : lead.phoneNumber
-                              ) : (
-                                <span style={{ color: 'var(--text-faint)' }}>Sem fone</span>
-                              )}
-                            </td>
-                            <td>
-                              <span style={{ color: 'var(--text-primary)' }}>
-                                {lead.plan ? lead.plan.title : '-'}
-                              </span>
-                            </td>
-                            <td>
-                              <span 
-                                className="badge" 
-                                style={{ 
-                                  background: `${STAGE_COLORS[lead.stage] || '#888'}1A`, 
-                                  color: STAGE_COLORS[lead.stage] || '#888',
-                                  border: `1px solid ${STAGE_COLORS[lead.stage] || '#888'}33`
-                                }}
-                              >
-                                {STAGE_LABELS[lead.stage] || lead.stage}
-                              </span>
-                            </td>
-                            <td>
-                              <span style={{ color: lead.assignee ? 'var(--accent)' : 'var(--text-muted)', fontSize: 12 }}>
-                                {lead.assignee ? lead.assignee.name : 'Não Atribuído'}
-                              </span>
-                            </td>
-                            <td style={{ textAlign: 'center' }}>
-                              <button 
-                                onClick={() => openFastAcquisition(lead, true)}
-                                style={{
-                                  padding: '6px 12px', border: '1px solid var(--accent)', borderRadius: 8,
-                                  background: 'transparent', color: 'var(--accent)', fontSize: 12, fontWeight: 600,
-                                  cursor: 'pointer', transition: 'all 0.2s'
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = 'var(--accent)';
-                                  e.currentTarget.style.color = '#fff';
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = 'transparent';
-                                  e.currentTarget.style.color = 'var(--accent)';
-                                }}
-                              >
-                                ⚡ Atender
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination Controls */}
-              {canceledTotalPages > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, padding: '10px 0' }}>
-                  <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
-                    Mostrando página <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{canceledPage}</span> de <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{canceledTotalPages}</span> ({canceledTotal} cancelados)
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      disabled={canceledPage === 1}
-                      onClick={() => setCanceledPage(prev => Math.max(1, prev - 1))}
-                      className="btn-action btn-action-outline"
-                      style={{ padding: '6px 12px', fontSize: 12, opacity: canceledPage === 1 ? 0.5 : 1, cursor: canceledPage === 1 ? 'not-allowed' : 'pointer' }}
-                    >
-                      ◀️ Anterior
-                    </button>
-                    {Array.from({ length: canceledTotalPages }, (_, idx) => idx + 1).map(p => {
-                      if (canceledTotalPages > 5 && Math.abs(p - canceledPage) > 2 && p !== 1 && p !== canceledTotalPages) {
-                        if (p === 2 || p === canceledTotalPages - 1) {
-                          return <span key={p} style={{ alignSelf: 'center', color: 'var(--text-faint)', padding: '0 4px' }}>...</span>;
-                        }
-                        return null;
-                      }
-                      return (
-                        <button
-                          key={p}
-                          onClick={() => setCanceledPage(p)}
-                          style={{
-                            padding: '6px 10px',
-                            fontSize: 12,
-                            borderRadius: 6,
-                            border: '1px solid var(--border)',
-                            cursor: 'pointer',
-                            background: canceledPage === p ? 'var(--accent)' : 'transparent',
-                            color: canceledPage === p ? '#fff' : 'var(--text-primary)'
-                          }}
-                        >
-                          {p}
-                        </button>
-                      );
-                    })}
-                    <button
-                      disabled={canceledPage === canceledTotalPages}
-                      onClick={() => setCanceledPage(prev => Math.min(canceledTotalPages, prev + 1))}
-                      className="btn-action btn-action-outline"
-                      style={{ padding: '6px 12px', fontSize: 12, opacity: canceledPage === canceledTotalPages ? 0.5 : 1, cursor: canceledPage === canceledTotalPages ? 'not-allowed' : 'pointer' }}
-                    >
-                      Próxima ▶️
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Tab: Alert Center */}
-      {activeTab === 'alerts' && (
-        <div className="animate-fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          {/* Section: Task Alerts */}
-          <div className="card">
-            <div className="label" style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                🔔 Tarefas Pendentes <span className="badge badge-down" style={{ fontSize: 11 }}>{alertsPagination.taskAlerts.total}</span>
-              </div>
-            </div>
-            <p className="label-sm" style={{ marginBottom: 16 }}>Abaixo estão as réguas de comunicação ativas de suas campanhas que demandam contato hoje.</p>
-
-            {loadingAlerts ? (
-              <div className="skeleton" style={{ height: 100, width: '100%' }}></div>
-            ) : alertsData.taskAlerts.length === 0 ? (
-              <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-faint)', border: '1px dashed var(--border)', borderRadius: 8 }}>
-                Sem tarefas pendentes para hoje. Bom trabalho!
-              </div>
-            ) : (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
-                  {alertsData.taskAlerts.map((alert: any) => (
-                    <div key={alert.id} style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{alert.personName}</span>
-                            {alert.campaignName && (
-                              <span style={{ fontSize: 10, color: 'var(--cyan)', fontWeight: 600 }}>
-                                🎯 {alert.campaignName}
-                              </span>
-                            )}
-                          </div>
-                          <span className="badge badge-cyan" style={{ fontSize: 10 }}>{alert.taskType}</span>
-                        </div>
-                        <div className="label-sm" style={{ fontSize: 11, marginTop: 4 }}>{alert.personEmail} &middot; {alert.personPhone}</div>
-                      </div>
-
-                      {alert.renderedMessage && (
-                        <div style={{ background: 'var(--surface)', padding: 12, borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic', borderLeft: '3px solid var(--accent)' }}>
-                          "{alert.renderedMessage}"
-                        </div>
-                      )}
-
-                      <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
-                        {alert.personPhone && (
-                          <a 
-                            href={formatWhatsappLink(alert.personPhone) || '#'}
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="btn-action btn-action-outline"
-                            style={{ flex: 1, textAlign: 'center', fontSize: 11, padding: '8px 4px', textDecoration: 'none', background: 'rgba(34, 197, 94, 0.1)', color: 'var(--green)', border: '1px solid var(--green)' }}
-                          >
-                            🟢 WhatsApp
-                          </a>
-                        )}
-                        <button
-                          onClick={() => handleAtenderAlert(alert)}
-                          className="btn-action btn-action-purple"
-                          style={{ flex: 1, fontSize: 11, padding: '8px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
-                        >
-                          ⚡ Atender
-                        </button>
-                        <button
-                          onClick={() => {
-                            const note = prompt('Por que deseja pular esta tarefa?');
-                            if (note !== null) handleSkipAlert(alert.id, note);
-                          }}
-                          className="btn-action btn-action-outline"
-                          style={{ fontSize: 11, padding: '8px 4px', color: 'var(--red)', border: '1px solid var(--red)' }}
-                        >
-                          Pular
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Task alerts pagination */}
-                {alertsPagination.taskAlerts.totalPages > 1 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      Mostrando página {taskPage} de {alertsPagination.taskAlerts.totalPages} (Total de {alertsPagination.taskAlerts.total} tarefas)
-                    </span>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        disabled={taskPage === 1}
-                        onClick={() => setTaskPage(prev => Math.max(1, prev - 1))}
-                        className="btn-action btn-action-outline"
-                        style={{ padding: '6px 12px', fontSize: 12, opacity: taskPage === 1 ? 0.5 : 1, cursor: taskPage === 1 ? 'not-allowed' : 'pointer' }}
-                      >
-                        ◀️ Anterior
-                      </button>
-                      <button
-                        disabled={taskPage === alertsPagination.taskAlerts.totalPages}
-                        onClick={() => setTaskPage(prev => Math.min(alertsPagination.taskAlerts.totalPages, prev + 1))}
-                        className="btn-action btn-action-outline"
-                        style={{ padding: '6px 12px', fontSize: 12, opacity: taskPage === alertsPagination.taskAlerts.totalPages ? 0.5 : 1, cursor: taskPage === alertsPagination.taskAlerts.totalPages ? 'not-allowed' : 'pointer' }}
-                      >
-                        Próxima ▶️
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Section: Orphaned Leads */}
-          <div className="card">
-            <div className="label" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              🛒 Carrinhos Abandonados (Leads Livres) <span className="badge badge-cyan" style={{ fontSize: 11 }}>{alertsPagination.orphanedLeads.total}</span>
-            </div>
-            <p className="label-sm" style={{ marginBottom: 16 }}>Leads sem plano ativo e sem nenhum operador comercial atribuído. Assuma para atender.</p>
-
-            {/* Selector for Month / All Months */}
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, background: 'var(--surface-raised)', padding: 12, borderRadius: 8 }}>
-              <span className="label-sm" style={{ fontWeight: 600 }}>Período de Cadastro:</span>
-              <select
-                value={orphanMonth}
-                onChange={(e) => {
-                  setOrphanMonth(e.target.value);
-                  setOrphanPage(1);
-                }}
-                style={{
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text-primary)',
-                  borderRadius: 6,
-                  padding: '6px 12px',
-                  fontSize: 13,
-                  outline: 'none',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="all">Todos os Meses (Geral)</option>
-                <option value="2026-07">Julho 2026</option>
-                <option value="2026-06">Junho 2026</option>
-                <option value="2026-05">Maio 2026</option>
-                <option value="2026-04">Abril 2026</option>
-                <option value="2026-03">Março 2026</option>
-                <option value="2026-02">Fevereiro 2026</option>
-                <option value="2026-01">Janeiro 2026</option>
-              </select>
-            </div>
-
-            {loadingAlerts ? (
-              <div className="skeleton" style={{ height: 100, width: '100%' }}></div>
-            ) : alertsData.orphanedLeads.length === 0 ? (
-              <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-faint)', border: '1px dashed var(--border)', borderRadius: 8 }}>
-                Sem oportunidades órfãs de carrinho abandonado no momento.
-              </div>
-            ) : (
-              <>
-                <div className="table-container">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Data Cadastro</th>
-                        <th>Nome</th>
-                        <th>Email</th>
-                        <th>Telefone</th>
-                        <th style={{ textAlign: 'center' }}>Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {alertsData.orphanedLeads.map((lead: any) => (
-                        <tr key={lead.id}>
-                          <td>{new Date(lead.createdAt).toLocaleDateString('pt-BR')}</td>
-                          <td>{lead.fullName}</td>
-                          <td>{lead.email}</td>
-                          <td>{lead.phoneNumber || 'Sem fone'}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <button
-                              onClick={() => handleClaimOrphaned(lead.id)}
-                              className="btn-action btn-action-purple"
-                              style={{ fontSize: 11, padding: '6px 12px' }}
-                            >
-                              ⚡ Atender Lead
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Orphaned leads pagination */}
-                {alertsPagination.orphanedLeads.totalPages > 1 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      Mostrando página {orphanPage} de {alertsPagination.orphanedLeads.totalPages} (Total de {alertsPagination.orphanedLeads.total} carrinhos)
-                    </span>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        disabled={orphanPage === 1}
-                        onClick={() => setOrphanPage(prev => Math.max(1, prev - 1))}
-                        className="btn-action btn-action-outline"
-                        style={{ padding: '6px 12px', fontSize: 12, opacity: orphanPage === 1 ? 0.5 : 1, cursor: orphanPage === 1 ? 'not-allowed' : 'pointer' }}
-                      >
-                        ◀️ Anterior
-                      </button>
-                      <button
-                        disabled={orphanPage === alertsPagination.orphanedLeads.totalPages}
-                        onClick={() => setOrphanPage(prev => Math.min(alertsPagination.orphanedLeads.totalPages, prev + 1))}
-                        className="btn-action btn-action-outline"
-                        style={{ padding: '6px 12px', fontSize: 12, opacity: orphanPage === alertsPagination.orphanedLeads.totalPages ? 0.5 : 1, cursor: orphanPage === alertsPagination.orphanedLeads.totalPages ? 'not-allowed' : 'pointer' }}
-                      >
-                        Próxima ▶️
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Section: Expiring Leads */}
-          <div className="card">
-            <div className="label" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              ⏳ Planos a Vencer (Expiração Próxima) <span className="badge badge-down" style={{ fontSize: 11 }}>{alertsPagination.expiringLeads.total}</span>
-            </div>
-            <p className="label-sm" style={{ marginBottom: 16 }}>Assinaturas ativas prestes a vencer nos próximos 30 dias e que estão sem operador. Assuma para renovar.</p>
-
-            {loadingAlerts ? (
-              <div className="skeleton" style={{ height: 100, width: '100%' }}></div>
-            ) : alertsData.expiringLeads.length === 0 ? (
-              <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-faint)', border: '1px dashed var(--border)', borderRadius: 8 }}>
-                Nenhuma assinatura próxima da expiração sem operador no momento.
-              </div>
-            ) : (
-              <>
-                <div className="table-container">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Vence em</th>
-                        <th>Cliente</th>
-                        <th>Email</th>
-                        <th>Telefone</th>
-                        <th>Plano Atual</th>
-                        <th style={{ textAlign: 'center' }}>Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {alertsData.expiringLeads.map((lead: any) => (
-                        <tr key={lead.id}>
-                          <td style={{ fontWeight: 'bold', color: 'var(--red)' }}>
-                            {new Date(lead.expiresIn).toLocaleDateString('pt-BR')}
-                          </td>
-                          <td>{lead.fullName}</td>
-                          <td>{lead.email}</td>
-                          <td>{lead.phoneNumber || 'Sem fone'}</td>
-                          <td>{lead.planTitle}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <button
-                              onClick={() => handleClaimOrphaned(lead.id)}
-                              className="btn-action btn-action-purple"
-                              style={{ fontSize: 11, padding: '6px 12px' }}
-                            >
-                              ⚡ Atender Lead
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Expiring leads pagination */}
-                {alertsPagination.expiringLeads.totalPages > 1 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      Mostrando página {expiringPage} de {alertsPagination.expiringLeads.totalPages} (Total de {alertsPagination.expiringLeads.total} assinaturas)
-                    </span>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        disabled={expiringPage === 1}
-                        onClick={() => setExpiringPage(prev => Math.max(1, prev - 1))}
-                        className="btn-action btn-action-outline"
-                        style={{ padding: '6px 12px', fontSize: 12, opacity: expiringPage === 1 ? 0.5 : 1, cursor: expiringPage === 1 ? 'not-allowed' : 'pointer' }}
-                      >
-                        ◀️ Anterior
-                      </button>
-                      <button
-                        disabled={expiringPage === alertsPagination.expiringLeads.totalPages}
-                        onClick={() => setExpiringPage(prev => Math.min(alertsPagination.expiringLeads.totalPages, prev + 1))}
-                        className="btn-action btn-action-outline"
-                        style={{ padding: '6px 12px', fontSize: 12, opacity: expiringPage === alertsPagination.expiringLeads.totalPages ? 0.5 : 1, cursor: expiringPage === alertsPagination.expiringLeads.totalPages ? 'not-allowed' : 'pointer' }}
-                      >
-                        Próxima ▶️
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Tab: Campaigns and KPIs */}
       {activeTab === 'campanhas' && isAdmin && (
@@ -3522,6 +2967,7 @@ export default function DashboardContent({
                     O chat de WhatsApp foi aberto em uma janela popup. Copie as mensagens relevantes e cole abaixo para arquivar na timeline do cliente.
                   </p>
                   <textarea
+                    id="wa-rapidfire-textarea"
                     value={waPasteText}
                     onChange={(e) => setWaPasteText(e.target.value)}
                     placeholder="Cole aqui o texto ou conversa do WhatsApp..."
@@ -3533,17 +2979,40 @@ export default function DashboardContent({
                   />
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                     {waPasteText && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(waPasteText);
-                          alert('Texto copiado para a área de transferência!');
-                        }}
-                        className="btn-action btn-action-outline"
-                        style={{ fontSize: 11, padding: '6px 12px' }}
-                      >
-                        📋 Copiar Selecionado
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const textarea = document.getElementById('wa-rapidfire-textarea') as HTMLTextAreaElement;
+                            if (textarea) {
+                              const start = textarea.selectionStart;
+                              const end = textarea.selectionEnd;
+                              const selectedText = textarea.value.substring(start, end);
+                              if (selectedText.trim()) {
+                                setDetailNote(selectedText);
+                                alert('Seleção copiada para o campo de Notas abaixo!');
+                              } else {
+                                alert('Por favor, selecione (grife) uma parte do texto com o mouse primeiro.');
+                              }
+                            }
+                          }}
+                          className="btn-action btn-action-outline"
+                          style={{ fontSize: 11, padding: '6px 12px', borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                        >
+                          ✂️ Copiar Selecionado para Nova Nota
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(waPasteText);
+                            alert('Texto copiado para a área de transferência!');
+                          }}
+                          className="btn-action btn-action-outline"
+                          style={{ fontSize: 11, padding: '6px 12px' }}
+                        >
+                          📋 Copiar Todo o Conteúdo
+                        </button>
+                      </>
                     )}
                     <button
                       type="button"

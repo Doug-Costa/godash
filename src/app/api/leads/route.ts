@@ -27,6 +27,7 @@ export async function GET(request: Request) {
   const tag = searchParams.get('tag');
   const leadId = searchParams.get('leadId');
   const pipelineId = searchParams.get('pipelineId');
+  const atendimentoFila = searchParams.get('atendimentoFila');
 
   const targetMonth = !month || month === 'all' ? new Date().toISOString().slice(0, 7) : month;
 
@@ -45,7 +46,16 @@ export async function GET(request: Request) {
         s.status as subStatus,
         s.canceledAt as subCanceledAt,
         s.expiresIn as subExpiresIn,
-        s.isValidUntil as subIsValidUntil
+        s.isValidUntil as subIsValidUntil,
+        EXISTS(
+          SELECT 1 
+          FROM purchases pur
+          LEFT JOIN purchase_items pi ON pi.purchaseId = pur.id
+          LEFT JOIN product_items pit ON pi.productItemId = pit.id
+          LEFT JOIN plans spl ON pit.productId = spl.id
+          WHERE pur.personId = p.id AND pur.status = 'success'
+            AND (LOWER(spl.title) LIKE '%livro%' OR LOWER(spl.title) LIKE '%ebook%' OR LOWER(spl.title) LIKE '%book%' OR LOWER(spl.title) LIKE '%revista%')
+        ) as hasBookPurchase
       FROM people p
       LEFT JOIN subscriptions s ON s.personId = p.id 
         AND s.createdAt <= LAST_DAY(CONCAT(?, '-01')) 
@@ -75,34 +85,87 @@ export async function GET(request: Request) {
 
     if (!leadId) {
       const crmFilter: any = {};
-      if (isAgent) {
-        crmFilter.assigneeId = userId;
-      } else if (hasAssignee) {
-        crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
-      }
-
-      if (hasStage) crmFilter.stage = stage;
-      if (hasLossReason) crmFilter.lossReason = lossReason;
-      if (hasTag) crmFilter.tag = tag;
-
+      
       const hasPipeline = pipelineId && pipelineId !== 'all';
       if (hasPipeline) {
         crmFilter.pipelineId = pipelineId;
       }
 
-      if (isAgent || hasStage || hasAssignee || hasLossReason || hasTag || hasPipeline) {
-        const matchingStates = await prisma.customer.findMany({
-          where: crmFilter,
+      if (atendimentoFila) {
+        if (atendimentoFila === 'campanhas') {
+          if (isAgent) {
+            crmFilter.assigneeId = userId;
+          } else if (hasAssignee) {
+            crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
+          }
+          crmFilter.tasks = {
+            some: {
+              completedAt: null,
+              automationId: { not: null }
+            }
+          };
+        } else if (atendimentoFila === 'alerts') {
+          if (isAgent) {
+            crmFilter.assigneeId = userId;
+          } else if (hasAssignee) {
+            crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
+          }
+          crmFilter.tasks = {
+            some: {
+              completedAt: null
+            }
+          };
+        } else if (atendimentoFila === 'cancelados') {
+          if (isAgent) {
+            crmFilter.assigneeId = userId;
+          } else if (hasAssignee) {
+            crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
+          }
+          crmFilter.tag = 'CANCELED_CLIENT';
+        } else if (atendimentoFila === 'expirar') {
+          if (isAgent) {
+            crmFilter.assigneeId = userId;
+          } else if (hasAssignee) {
+            crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
+          }
+        }
+        // 'abandonados' é filtrado via MySQL p.id NOT IN (assignedIds)
+      } else {
+        if (isAgent) {
+          crmFilter.assigneeId = userId;
+        } else if (hasAssignee) {
+          crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
+        }
+        if (hasStage) crmFilter.stage = stage;
+        if (hasLossReason) crmFilter.lossReason = lossReason;
+        if (hasTag) crmFilter.tag = tag;
+      }
+
+      if (atendimentoFila === 'abandonados') {
+        const assignedCustomers = await prisma.customer.findMany({
+          where: { assigneeId: { not: null } },
           select: { externalPersonId: true }
         });
-        
-        const matchingIds = matchingStates.map(s => s.externalPersonId);
-        if (matchingIds.length === 0) {
-          return NextResponse.json({ success: true, data: [] });
+        const assignedIds = assignedCustomers.map(c => c.externalPersonId);
+        if (assignedIds.length > 0) {
+          query += ` AND p.id NOT IN (?)`;
+          params.push(assignedIds);
         }
-        
-        query += ` AND p.id IN (?)`;
-        params.push(matchingIds);
+      } else {
+        if (Object.keys(crmFilter).length > 0 || isAgent || hasStage || hasAssignee || hasLossReason || hasTag || hasPipeline || atendimentoFila) {
+          const matchingStates = await prisma.customer.findMany({
+            where: crmFilter,
+            select: { externalPersonId: true }
+          });
+          
+          const matchingIds = matchingStates.map(s => s.externalPersonId);
+          if (matchingIds.length === 0) {
+            return NextResponse.json({ success: true, data: [] });
+          }
+          
+          query += ` AND p.id IN (?)`;
+          params.push(matchingIds);
+        }
       }
     }
 
@@ -126,6 +189,12 @@ export async function GET(request: Request) {
         query += ` AND pl.id = ?`;
         params.push(Number(plan));
       }
+    }
+
+    if (atendimentoFila === 'expirar') {
+      query += ` AND s.status = 'active'
+                 AND COALESCE(s.isValidUntil, s.expiresIn) >= CURDATE()
+                 AND COALESCE(s.isValidUntil, s.expiresIn) <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)`;
     }
 
     // 4. Filter by name/email/phone (MySQL)
@@ -221,7 +290,8 @@ export async function GET(request: Request) {
           type: inferInteractionType(i.text)
         })),
         metadata: state?.metadata || {},
-        subscriptionStatus: subBadge
+        subscriptionStatus: subBadge,
+        isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1'
       };
     });
 
