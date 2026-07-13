@@ -11,10 +11,10 @@ export class LeadSlaService {
   }
 
   async recycleIdleLeads(days: number = 5): Promise<number> {
-    // 1. Get all leads where stage is in negotiations and has not had interactions for `days` days
-    const expiredLeads = await this.crmRepo.getExpiredSlaLeads(days);
+    // 1. Get all customers where stage is in negotiations and has not had interactions for `days` days
+    const expiredCustomers = await this.crmRepo.getExpiredSlaCustomers(days);
 
-    if (expiredLeads.length === 0) {
+    if (expiredCustomers.length === 0) {
       return 0;
     }
 
@@ -31,12 +31,12 @@ export class LeadSlaService {
     }
 
     // 2. Loop through and recycle each
-    for (const lead of expiredLeads) {
-      const previousAssigneeId = lead.assigneeId || null;
-      const previousStage = lead.stage;
+    for (const customer of expiredCustomers) {
+      const previousAssigneeId = customer.assigneeId || null;
+      const previousStage = customer.stage;
 
       // Reset assignee to null, reset stage to 'novo_cadastro', clear lossReason
-      await this.crmRepo.updateLeadState(lead.externalPersonId, {
+      await this.crmRepo.updateCustomer(customer.externalPersonId, {
         stage: 'novo_cadastro',
         assigneeId: null,
         lossReason: null,
@@ -44,7 +44,7 @@ export class LeadSlaService {
 
       // Add a timeline comment
       await this.crmRepo.addInteraction(
-        lead.externalPersonId,
+        customer.externalPersonId,
         `Lead recolhido automaticamente pelo sistema por inatividade após ${days} dias (SLA expirado).`,
         systemAuthorId
       );
@@ -52,13 +52,13 @@ export class LeadSlaService {
       // Dispatch domain event
       CrmEventDispatcher.dispatch({
         eventName: 'LeadRecycledByInactivityEvent',
-        externalPersonId: lead.externalPersonId,
+        externalPersonId: customer.externalPersonId,
         previousAssigneeId,
         previousStage,
         timestamp: new Date(),
       });
     }
 
-    return expiredLeads.length;
+    return expiredCustomers.length;
   }
 }

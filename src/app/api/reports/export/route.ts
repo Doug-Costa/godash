@@ -48,12 +48,12 @@ export async function GET(request: Request) {
       const [rows] = await pool.query(query);
       const people = rows as any[];
 
-      // Fetch CRM stages from SQLite
-      const leadStates = await prisma.leadState.findMany({
+      // Fetch CRM stages from Postgres
+      const customers = await prisma.customer.findMany({
         include: { assignee: { select: { name: true } } }
       });
       const stateMap = new Map();
-      leadStates.forEach(s => stateMap.set(s.externalPersonId, s));
+      customers.forEach(c => stateMap.set(c.externalPersonId, c));
 
       const csvHeaders = "ID,Nome Completo,Email,Telefone,Data Cadastro,Plano,Preco,Estagio CRM,Responsavel CRM\n";
       const csvRows = people.map(p => {
@@ -90,8 +90,8 @@ export async function GET(request: Request) {
       const [kpiRows] = await pool.query(qKpis, [month, month, month, month]);
       const kpis = (kpiRows as any[])[0] || {};
 
-      // Get CRM states counts from SQLite
-      const stageCounts = await prisma.leadState.groupBy({
+      // Get CRM states counts from Postgres
+      const stageCounts = await prisma.customer.groupBy({
         by: ['stage'],
         _count: true
       });
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
         `"Assinaturas Ativas Totais","${kpis.activeSubscriptions || 0}","Total acumulado ativo"`,
         `"Cancelamentos (Churn) no Mes","${kpis.churnCount || 0}","Planos cancelados em ${month}"`,
         `"Vendas Avulsas (Receita)","R$ ${((kpis.looseSales || 0) / 100).toFixed(2)}","Dinheiro novo em caixa avulso"`,
-        `"Distribuicao Estagios CRM","${crmStagesSummary || 'Nenhum lead no funil'}","Estagios ativos no CRM comercial SQLite"`
+        `"Distribuicao Estagios CRM","${crmStagesSummary || 'Nenhum lead no funil'}","Estagios ativos no CRM comercial PostgreSQL"`
       ].join('\n');
 
       return new Response(csvHeaders + csvRows, {

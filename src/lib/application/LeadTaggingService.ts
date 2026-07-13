@@ -38,8 +38,8 @@ export class LeadTaggingService {
       }
     }
 
-    // 2. Update the LeadState tag
-    await this.crmRepo.updateLeadState(externalPersonId, { tag });
+    // 2. Update the Customer tag
+    await this.crmRepo.updateCustomer(externalPersonId, { tag });
 
     // 3. Dispatch domain event
     CrmEventDispatcher.dispatch({

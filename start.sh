@@ -5,8 +5,10 @@ cleanup() {
   echo "Stopping services..."
   kill -TERM "$PID_SERVER" 2>/dev/null
   kill -TERM "$PID_WORKER" 2>/dev/null
+  kill -TERM "$PID_SYNC_WORKER" 2>/dev/null
   wait "$PID_SERVER" 2>/dev/null
   wait "$PID_WORKER" 2>/dev/null
+  wait "$PID_SYNC_WORKER" 2>/dev/null
   echo "Services stopped."
   exit 0
 }
@@ -21,10 +23,15 @@ echo "🚀 Starting Next.js Standalone Server..."
 node server.js &
 PID_SERVER=$!
 
-echo "🚀 Starting BullMQ Worker..."
+echo "🚀 Starting BullMQ PostSales Worker..."
 npx tsx src/lib/queue/postSalesWorker.ts &
 PID_WORKER=$!
 
-# Wait for both processes
+echo "🚀 Starting BullMQ Customer Sync Worker..."
+npx tsx src/lib/queue/syncWorker.ts &
+PID_SYNC_WORKER=$!
+
+# Wait for all processes
 wait "$PID_SERVER"
 wait "$PID_WORKER"
+wait "$PID_SYNC_WORKER"

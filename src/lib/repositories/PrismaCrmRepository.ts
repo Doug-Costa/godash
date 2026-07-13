@@ -1,28 +1,38 @@
 import prisma from '@/lib/prisma';
-import { ICrmRepository, CrmLeadState, CrmLeadInteraction, LossReason, LeadTag } from '@/lib/domain/crm.types';
+import { ICrmRepository, CrmCustomer, CrmInteraction, LossReason, LeadTag } from '@/lib/domain/crm.types';
 
 export class PrismaCrmRepository implements ICrmRepository {
-  async getLeadState(externalPersonId: number): Promise<CrmLeadState | null> {
-    const state = await prisma.leadState.findUnique({
+  async getCustomer(externalPersonId: number): Promise<CrmCustomer | null> {
+    const customer = await prisma.customer.findUnique({
       where: { externalPersonId },
     });
 
-    if (!state) return null;
+    if (!customer) return null;
 
     return {
-      externalPersonId: state.externalPersonId,
-      stage: state.stage,
-      assigneeId: state.assigneeId,
-      lastInteractionAt: state.lastInteractionAt,
-      interactionCount: state.interactionCount,
-      lossReason: state.lossReason,
-      tag: state.tag,
-      scheduledFor: state.scheduledFor,
+      id: customer.id,
+      externalPersonId: customer.externalPersonId,
+      stage: customer.stage,
+      assigneeId: customer.assigneeId,
+      pipelineId: customer.pipelineId,
+      journeyId: customer.journeyId,
+      joinedJourneyAt: customer.joinedJourneyAt,
+      metadata: customer.metadata,
+      createdAt: customer.createdAt,
+      updatedAt: customer.updatedAt,
+      lastInteractionAt: customer.lastInteractionAt,
+      interactionCount: customer.interactionCount,
+      lossReason: customer.lossReason,
+      tag: customer.tag,
+      scheduledFor: customer.scheduledFor,
+      frozenUntil: customer.frozenUntil,
+      freezeReason: customer.freezeReason,
+      lostReason: customer.lostReason,
     };
   }
 
-  async getManyLeadStates(externalPersonIds: number[]): Promise<CrmLeadState[]> {
-    const states = await prisma.leadState.findMany({
+  async getManyCustomers(externalPersonIds: number[]): Promise<CrmCustomer[]> {
+    const customers = await prisma.customer.findMany({
       where: {
         externalPersonId: {
           in: externalPersonIds,
@@ -30,58 +40,88 @@ export class PrismaCrmRepository implements ICrmRepository {
       },
     });
 
-    return states.map((s) => ({
-      externalPersonId: s.externalPersonId,
-      stage: s.stage,
-      assigneeId: s.assigneeId,
-      lastInteractionAt: s.lastInteractionAt,
-      interactionCount: s.interactionCount,
-      lossReason: s.lossReason,
-      tag: s.tag,
-      scheduledFor: s.scheduledFor,
+    return customers.map((c) => ({
+      id: c.id,
+      externalPersonId: c.externalPersonId,
+      stage: c.stage,
+      assigneeId: c.assigneeId,
+      pipelineId: c.pipelineId,
+      journeyId: c.journeyId,
+      joinedJourneyAt: c.joinedJourneyAt,
+      metadata: c.metadata,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      lastInteractionAt: c.lastInteractionAt,
+      interactionCount: c.interactionCount,
+      lossReason: c.lossReason,
+      tag: c.tag,
+      scheduledFor: c.scheduledFor,
+      frozenUntil: c.frozenUntil,
+      freezeReason: c.freezeReason,
+      lostReason: c.lostReason,
     }));
   }
 
-  async updateStage(externalPersonId: number, newStage: string): Promise<CrmLeadState> {
-    const state = await prisma.leadState.upsert({
+  async updateStage(externalPersonId: number, newStage: string): Promise<CrmCustomer> {
+    const customer = await prisma.customer.upsert({
       where: { externalPersonId },
       update: { stage: newStage },
       create: { externalPersonId, stage: newStage },
     });
 
     return {
-      externalPersonId: state.externalPersonId,
-      stage: state.stage,
-      assigneeId: state.assigneeId,
-      lastInteractionAt: state.lastInteractionAt,
-      interactionCount: state.interactionCount,
-      lossReason: state.lossReason,
-      tag: state.tag,
-      scheduledFor: state.scheduledFor,
+      id: customer.id,
+      externalPersonId: customer.externalPersonId,
+      stage: customer.stage,
+      assigneeId: customer.assigneeId,
+      pipelineId: customer.pipelineId,
+      journeyId: customer.journeyId,
+      joinedJourneyAt: customer.joinedJourneyAt,
+      metadata: customer.metadata,
+      createdAt: customer.createdAt,
+      updatedAt: customer.updatedAt,
+      lastInteractionAt: customer.lastInteractionAt,
+      interactionCount: customer.interactionCount,
+      lossReason: customer.lossReason,
+      tag: customer.tag,
+      scheduledFor: customer.scheduledFor,
+      frozenUntil: customer.frozenUntil,
+      freezeReason: customer.freezeReason,
+      lostReason: customer.lostReason,
     };
   }
 
-  async assignLead(externalPersonId: number, assigneeId: string | null): Promise<CrmLeadState> {
-    const state = await prisma.leadState.upsert({
+  async assignLead(externalPersonId: number, assigneeId: string | null): Promise<CrmCustomer> {
+    const customer = await prisma.customer.upsert({
       where: { externalPersonId },
       update: { assigneeId },
       create: { externalPersonId, stage: 'novo_cadastro', assigneeId },
     });
 
     return {
-      externalPersonId: state.externalPersonId,
-      stage: state.stage,
-      assigneeId: state.assigneeId,
-      lastInteractionAt: state.lastInteractionAt,
-      interactionCount: state.interactionCount,
-      lossReason: state.lossReason,
-      tag: state.tag,
-      scheduledFor: state.scheduledFor,
+      id: customer.id,
+      externalPersonId: customer.externalPersonId,
+      stage: customer.stage,
+      assigneeId: customer.assigneeId,
+      pipelineId: customer.pipelineId,
+      journeyId: customer.journeyId,
+      joinedJourneyAt: customer.joinedJourneyAt,
+      metadata: customer.metadata,
+      createdAt: customer.createdAt,
+      updatedAt: customer.updatedAt,
+      lastInteractionAt: customer.lastInteractionAt,
+      interactionCount: customer.interactionCount,
+      lossReason: customer.lossReason,
+      tag: customer.tag,
+      scheduledFor: customer.scheduledFor,
+      frozenUntil: customer.frozenUntil,
+      freezeReason: customer.freezeReason,
+      lostReason: customer.lostReason,
     };
   }
 
-  async addInteraction(externalPersonId: number, text: string, authorId: string): Promise<CrmLeadInteraction> {
-    const leadState = await prisma.leadState.upsert({
+  async addInteraction(externalPersonId: number, text: string, authorId: string): Promise<CrmInteraction> {
+    const customer = await prisma.customer.upsert({
       where: { externalPersonId },
       update: {
         lastInteractionAt: new Date(),
@@ -97,42 +137,28 @@ export class PrismaCrmRepository implements ICrmRepository {
       },
     });
 
-    const interaction = await prisma.leadInteraction.create({
+    const interaction = await prisma.interaction.create({
       data: {
-        leadStateId: leadState.id,
+        customerId: customer.id,
         text,
         authorId,
-      },
-      include: {
-        leadState: {
-          select: {
-            externalPersonId: true,
-          },
-        },
       },
     });
 
     return {
       id: interaction.id,
-      leadStateExternalId: interaction.leadState.externalPersonId,
+      customerId: interaction.customerId,
       text: interaction.text,
       authorId: interaction.authorId,
       createdAt: interaction.createdAt,
     };
   }
 
-  async getInteractions(externalPersonId: number): Promise<CrmLeadInteraction[]> {
-    const interactions = await prisma.leadInteraction.findMany({
+  async getInteractions(externalPersonId: number): Promise<CrmInteraction[]> {
+    const interactions = await prisma.interaction.findMany({
       where: {
-        leadState: {
+        customer: {
           externalPersonId,
-        },
-      },
-      include: {
-        leadState: {
-          select: {
-            externalPersonId: true,
-          },
         },
       },
       orderBy: {
@@ -142,88 +168,132 @@ export class PrismaCrmRepository implements ICrmRepository {
 
     return interactions.map((i) => ({
       id: i.id,
-      leadStateExternalId: i.leadState.externalPersonId,
+      customerId: i.customerId,
       text: i.text,
       authorId: i.authorId,
       createdAt: i.createdAt,
     }));
   }
 
-  async updateLeadState(externalPersonId: number, data: Partial<CrmLeadState>): Promise<CrmLeadState> {
-    const state = await prisma.leadState.upsert({
+  async updateCustomer(externalPersonId: number, data: Partial<CrmCustomer>): Promise<CrmCustomer> {
+    const customer = await prisma.customer.upsert({
       where: { externalPersonId },
       update: {
         stage: data.stage,
         assigneeId: data.assigneeId,
+        pipelineId: data.pipelineId,
+        journeyId: data.journeyId,
+        joinedJourneyAt: data.joinedJourneyAt,
+        metadata: data.metadata,
         lastInteractionAt: data.lastInteractionAt,
         interactionCount: data.interactionCount,
         lossReason: data.lossReason,
         tag: data.tag,
         scheduledFor: data.scheduledFor,
+        frozenUntil: data.frozenUntil,
+        freezeReason: data.freezeReason,
+        lostReason: data.lostReason,
       },
       create: {
         externalPersonId,
         stage: data.stage || 'novo_cadastro',
         assigneeId: data.assigneeId,
+        pipelineId: data.pipelineId,
+        journeyId: data.journeyId,
+        joinedJourneyAt: data.joinedJourneyAt,
+        metadata: data.metadata || {},
         lastInteractionAt: data.lastInteractionAt || new Date(),
         interactionCount: data.interactionCount || 0,
         lossReason: data.lossReason,
         tag: data.tag,
         scheduledFor: data.scheduledFor,
+        frozenUntil: data.frozenUntil,
+        freezeReason: data.freezeReason,
+        lostReason: data.lostReason,
       },
     });
 
     return {
-      externalPersonId: state.externalPersonId,
-      stage: state.stage,
-      assigneeId: state.assigneeId,
-      lastInteractionAt: state.lastInteractionAt,
-      interactionCount: state.interactionCount,
-      lossReason: state.lossReason,
-      tag: state.tag,
-      scheduledFor: state.scheduledFor,
+      id: customer.id,
+      externalPersonId: customer.externalPersonId,
+      stage: customer.stage,
+      assigneeId: customer.assigneeId,
+      pipelineId: customer.pipelineId,
+      journeyId: customer.journeyId,
+      joinedJourneyAt: customer.joinedJourneyAt,
+      metadata: customer.metadata,
+      createdAt: customer.createdAt,
+      updatedAt: customer.updatedAt,
+      lastInteractionAt: customer.lastInteractionAt,
+      interactionCount: customer.interactionCount,
+      lossReason: customer.lossReason,
+      tag: customer.tag,
+      scheduledFor: customer.scheduledFor,
+      frozenUntil: customer.frozenUntil,
+      freezeReason: customer.freezeReason,
+      lostReason: customer.lostReason,
     };
   }
 
-  async getLeadsByLossReason(reason: LossReason): Promise<CrmLeadState[]> {
-    const states = await prisma.leadState.findMany({
+  async getCustomersByLossReason(reason: LossReason): Promise<CrmCustomer[]> {
+    const customers = await prisma.customer.findMany({
       where: { lossReason: reason },
     });
 
-    return states.map((s) => ({
-      externalPersonId: s.externalPersonId,
-      stage: s.stage,
-      assigneeId: s.assigneeId,
-      lastInteractionAt: s.lastInteractionAt,
-      interactionCount: s.interactionCount,
-      lossReason: s.lossReason,
-      tag: s.tag,
-      scheduledFor: s.scheduledFor,
+    return customers.map((c) => ({
+      id: c.id,
+      externalPersonId: c.externalPersonId,
+      stage: c.stage,
+      assigneeId: c.assigneeId,
+      pipelineId: c.pipelineId,
+      journeyId: c.journeyId,
+      joinedJourneyAt: c.joinedJourneyAt,
+      metadata: c.metadata,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      lastInteractionAt: c.lastInteractionAt,
+      interactionCount: c.interactionCount,
+      lossReason: c.lossReason,
+      tag: c.tag,
+      scheduledFor: c.scheduledFor,
+      frozenUntil: c.frozenUntil,
+      freezeReason: c.freezeReason,
+      lostReason: c.lostReason,
     }));
   }
 
-  async getLeadsByTag(tag: LeadTag): Promise<CrmLeadState[]> {
-    const states = await prisma.leadState.findMany({
+  async getCustomersByTag(tag: LeadTag): Promise<CrmCustomer[]> {
+    const customers = await prisma.customer.findMany({
       where: { tag },
     });
 
-    return states.map((s) => ({
-      externalPersonId: s.externalPersonId,
-      stage: s.stage,
-      assigneeId: s.assigneeId,
-      lastInteractionAt: s.lastInteractionAt,
-      interactionCount: s.interactionCount,
-      lossReason: s.lossReason,
-      tag: s.tag,
-      scheduledFor: s.scheduledFor,
+    return customers.map((c) => ({
+      id: c.id,
+      externalPersonId: c.externalPersonId,
+      stage: c.stage,
+      assigneeId: c.assigneeId,
+      pipelineId: c.pipelineId,
+      journeyId: c.journeyId,
+      joinedJourneyAt: c.joinedJourneyAt,
+      metadata: c.metadata,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      lastInteractionAt: c.lastInteractionAt,
+      interactionCount: c.interactionCount,
+      lossReason: c.lossReason,
+      tag: c.tag,
+      scheduledFor: c.scheduledFor,
+      frozenUntil: c.frozenUntil,
+      freezeReason: c.freezeReason,
+      lostReason: c.lostReason,
     }));
   }
 
-  async getExpiredSlaLeads(days: number): Promise<CrmLeadState[]> {
+  async getExpiredSlaCustomers(days: number): Promise<CrmCustomer[]> {
     const thresholdDate = new Date();
     thresholdDate.setDate(thresholdDate.getDate() - days);
 
-    const states = await prisma.leadState.findMany({
+    const customers = await prisma.customer.findMany({
       where: {
         stage: {
           in: ['primeiro_contato', 'em_negociacao']
@@ -238,15 +308,25 @@ export class PrismaCrmRepository implements ICrmRepository {
       },
     });
 
-    return states.map((s) => ({
-      externalPersonId: s.externalPersonId,
-      stage: s.stage,
-      assigneeId: s.assigneeId,
-      lastInteractionAt: s.lastInteractionAt,
-      interactionCount: s.interactionCount,
-      lossReason: s.lossReason,
-      tag: s.tag,
-      scheduledFor: s.scheduledFor,
+    return customers.map((c) => ({
+      id: c.id,
+      externalPersonId: c.externalPersonId,
+      stage: c.stage,
+      assigneeId: c.assigneeId,
+      pipelineId: c.pipelineId,
+      journeyId: c.journeyId,
+      joinedJourneyAt: c.joinedJourneyAt,
+      metadata: c.metadata,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      lastInteractionAt: c.lastInteractionAt,
+      interactionCount: c.interactionCount,
+      lossReason: c.lossReason,
+      tag: c.tag,
+      scheduledFor: c.scheduledFor,
+      frozenUntil: c.frozenUntil,
+      freezeReason: c.freezeReason,
+      lostReason: c.lostReason,
     }));
   }
 }

@@ -22,8 +22,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Data de congelamento inválida.' }, { status: 400 });
     }
 
-    // Buscar ou criar LeadState
-    const leadState = await prisma.leadState.upsert({
+    // Buscar ou criar Customer
+    const customer = await prisma.customer.upsert({
       where: { externalPersonId: Number(personId) },
       update: {
         frozenUntil: dateToFreeze,
@@ -40,15 +40,15 @@ export async function POST(request: Request) {
 
     // Registrar interação
     const formattedDate = dateToFreeze.toLocaleDateString('pt-BR');
-    await prisma.leadInteraction.create({
+    await prisma.interaction.create({
       data: {
-        leadStateId: leadState.id,
+        customerId: customer.id,
         authorId: userId,
         text: `Lead congelado até ${formattedDate}. Motivo: ${reason}`
       }
     });
 
-    return NextResponse.json({ success: true, data: leadState });
+    return NextResponse.json({ success: true, data: customer });
   } catch (error: any) {
     console.error('POST freeze error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

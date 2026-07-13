@@ -1,10 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// DentalGO CRM — Prisma Schema (Banco 2: SQLite interno)
-// Provider: sqlite (dev) → trocar para postgresql/mysql em produção escalável
+// DentalGO CRM — Prisma Schema (Banco 2: PostgreSQL dedicado)
 // ─────────────────────────────────────────────────────────────────────────────
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -33,15 +32,10 @@ model User {
   accounts      Account[]
   sessions      Session[]
 
-  // CRM relations
-  assignedLeads    LeadState[]
-  interactions     LeadInteraction[]
-
-  // Pós-Venda relations
-  assignedTasks    LeadPostSaleTask[]
-
-  // New CRM expansion relation
-  taskAlerts       TaskAlert[]
+  // CRM/CDP relations
+  assignedCustomers Customer[]
+  interactions      Interaction[]
+  tasks             Task[]
 }
 
 model Account {
@@ -80,156 +74,116 @@ model VerificationToken {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CRM — Funil Comercial (existente)
+// CRM & CDP — As 6 Entidades de Ouro
 // ─────────────────────────────────────────────────────────────────────────────
 
-model LeadState {
-  id                String            @id @default(cuid())
-  externalPersonId  Int               @unique
-  stage             String
+model Customer {
+  id                String        @id @default(cuid())
+  externalPersonId  Int           @unique
+  stage             String        @default("novo_cadastro")
   assigneeId        String?
-  updatedAt         DateTime          @updatedAt
-  createdAt         DateTime          @default(now())
+  pipelineId        String?
+  journeyId         String?
+  joinedJourneyAt   DateTime?
+  metadata          Json?         @default("{}") // Armazena Instagram, especialidade, rede social, etc.
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
   lastInteractionAt DateTime?
-  interactionCount  Int               @default(0)
+  interactionCount  Int           @default(0)
   lossReason        String?
   tag               String?
   scheduledFor      DateTime?
-
-  // New fields for expansion
   frozenUntil       DateTime?
   freezeReason      String?
   lostReason        String?
-  campaignId        String?
-  joinedCampaignAt  DateTime?
 
-  assignee     User?             @relation(fields: [assigneeId], references: [id])
-  interactions LeadInteraction[]
-  campaign     Campaign?         @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  taskAlerts   TaskAlert[]
+  // Relations
+  assignee     User?         @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  pipeline     Pipeline?     @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  journey      Journey?      @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  interactions Interaction[]
+  tasks        Task[]
 }
 
-model LeadInteraction {
-  id          String    @id @default(cuid())
-  leadStateId String
-  text        String
-  authorId    String
-  createdAt   DateTime  @default(now())
-
-  leadState LeadState @relation(fields: [leadStateId], references: [id], onDelete: Cascade)
-  author    User      @relation(fields: [authorId], references: [id])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PÓS-VENDA — Motor de Automação (ÉPICO 7)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Sequência de mensagens pós-venda configurada pelo admin.
-/// Define "o que mandar" e "quando mandar" (em dias após startAt da assinatura).
-model PostSaleSequence {
-  id              String   @id @default(cuid())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  /// Nome descritivo: "Boas-vindas 2 dias", "Acompanhamento 15 dias", etc.
-  name            String
-
-  /// Dias após o startAt da assinatura em que o alerta deve disparar.
-  triggerDays     Int
-
-  /// Texto base/gancho para WhatsApp ou Webhook. Suporta variáveis:
-  /// {{nome}}, {{plano}}, {{email}}, {{telefone}}
-  templateMessage String
-
-  /// Se falso, a sequência não gera novas tarefas (mas mantém as existentes).
-  isActive        Boolean  @default(true)
-
-  /// Para qual segmento de plano esta sequência se aplica.
-  /// "all" | "paid" | "book_only" | "promo" | "courtesy"
-  targetSegment   String   @default("paid")
-
-  tasks           LeadPostSaleTask[]
-}
-
-/// Tarefa de Pós-Venda agendada para um lead específico.
-/// Gerada automaticamente pelo sync diário via syncPostSalesTasks.
-model LeadPostSaleTask {
-  id               String    @id @default(cuid())
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-
-  /// ID do cliente no Banco 1 (Clone MySQL — people.id)
-  externalPersonId Int
-
-  /// Sequência que gerou esta tarefa
-  sequenceId       String
-  sequence         PostSaleSequence @relation(fields: [sequenceId], references: [id])
-
-  /// Agente de pós-venda responsável
-  assignedToId     String?
-  assignedTo       User?     @relation(fields: [assignedToId], references: [id])
-
-  /// Status da tarefa: "PENDING" | "COMPLETED" | "CANCELED" | "SKIPPED"
-  status           String    @default("PENDING")
-
-  /// Data exata em que o alerta deve aparecer na tela do agente
-  scheduledFor     DateTime
-
-  /// Data em que foi marcada como concluída
-  completedAt      DateTime?
-
-  /// Notas do agente ao concluir (opcional)
-  completionNote   String?
-
-  /// Snapshot do personId + planId no momento da criação (para rastreabilidade)
-  snapshotPlanId   Int?
-  snapshotPlanName String?
-
-  @@index([externalPersonId])
-  @@index([status, scheduledFor])
-  @@index([assignedToId, status])
-}
-
-model Campaign {
-  id             String      @id @default(cuid())
+model Journey {
+  id             String       @id @default(cuid())
   name           String
-  status         String      @default("ACTIVE") // "ACTIVE" | "PAUSED" | "COMPLETED"
+  status         String       @default("ACTIVE") // "ACTIVE" | "PAUSED" | "COMPLETED"
+  objective      String
+  financialGoal  Float?
   targetCriteria String?
   limitPerDay    Int?
   flowGraph      String?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  leads          LeadState[]
-  flowSteps      FlowStep[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Relations
+  customers      Customer[]
+  tasks          Task[]
+  automations    Automation[]
 }
 
-model FlowStep {
-  id              String      @id @default(cuid())
-  campaignId      String
-  dayOffset       Int         // days after assignment
-  channel         String      // "WHATSAPP" | "EMAIL" | "CALL"
-  messageTemplate String
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  
-  campaign        Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  taskAlerts      TaskAlert[]
+model Pipeline {
+  id          String     @id @default(cuid())
+  name        String     @unique // "Vendas" | "CS" | "Nutrição"
+  description String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  customers   Customer[]
 }
 
-model TaskAlert {
-  id               String     @id @default(cuid())
-  leadStateId      String
-  assignedToId     String
-  stepId           String?
+model Interaction {
+  id         String   @id @default(cuid())
+  customerId String
+  text       String
+  authorId   String
+  createdAt  DateTime @default(now())
+
+  // Relations
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+model Task {
+  id               String    @id @default(cuid())
+  customerId       String
+  assignedToId     String?
+  journeyId        String?
+  automationId     String?
   scheduledFor     DateTime
-  taskType         String     // "WHATSAPP" | "EMAIL" | "CALL" | "ABANDONED_CART" | "EXPIRATION"
-  status           String     @default("PENDING") // "PENDING" | "COMPLETED" | "SKIPPED"
+  taskType         String    // "WHATSAPP" | "EMAIL" | "CALL" | "ABANDONED_CART" | "EXPIRATION" | "POST_SALE"
+  status           String    @default("PENDING") // "PENDING" | "COMPLETED" | "SKIPPED" | "CANCELED"
   completionNote   String?
   completedAt      DateTime?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  // Snapshots/Metadata para pós-vendas
+  snapshotPlanId   Int?
+  snapshotPlanName String?
 
-  leadState        LeadState  @relation(fields: [leadStateId], references: [id], onDelete: Cascade)
-  assignedTo       User       @relation(fields: [assignedToId], references: [id], onDelete: Cascade)
-  flowStep         FlowStep?  @relation(fields: [stepId], references: [id], onDelete: SetNull)
+  // Relations
+  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assignedTo User?       @relation(fields: [assignedToId], references: [id], onDelete: Cascade)
+  journey    Journey?    @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  automation Automation? @relation(fields: [automationId], references: [id], onDelete: SetNull)
+}
+
+model Automation {
+  id           String   @id @default(cuid())
+  name         String
+  triggerEvent String   // "CART_ABANDONED" | "SUBSCRIPTION_EXPIRING" | "NEW_SIGNUP" | "POST_SALE"
+  conditions   Json?
+  actionType   String   // "CREATE_TASK"
+  actionConfig Json?    // Configuração contendo templateMessage, dayOffset, channel, etc.
+  isActive     Boolean  @default(true)
+  journeyId    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  journey Journey? @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  tasks   Task[]
 }

@@ -12,6 +12,7 @@ import PlanDistributionChart from '@/components/charts/PlanDistributionChart';
 import CohortTable from '@/components/charts/CohortTable';
 import ThemeToggle from '@/components/ThemeToggle';
 import MonthSelector from '@/components/ui/MonthSelector';
+import Timeline from '@/components/ui/Timeline';
 
 const formatBRL = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -42,6 +43,7 @@ interface DashboardContentProps {
   month: string;
   currentUser: { id: string; name: string; email: string; role: string } | null;
   agents: Array<{ id: string; name: string; email: string; role: string; isActive: boolean }>;
+  pipelines?: Array<{ id: string; name: string; description: string | null }>;
 }
 
 export default function DashboardContent({
@@ -54,6 +56,7 @@ export default function DashboardContent({
   month,
   currentUser,
   agents,
+  pipelines = [],
 }: DashboardContentProps) {
   const isAdmin = currentUser?.role === 'ADMIN';
 
@@ -61,6 +64,9 @@ export default function DashboardContent({
   const [activeTab, setActiveTab] = useState<'financeiro' | 'kanban' | 'leads' | 'team' | 'cancelados' | 'alerts' | 'campanhas'>(
     isAdmin ? 'financeiro' : 'alerts'
   );
+  
+  const defaultPipeline = pipelines.find(p => p.name === 'Vendas') || pipelines[0];
+  const [activePipelineId, setActivePipelineId] = useState<string>(defaultPipeline?.id || '');
   
   // Leads data state (loaded dynamically for Kanban & Leads Table)
   const [leads, setLeads] = useState<any[]>([]);
@@ -95,6 +101,28 @@ export default function DashboardContent({
   const [showLossReasons, setShowLossReasons] = useState(false);
   const [showScheduler, setShowScheduler] = useState(false);
   const [scheduledDate, setScheduledDate] = useState('');
+
+  // Dynamic metadata states
+  const [metaInstagram, setMetaInstagram] = useState('');
+  const [metaSpecialty, setMetaSpecialty] = useState('');
+  const [isSavingMeta, setIsSavingMeta] = useState(false);
+  const [metaSaved, setMetaSaved] = useState(false);
+
+  // Funnel exit lostReason state variables
+  const [showLossReasonSelection, setShowLossReasonSelection] = useState(false);
+  const [lossTargetLeadId, setLossTargetLeadId] = useState<number | null>(null);
+  const [lossTargetStage, setLossTargetStage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedLead) {
+      const meta = selectedLead.metadata || {};
+      setMetaInstagram(meta.instagram || '');
+      setMetaSpecialty(meta.specialty || '');
+    } else {
+      setMetaInstagram('');
+      setMetaSpecialty('');
+    }
+  }, [selectedLead]);
 
   // Team management state
   const [teamList, setTeamList] = useState(agents);
@@ -185,6 +213,7 @@ export default function DashboardContent({
       if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
       if (filterStage !== '') url += `&stage=${filterStage}`;
       if (filterAssignee !== 'all') url += `&assigneeId=${filterAssignee}`;
+      if (activePipelineId !== '') url += `&pipelineId=${activePipelineId}`;
 
       const res = await fetch(url);
       if (res.ok) {
@@ -290,7 +319,7 @@ export default function DashboardContent({
       fetchKpis();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId]);
+  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId, activePipelineId]);
 
   // Fetch plans list when campaign modal is open
   useEffect(() => {
@@ -384,6 +413,13 @@ export default function DashboardContent({
     if (!leadIdStr) return;
     const leadId = Number(leadIdStr);
 
+    if (targetStage === 'perdido') {
+      setLossTargetLeadId(leadId);
+      setLossTargetStage('perdido');
+      setShowLossReasonSelection(true);
+      return;
+    }
+
     try {
       const res = await fetch('/api/leads', {
         method: 'POST',
@@ -413,7 +449,13 @@ export default function DashboardContent({
   // Submit Fast Acquisition form
   const submitFastAcquisition = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedLead) return;
+    if (fastStage === 'perdido') {
+      setLossTargetLeadId(selectedLead.id);
+      setLossTargetStage('perdido');
+      setShowLossReasonSelection(true);
+      setShowFastAcquisitionModal(false);
+      return;
+    }
 
     try {
       const res = await fetch('/api/leads', {
@@ -522,7 +564,13 @@ export default function DashboardContent({
 
   // Update details (stage or assignee) from within timeline modal
   const handleDetailUpdate = async (field: 'stage' | 'assigneeId', value: string) => {
-    if (!selectedLead) return;
+    if (field === 'stage' && value === 'perdido') {
+      setLossTargetLeadId(selectedLead.id);
+      setLossTargetStage('perdido');
+      setShowLossReasonSelection(true);
+      setShowTimelineModal(false);
+      return;
+    }
 
     try {
       const res = await fetch('/api/leads', {
@@ -581,6 +629,69 @@ export default function DashboardContent({
       }
     } catch (err) {
       console.error('Failed to freeze lead:', err);
+    }
+  };
+
+  const handleSaveMetadata = async () => {
+    if (!selectedLead) return;
+    setIsSavingMeta(true);
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: selectedLead.id,
+          metadata: {
+            instagram: metaInstagram,
+            specialty: metaSpecialty,
+          }
+        })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setSelectedLead((prev: any) => ({
+          ...prev,
+          metadata: json.data.metadata
+        }));
+        setMetaSaved(true);
+        setTimeout(() => setMetaSaved(false), 3000);
+        fetchLeads();
+      }
+    } catch (err) {
+      console.error('Failed to save metadata:', err);
+    } finally {
+      setIsSavingMeta(false);
+    }
+  };
+
+  const handleConfirmLoss = async (reason: string) => {
+    if (!lossTargetLeadId) return;
+
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: lossTargetLeadId,
+          stage: 'perdido',
+          type: 'LOST',
+          lossReason: reason,
+          lostReason: reason,
+          note: `Estágio comercial atualizado para Perdido. Motivo: ${reason}`,
+        }),
+      });
+
+      if (res.ok) {
+        setShowLossReasonSelection(false);
+        setLossTargetLeadId(null);
+        setLossTargetStage(null);
+        fetchLeads();
+        if (activeTab === 'cancelados') {
+          fetchCanceledLeads();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to confirm loss status:', err);
     }
   };
 
@@ -1327,6 +1438,34 @@ export default function DashboardContent({
             </div>
           </div>
 
+          {/* Pipeline Tabs */}
+          {pipelines.length > 0 && (
+            <div style={{
+              display: 'flex', gap: 8, marginBottom: 24, padding: 4,
+              background: 'var(--surface-raised)', borderRadius: 12, border: '1px solid var(--border)',
+              width: 'fit-content'
+            }}>
+              {pipelines.map((pipe) => {
+                const isActive = activePipelineId === pipe.id;
+                return (
+                  <button
+                    key={pipe.id}
+                    onClick={() => setActivePipelineId(pipe.id)}
+                    style={{
+                      padding: '8px 16px', borderRadius: 8, border: 'none',
+                      background: isActive ? 'var(--accent-glow)' : 'transparent',
+                      color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
+                      fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    📋 {pipe.name === 'CS' ? 'CS (Pós-Venda)' : pipe.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Kanban Board Grid */}
           {loadingLeads ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, height: 400 }}>
@@ -1637,6 +1776,11 @@ export default function DashboardContent({
                               {lead.tag === 'CANCELED_CLIENT' && (
                                 <span className="badge badge-down" style={{ fontSize: 9, padding: '2px 6px' }}>
                                   🚫 Cancelado
+                                </span>
+                              )}
+                              {lead.campaign && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--cyan)', border: '1px solid var(--cyan)' }}>
+                                  🎯 {lead.campaign.name}
                                 </span>
                               )}
                             </div>
@@ -2375,21 +2519,26 @@ export default function DashboardContent({
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 {/* Metric Summary Cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
                   <div className="stat-card" style={{ padding: 16, background: 'var(--surface-raised)' }}>
                     <div className="label-sm">Total de Leads</div>
                     <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary)', margin: '6px 0' }}>{kpiData.summary.totalLeads}</div>
                     <div className="label-sm" style={{ color: 'var(--text-faint)' }}>Vinculados à campanha</div>
                   </div>
                   <div className="stat-card" style={{ padding: 16, background: 'var(--surface-raised)' }}>
-                    <div className="label-sm">Atendidos</div>
+                    <div className="label-sm">Atendidos (Resposta)</div>
                     <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--accent)', margin: '6px 0' }}>{kpiData.summary.attendedLeads}</div>
-                    <div className="label-sm" style={{ color: 'var(--text-faint)' }}>Tiveram contato</div>
+                    <div className="label-sm" style={{ color: 'var(--text-faint)' }}>Taxa: {kpiData.summary.responseRate?.toFixed(1) || '0.0'}%</div>
                   </div>
                   <div className="stat-card" style={{ padding: 16, background: 'var(--surface-raised)' }}>
                     <div className="label-sm">Convertidos (Ganhos)</div>
                     <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--green)', margin: '6px 0' }}>{kpiData.summary.convertedLeads}</div>
                     <div className="label-sm" style={{ color: 'var(--text-faint)' }}>Win Rate: {kpiData.summary.winRate.toFixed(1)}%</div>
+                  </div>
+                  <div className="stat-card" style={{ padding: 16, background: 'var(--surface-raised)' }}>
+                    <div className="label-sm">Receita Recuperada</div>
+                    <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#10B981', margin: '6px 0' }}>R$ {kpiData.summary.recoveredRevenue?.toLocaleString('pt-BR') || '0'}</div>
+                    <div className="label-sm" style={{ color: 'var(--text-faint)' }}>MRR reativado</div>
                   </div>
                   <div className="stat-card" style={{ padding: 16, background: 'var(--surface-raised)' }}>
                     <div className="label-sm">Perdidos</div>
@@ -2400,8 +2549,8 @@ export default function DashboardContent({
                     <div className="label-sm">SLA Médio Equipe</div>
                     <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#f59e0b', margin: '6px 0' }}>{kpiData.summary.globalAvgSlaHours.toFixed(1)}h</div>
                     <div className="label-sm" style={{ color: 'var(--text-faint)' }}>Tempo até 1ª resposta</div>
+                  </div>
                 </div>
-              </div>
 
               {/* Visual conversion funnel and progress bar */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 8 }}>
@@ -2954,38 +3103,56 @@ export default function DashboardContent({
                 </button>
               </div>
             </div>
+            
+            {/* Informações do Perfil (Metadata) */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24,
+              padding: 16, background: 'var(--surface-raised)', borderRadius: 12, border: '1px solid var(--border)'
+            }}>
+              <div>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 6, color: 'var(--text-secondary)' }}>Instagram:</label>
+                <input
+                  type="text"
+                  value={metaInstagram}
+                  onChange={(e) => setMetaInstagram(e.target.value)}
+                  placeholder="@usuario"
+                  style={{
+                    width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)',
+                    borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none'
+                  }}
+                />
+              </div>
+              <div>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 6, color: 'var(--text-secondary)' }}>Especialidade / Atuação:</label>
+                <input
+                  type="text"
+                  value={metaSpecialty}
+                  onChange={(e) => setMetaSpecialty(e.target.value)}
+                  placeholder="Ortodontia, Implante..."
+                  style={{
+                    width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)',
+                    borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none'
+                  }}
+                />
+              </div>
+              <div style={{ gridColumn: 'span 2', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+                {metaSaved && <span style={{ color: '#4ADE80', fontSize: 12, fontWeight: 600 }}>✓ Salvo!</span>}
+                <button
+                  type="button"
+                  onClick={handleSaveMetadata}
+                  disabled={isSavingMeta}
+                  className="btn-action btn-action-purple"
+                  style={{ padding: '6px 16px', fontSize: 12, borderRadius: 6, cursor: 'pointer' }}
+                >
+                  {isSavingMeta ? 'Salvando...' : '💾 Salvar Perfil'}
+                </button>
+              </div>
+            </div>
 
             {/* Timeline Notes Area */}
             <div style={{ flex: 1, overflowY: 'auto', marginBottom: 24, paddingRight: 8 }}>
               <div className="label" style={{ marginBottom: 12 }}>Histórico de Interações (Timeline)</div>
-              {selectedLead.notes?.length === 0 ? (
-                <div style={{
-                  textAlign: 'center', padding: '40px 20px', color: 'var(--text-faint)',
-                  border: '1px dashed var(--border)', borderRadius: 8, fontSize: 13
-                }}>
-                  Nenhuma anotação registrada ainda para este lead.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {selectedLead.notes.map((note: any) => (
-                    <div 
-                      key={note.id} 
-                      style={{ 
-                        background: 'var(--surface-raised)', borderLeft: '3px solid var(--accent)',
-                        borderRadius: '0 8px 8px 0', padding: 12 
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 11 }}>
-                        <span style={{ fontWeight: 600, color: 'var(--accent)' }}>👤 {note.authorName}</span>
-                        <span className="stat-mono" style={{ color: 'var(--text-muted)' }}>{new Date(note.date).toLocaleString('pt-BR')}</span>
-                      </div>
-                      <p style={{ fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>
-                        {note.text}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <Timeline events={selectedLead.notes || []} />
             </div>
 
             {/* Note Input Box */}
@@ -3191,6 +3358,104 @@ export default function DashboardContent({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================================== */}
+      {/* MODAL 4.5: Motivo da Perda (Saída do Funil) */}
+      {/* ====================================================================== */}
+      {showLossReasonSelection && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'var(--overlay)',
+          backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100
+        }}>
+          <div className="card" style={{ width: '100%', maxWidth: '400px', background: 'var(--surface)', padding: 32 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h3 style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontSize: '1.2rem', fontWeight: 700 }}>
+                🚨 Motivo do Descarte / Perda
+              </h3>
+              <button 
+                onClick={() => {
+                  setShowLossReasonSelection(false);
+                  setLossTargetLeadId(null);
+                  setLossTargetStage(null);
+                }}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer' }}
+              >
+                &times;
+              </button>
+            </div>
+            
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.4 }}>
+              Para mover o cliente para <strong>Perdido</strong>, é obrigatório selecionar a justificativa abaixo. Isso alimentará as métricas do BI.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => handleConfirmLoss('PRICE_TOO_HIGH')}
+                className="btn-action"
+                style={{
+                  padding: '12px', background: 'var(--surface-raised)', border: '1px solid #F87171',
+                  borderRadius: 8, color: '#F87171', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                  display: 'flex', alignItems: 'center', gap: 8
+                }}
+              >
+                <span>💰</span> <span>Preço Alto (Sem fit financeiro)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmLoss('GHOSTING')}
+                className="btn-action"
+                style={{
+                  padding: '12px', background: 'var(--surface-raised)', border: '1px solid #F87171',
+                  borderRadius: 8, color: '#F87171', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                  display: 'flex', alignItems: 'center', gap: 8
+                }}
+              >
+                <span>🔇</span> <span>Sem Resposta (Sumido/Ghosting)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmLoss('MISSING_CONTENT')}
+                className="btn-action"
+                style={{
+                  padding: '12px', background: 'var(--surface-raised)', border: '1px solid #F87171',
+                  borderRadius: 8, color: '#F87171', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                  display: 'flex', alignItems: 'center', gap: 8
+                }}
+              >
+                <span>📚</span> <span>Falta de Conteúdo Específico</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmLoss('UNQUALIFIED')}
+                className="btn-action"
+                style={{
+                  padding: '12px', background: 'var(--surface-raised)', border: '1px solid #F87171',
+                  borderRadius: 8, color: '#F87171', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                  display: 'flex', alignItems: 'center', gap: 8
+                }}
+              >
+                <span>🚫</span> <span>Não Qualificado (Sem CRM Fit)</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLossReasonSelection(false);
+                  setLossTargetLeadId(null);
+                  setLossTargetStage(null);
+                }}
+                className="btn-action btn-action-outline"
+                style={{ padding: '8px 16px' }}
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}

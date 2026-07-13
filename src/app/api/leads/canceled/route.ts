@@ -71,15 +71,15 @@ export async function GET(request: Request) {
       const [rows] = await pool.query(selectQuery, params);
       const data = rows as any[];
 
-      // Fetch CRM stages from SQLite for these people to include in report
+      // Fetch CRM stages from Postgres for these people to include in report
       const personIds = data.map(r => r.id);
       let stateMap = new Map();
       if (personIds.length > 0) {
-        const leadStates = await prisma.leadState.findMany({
+        const customers = await prisma.customer.findMany({
           where: { externalPersonId: { in: personIds } },
           include: { assignee: { select: { name: true } } }
         });
-        leadStates.forEach(s => stateMap.set(s.externalPersonId, s));
+        customers.forEach(c => stateMap.set(c.externalPersonId, c));
       }
 
       const csvHeaders = "ID,Nome Completo,Email,Telefone,Data Cancelamento,Inicio Assinatura,Plano Cancelado,Preco,Estagio CRM,Responsavel\n";
@@ -131,10 +131,10 @@ export async function GET(request: Request) {
     const data = rows as any[];
     const personIds = data.map(r => r.id);
 
-    // Fetch corresponding states and interactions from SQLite
+    // Fetch corresponding states and interactions from Postgres
     let stateMap = new Map();
     if (personIds.length > 0) {
-      const leadStates = await prisma.leadState.findMany({
+      const customers = await prisma.customer.findMany({
         where: {
           externalPersonId: { in: personIds }
         },
@@ -150,8 +150,8 @@ export async function GET(request: Request) {
           }
         }
       });
-      leadStates.forEach(ls => {
-        stateMap.set(ls.externalPersonId, ls);
+      customers.forEach(c => {
+        stateMap.set(c.externalPersonId, c);
       });
     }
 

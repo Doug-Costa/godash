@@ -4,57 +4,62 @@ import prisma from '../prisma';
 
 export const postSalesWorker = new Worker('PostSalesAlerts', async (job) => {
   if (job.name === 'sync-daily') {
-    console.log('[Worker] Iniciando varredura diária de campanhas e relacionamento...');
+    console.log('[Worker] Iniciando varredura diária de jornadas e relacionamento...');
     try {
-      // 1. Buscar todas as campanhas ativas
-      const activeCampaigns = await prisma.campaign.findMany({
+      // 1. Buscar todas as jornadas ativas
+      const activeJourneys = await prisma.journey.findMany({
         where: { status: 'ACTIVE' },
-        include: { flowSteps: true }
+        include: { automations: true }
       });
 
-      console.log(`[Worker] Encontradas ${activeCampaigns.length} campanhas ativas para processar.`);
+      console.log(`[Worker] Encontradas ${activeJourneys.length} jornadas ativas para processar.`);
 
-      for (const campaign of activeCampaigns) {
-        // 2. Buscar todos os leads vinculados à campanha com data de entrada definida, ignorando finalizados (ganho/perdido)
-        const leads = await prisma.leadState.findMany({
+      for (const journey of activeJourneys) {
+        // 2. Buscar todos os clientes vinculados à jornada com data de entrada definida, ignorando finalizados (ganho/perdido)
+        const customers = await prisma.customer.findMany({
           where: {
-            campaignId: campaign.id,
-            joinedCampaignAt: { not: null },
+            journeyId: journey.id,
+            joinedJourneyAt: { not: null },
             assigneeId: { not: null },
             stage: { notIn: ['ganho', 'perdido'] }
           }
         });
 
-        console.log(`[Worker] Processando ${leads.length} leads para a campanha "${campaign.name}"...`);
+        console.log(`[Worker] Processando ${customers.length} clientes para a jornada "${journey.name}"...`);
 
         const now = new Date();
 
-        for (const lead of leads) {
-          for (const step of campaign.flowSteps) {
-            // Calcular data agendada do passo (joinedCampaignAt + dayOffset)
-            const joined = new Date(lead.joinedCampaignAt!);
+        for (const customer of customers) {
+          for (const automation of journey.automations) {
+            const config = automation.actionConfig as any;
+            const dayOffset = typeof config?.dayOffset === 'number' ? config.dayOffset : 0;
+            const channel = config?.channel || 'WHATSAPP';
+
+            // Calcular data agendada do passo (joinedJourneyAt + dayOffset)
+            const joined = new Date(customer.joinedJourneyAt!);
             const scheduledFor = new Date(joined.getTime());
-            scheduledFor.setDate(joined.getDate() + step.dayOffset);
+            scheduledFor.setDate(joined.getDate() + dayOffset);
 
             // Se o momento agendado já chegou ou passou
             if (scheduledFor <= now) {
-              // Verificar se já existe um alerta gerado para este passo específico
-              const existingAlert = await prisma.taskAlert.findFirst({
+              // Verificar se já existe uma tarefa gerada para esta automação específica
+              const existingTask = await prisma.task.findFirst({
                 where: {
-                  leadStateId: lead.id,
-                  stepId: step.id
+                  customerId: customer.id,
+                  automationId: automation.id
                 }
               });
 
-              if (!existingAlert) {
-                console.log(`[Worker] Criando alerta de tarefa para LeadState ID ${lead.id}, Passo ID ${step.id} (Offset: +${step.dayOffset} dias)`);
-                await prisma.taskAlert.create({
+              if (!existingTask) {
+                console.log(`[Worker] Criando tarefa para Cliente ID ${customer.id}, Automação ID ${automation.id} (Offset: +${dayOffset} dias)`);
+                await prisma.task.create({
                   data: {
-                    leadStateId: lead.id,
-                    assignedToId: lead.assigneeId!,
-                    stepId: step.id,
+                    customerId: customer.id,
+                    assignedToId: customer.assigneeId!,
+                    journeyId: journey.id,
+                    automationId: automation.id,
                     scheduledFor,
-                    taskType: step.channel, // "WHATSAPP" | "EMAIL" | "CALL"
+                    taskType: channel, // "WHATSAPP" | "EMAIL" | "CALL"
                     status: 'PENDING'
                   }
                 });
@@ -64,7 +69,7 @@ export const postSalesWorker = new Worker('PostSalesAlerts', async (job) => {
         }
       }
 
-      console.log('[Worker] Varredura diária de campanhas concluída.');
+      console.log('[Worker] Varredura diária de jornadas concluída.');
     } catch (err) {
       console.error('[Worker] Erro durante o processamento do sync-daily:', err);
       throw err;

@@ -11,19 +11,38 @@ export async function GET() {
       return new Response('Unauthorized', { status: 403 });
     }
 
-    const campaigns = await prisma.campaign.findMany({
+    const journeys = await prisma.journey.findMany({
       include: {
-        flowSteps: {
-          orderBy: { dayOffset: 'asc' }
-        },
+        automations: true,
         _count: {
-          select: { leads: true }
+          select: { customers: true }
         }
       },
       orderBy: { createdAt: 'desc' }
     });
 
-    return NextResponse.json({ success: true, data: campaigns });
+    const mappedJourneys = journeys.map(j => ({
+      id: j.id,
+      name: j.name,
+      status: j.status,
+      targetCriteria: j.targetCriteria,
+      limitPerDay: j.limitPerDay,
+      flowGraph: j.flowGraph,
+      createdAt: j.createdAt,
+      updatedAt: j.updatedAt,
+      _count: { leads: j._count.customers },
+      flowSteps: j.automations.map(a => {
+        const config = a.actionConfig as any;
+        return {
+          id: a.id,
+          dayOffset: config?.dayOffset || 0,
+          channel: config?.channel || 'WHATSAPP',
+          messageTemplate: config?.messageTemplate || ''
+        };
+      }).sort((a, b) => a.dayOffset - b.dayOffset)
+    }));
+
+    return NextResponse.json({ success: true, data: mappedJourneys });
   } catch (error: any) {
     console.error('GET campaigns error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -40,7 +59,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { action } = body;
 
-    // 1. Ação de Atribuição (Round Robin) - Legado
+    // 1. Ação de Atribuição (Round Robin)
     if (action === 'assign') {
       const { campaignId, externalPersonIds, userIds } = body;
       if (!campaignId || !externalPersonIds || !userIds || !Array.isArray(externalPersonIds) || !Array.isArray(userIds)) {
@@ -53,7 +72,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, count: results.length, data: results });
     }
 
-    // 2. Ação de Estimativa de Público em Tempo Real (Passo 1 do Wizard)
+    // 2. Ação de Estimativa de Público em Tempo Real
     if (action === 'estimate') {
       const { plansFilter, selectedPlans, statusFilter, expiryDays } = body;
 
@@ -108,19 +127,26 @@ export async function POST(request: Request) {
 
       const targetCriteria = JSON.stringify({ plansFilter, selectedPlans, statusFilter, expiryDays, startDate });
 
-      // Criar campanha
-      const campaign = await prisma.campaign.create({
+      // Criar jornada e automações
+      const journey = await prisma.journey.create({
         data: {
           name,
           status: 'ACTIVE',
+          objective: 'Recuperação de Leads',
+          financialGoal: 0,
           targetCriteria,
           limitPerDay: limitPerDay ? Number(limitPerDay) : null,
           flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : null,
-          flowSteps: flowSteps && Array.isArray(flowSteps) ? {
-            create: flowSteps.map((step: any) => ({
-              dayOffset: Number(step.dayOffset),
-              channel: step.channel,
-              messageTemplate: step.messageTemplate
+          automations: flowSteps && Array.isArray(flowSteps) ? {
+            create: flowSteps.map((step: any, index: number) => ({
+              name: `Passo ${index + 1} - ${step.channel}`,
+              triggerEvent: 'JOURNEY_STEP',
+              actionType: 'CREATE_TASK',
+              actionConfig: {
+                dayOffset: Number(step.dayOffset),
+                channel: step.channel,
+                messageTemplate: step.messageTemplate
+              }
             }))
           } : undefined
         }
@@ -168,11 +194,11 @@ export async function POST(request: Request) {
       let resultsCount = 0;
       if (externalPersonIds.length > 0) {
         const useCase = new AssignCampaignLeadsUseCase();
-        const results = await useCase.execute(externalPersonIds, campaign.id, userIds, startDate);
+        const results = await useCase.execute(externalPersonIds, journey.id, userIds, startDate);
         resultsCount = results.length;
       }
 
-      return NextResponse.json({ success: true, data: campaign, leadsAssignedCount: resultsCount });
+      return NextResponse.json({ success: true, data: journey, leadsAssignedCount: resultsCount });
     }
 
     // 4. Ação de Atualização / Edição
@@ -183,12 +209,12 @@ export async function POST(request: Request) {
       }
 
       if (flowSteps && Array.isArray(flowSteps)) {
-        await prisma.flowStep.deleteMany({
-          where: { campaignId }
+        await prisma.automation.deleteMany({
+          where: { journeyId: campaignId }
         });
       }
 
-      const campaign = await prisma.campaign.update({
+      const journey = await prisma.journey.update({
         where: { id: campaignId },
         data: {
           name,
@@ -196,20 +222,25 @@ export async function POST(request: Request) {
           targetCriteria: targetCriteria ? (typeof targetCriteria === 'string' ? targetCriteria : JSON.stringify(targetCriteria)) : undefined,
           limitPerDay: limitPerDay ? Number(limitPerDay) : undefined,
           flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : undefined,
-          flowSteps: flowSteps && Array.isArray(flowSteps) ? {
-            create: flowSteps.map((step: any) => ({
-              dayOffset: Number(step.dayOffset),
-              channel: step.channel,
-              messageTemplate: step.messageTemplate
+          automations: flowSteps && Array.isArray(flowSteps) ? {
+            create: flowSteps.map((step: any, index: number) => ({
+              name: `Passo ${index + 1} - ${step.channel}`,
+              triggerEvent: 'JOURNEY_STEP',
+              actionType: 'CREATE_TASK',
+              actionConfig: {
+                dayOffset: Number(step.dayOffset),
+                channel: step.channel,
+                messageTemplate: step.messageTemplate
+              }
             }))
           } : undefined
         },
         include: {
-          flowSteps: true
+          automations: true
         }
       });
 
-      return NextResponse.json({ success: true, data: campaign });
+      return NextResponse.json({ success: true, data: journey });
     }
 
     return NextResponse.json({ success: false, error: 'Ação inválida.' }, { status: 400 });
@@ -232,9 +263,9 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, error: 'campaignId é obrigatório para exclusão.' }, { status: 400 });
     }
 
-    // 1. Encontrar todos os leads associados a essa campanha
-    const campaignLeads = await prisma.leadState.findMany({
-      where: { campaignId }
+    // 1. Encontrar todos os customers associados a essa jornada
+    const campaignLeads = await prisma.customer.findMany({
+      where: { journeyId: campaignId }
     });
 
     // Separar os atendidos dos não atendidos
@@ -249,34 +280,34 @@ export async function DELETE(request: Request) {
 
     // Iniciar transação no Prisma
     await prisma.$transaction([
-      // Deletar todos os alertas de tarefa pendentes vinculados aos passos desta campanha
-      prisma.taskAlert.deleteMany({
+      // Deletar todas as tarefas pendentes vinculadas a esta jornada
+      prisma.task.deleteMany({
         where: {
-          leadStateId: { in: campaignLeads.map(l => l.id) },
-          flowStep: { campaignId }
+          customerId: { in: campaignLeads.map(l => l.id) },
+          journeyId: campaignId
         }
       }),
 
-      // Deletar os leads não atendidos da campanha
-      prisma.leadState.deleteMany({
+      // Deletar os customers não atendidos da jornada
+      prisma.customer.deleteMany({
         where: {
           id: { in: unattendedLeadIds }
         }
       }),
 
-      // Desassociar os leads atendidos da campanha (remover FK)
-      prisma.leadState.updateMany({
+      // Desassociar os customers atendidos da jornada (remover FK)
+      prisma.customer.updateMany({
         where: {
           id: { in: attendedLeadIds }
         },
         data: {
-          campaignId: null,
-          joinedCampaignAt: null
+          journeyId: null,
+          joinedJourneyAt: null
         }
       }),
 
-      // Deletar a campanha em si (por cascata deleta os passos do fluxo)
-      prisma.campaign.delete({
+      // Deletar a jornada em si (por cascata deleta as automações)
+      prisma.journey.delete({
         where: { id: campaignId }
       })
     ]);

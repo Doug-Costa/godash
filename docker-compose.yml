@@ -6,6 +6,7 @@ services:
     environment:
       - AUTH_TRUST_HOST=true
       - REDIS_URL=redis://crm_redis:6379
+      - DATABASE_URL=postgresql://postgres:postgres@crm_postgres:5432/dentalgo_crm?schema=public
     env_file:
       - .env.local
     volumes:
@@ -21,6 +22,21 @@ services:
     restart: always
     networks:
       - db-clone_default
+
+  crm-postgres:
+    image: postgres:15-alpine
+    container_name: crm_postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=dentalgo_crm
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    networks:
+      - db-clone_default
+    restart: always
 
 networks:
   db-clone_default:

@@ -89,6 +89,17 @@ export default async function DashboardPage({
     isActive: a.isActive
   }));
 
+  // 4. Fetch pipelines from PostgreSQL
+  const rawPipelines = await prisma.pipeline.findMany({
+    orderBy: { name: 'asc' }
+  });
+
+  const pipelines = rawPipelines.map(p => ({
+    id: p.id,
+    name: p.name,
+    description: p.description
+  }));
+
   return (
     <DashboardContent
       kpis={kpis}
@@ -100,6 +111,7 @@ export default async function DashboardPage({
       month={month}
       currentUser={currentUser}
       agents={agents}
+      pipelines={pipelines}
     />
   );
 }

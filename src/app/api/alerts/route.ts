@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import pool from '@/lib/db';
 import { auth } from '@/auth';
+import { NotificationService } from '@/lib/services/NotificationService';
 
 export async function GET(request: Request) {
   try {
@@ -27,83 +28,91 @@ export async function GET(request: Request) {
     const expiringLimit = Math.max(1, Number(searchParams.get('expiringLimit') || 10));
     const expiringOffset = (expiringPage - 1) * expiringLimit;
 
-    // 1. TaskAlerts do Usuário (Prisma - SQLite)
-    const taskAlertsCount = await prisma.taskAlert.count({
+    // 1. Tasks do Usuário (Prisma - Postgres)
+    const taskAlertsCount = await prisma.task.count({
       where: {
         assignedToId: userId,
         status: 'PENDING',
         scheduledFor: { lte: new Date() },
         OR: [
-          { leadState: { frozenUntil: null } },
-          { leadState: { frozenUntil: { lt: new Date() } } }
+          { customer: { frozenUntil: null } },
+          { customer: { frozenUntil: { lt: new Date() } } }
         ]
       }
     });
 
-    const alerts = await prisma.taskAlert.findMany({
+    const alerts = await prisma.task.findMany({
       where: {
         assignedToId: userId,
         status: 'PENDING',
         scheduledFor: { lte: new Date() },
         OR: [
-          { leadState: { frozenUntil: null } },
-          { leadState: { frozenUntil: { lt: new Date() } } }
+          { customer: { frozenUntil: null } },
+          { customer: { frozenUntil: { lt: new Date() } } }
         ]
       },
       include: {
-        leadState: {
+        customer: {
           include: {
-            campaign: { select: { name: true } }
+            journey: { select: { name: true } }
           }
         },
-        flowStep: true
+        automation: true
       },
       orderBy: { scheduledFor: 'asc' },
       skip: taskOffset,
       take: taskLimit
     });
 
-    // Enriquecer TaskAlerts com dados do MySQL
+    // Enriquecer Tasks com dados do MySQL
     let enrichedAlerts: any[] = [];
     if (alerts.length > 0) {
-      const personIds = alerts.map(a => a.leadState.externalPersonId);
+      const personIds = alerts.map(a => a.customer.externalPersonId);
       const [peopleRows] = await pool.query(
         'SELECT id, fullName, email, phoneNumber FROM people WHERE id IN (?)',
         [personIds]
       );
       const peopleMap = new Map((peopleRows as any[]).map(p => [p.id, p]));
 
-      // Buscar última interação para cada lead para usar de fallback se não houver flowStep
-      const leadStateIds = alerts.map(a => a.leadStateId);
-      const latestInteractions = await prisma.leadInteraction.findMany({
-        where: { leadStateId: { in: leadStateIds } },
+      // Buscar última interação para cada cliente para usar de fallback
+      const customerIds = alerts.map(a => a.customerId);
+      const latestInteractions = await prisma.interaction.findMany({
+        where: { customerId: { in: customerIds } },
         orderBy: { createdAt: 'desc' }
       });
       const interactionMap = new Map();
       latestInteractions.forEach(i => {
-        if (!interactionMap.has(i.leadStateId)) {
-          interactionMap.set(i.leadStateId, i.text);
+        if (!interactionMap.has(i.customerId)) {
+          interactionMap.set(i.customerId, i.text);
         }
       });
 
       enrichedAlerts = alerts.map(alert => {
-        const person = peopleMap.get(alert.leadState.externalPersonId);
+        const person = peopleMap.get(alert.customer.externalPersonId);
+        const autoConfig = alert.automation?.actionConfig as any;
         return {
           ...alert,
+          leadStateId: alert.customerId, // retrocompatibilidade frontend
+          leadState: alert.customer,     // retrocompatibilidade frontend
+          flowStep: alert.automation ? {
+            id: alert.automation.id,
+            dayOffset: autoConfig?.dayOffset || 0,
+            channel: autoConfig?.channel || 'WHATSAPP',
+            messageTemplate: autoConfig?.messageTemplate || ''
+          } : null,
           personName: person?.fullName || 'Cliente Indefinido',
           personEmail: person?.email || '',
           personPhone: person?.phoneNumber || '',
-          campaignName: alert.leadState.campaign?.name || null,
-          renderedMessage: alert.flowStep?.messageTemplate
-            ? alert.flowStep.messageTemplate.replace(/\{\{nome\}\}/gi, person?.fullName || 'Doutor(a)')
-            : (interactionMap.get(alert.leadStateId) || 'Retorno agendado.')
+          campaignName: alert.customer.journey?.name || null,
+          renderedMessage: autoConfig?.messageTemplate
+            ? autoConfig.messageTemplate.replace(/\{\{nome\}\}/gi, person?.fullName || 'Doutor(a)')
+            : (interactionMap.get(alert.customerId) || 'Retorno agendado.')
         };
       });
     }
 
-    // 2. Carrinhos Abandonados (Leads Órfãos)
-    // Buscamos quais leads já estão atribuídos a algum operador no SQLite
-    const assignedStates = await prisma.leadState.findMany({
+    // 2. Carrinhos Abandonados (Clientes Órfãos)
+    const assignedStates = await prisma.customer.findMany({
       where: { assigneeId: { not: null } },
       select: { externalPersonId: true }
     });
@@ -142,9 +151,8 @@ export async function GET(request: Request) {
     const [orphans] = await pool.query(selectOrphansQuery, [...orphanParams, orphanLimit, orphanOffset]);
     const orphanedLeads = orphans as any[];
 
-    // 3. Clientes à expirar (Assinaturas expirando nos próximos 30 dias que estão sem operador atribuído)
-    // Buscamos quais leads já estão atribuídos a algum operador no SQLite
-    const assignedExpiringStates = await prisma.leadState.findMany({
+    // 3. Clientes à expirar (sem operador atribuído)
+    const assignedExpiringStates = await prisma.customer.findMany({
       where: { assigneeId: { not: null } },
       select: { externalPersonId: true }
     });
@@ -215,37 +223,41 @@ export async function GET(request: Request) {
   }
 }
 
-async function checkAndExitCampaignIfLastStep(leadStateId: string, stepId: string | null) {
-  if (!stepId) return;
+async function checkAndExitCampaignIfLastStep(customerId: string, automationId: string | null) {
+  if (!automationId) return;
 
-  const step = await prisma.flowStep.findUnique({
-    where: { id: stepId },
+  const automation = await prisma.automation.findUnique({
+    where: { id: automationId },
     include: {
-      campaign: {
+      journey: {
         include: {
-          flowSteps: {
-            orderBy: { dayOffset: 'desc' }
-          }
+          automations: true
         }
       }
     }
   });
 
-  if (!step || !step.campaign || step.campaign.flowSteps.length === 0) return;
+  if (!automation || !automation.journey || automation.journey.automations.length === 0) return;
 
-  const lastStep = step.campaign.flowSteps[0];
-  if (step.id === lastStep.id) {
-    await prisma.leadState.update({
-      where: { id: leadStateId },
+  const sortedAutomations = [...automation.journey.automations].sort((a, b) => {
+    const configA = a.actionConfig as any;
+    const configB = b.actionConfig as any;
+    return (configB?.dayOffset || 0) - (configA?.dayOffset || 0);
+  });
+
+  const lastStep = sortedAutomations[0];
+  if (automation.id === lastStep.id) {
+    await prisma.customer.update({
+      where: { id: customerId },
       data: {
-        campaignId: null,
-        joinedCampaignAt: null
+        journeyId: null,
+        joinedJourneyAt: null
       }
     });
 
-    await prisma.taskAlert.deleteMany({
+    await prisma.task.deleteMany({
       where: {
-        leadStateId,
+        customerId,
         status: 'PENDING'
       }
     });
@@ -270,41 +282,48 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: 'personId é obrigatório' }, { status: 400 });
       }
 
-      const leadState = await prisma.leadState.upsert({
+      const vendasPipeline = await prisma.pipeline.findUnique({
+        where: { name: 'Vendas' }
+      });
+      const pipelineId = vendasPipeline?.id || null;
+
+      const customer = await prisma.customer.upsert({
         where: { externalPersonId: Number(personId) },
         update: {
           assigneeId: userId,
           stage: 'novo_cadastro',
           frozenUntil: null,
           freezeReason: null,
-          lostReason: null
+          lostReason: null,
+          ...(pipelineId && { pipelineId })
         },
         create: {
           externalPersonId: Number(personId),
           assigneeId: userId,
-          stage: 'novo_cadastro'
+          stage: 'novo_cadastro',
+          ...(pipelineId && { pipelineId })
         }
       });
 
-      await prisma.leadInteraction.create({
+      await prisma.interaction.create({
         data: {
-          leadStateId: leadState.id,
+          customerId: customer.id,
           authorId: userId,
           text: 'Assumiu o atendimento deste carrinho abandonado/lead órfão.'
         }
       });
 
-      return NextResponse.json({ success: true, data: leadState });
+      return NextResponse.json({ success: true, data: customer });
     }
 
-    // 2. Concluir alerta
+    // 2. Concluir tarefa/alerta
     if (action === 'complete') {
       const { alertId, note } = body;
       if (!alertId) {
         return NextResponse.json({ success: false, error: 'alertId é obrigatório' }, { status: 400 });
       }
 
-      const alert = await prisma.taskAlert.update({
+      const task = await prisma.task.update({
         where: { id: alertId },
         data: {
           status: 'COMPLETED',
@@ -313,27 +332,27 @@ export async function POST(request: Request) {
         }
       });
 
-      await prisma.leadInteraction.create({
+      await prisma.interaction.create({
         data: {
-          leadStateId: alert.leadStateId,
+          customerId: task.customerId,
           authorId: userId,
-          text: `Tarefa concluída (${alert.taskType}): ${note || 'Sem observações.'}`
+          text: `Tarefa concluída (${task.taskType}): ${note || 'Sem observações.'}`
         }
       });
 
-      await checkAndExitCampaignIfLastStep(alert.leadStateId, alert.stepId);
+      await checkAndExitCampaignIfLastStep(task.customerId, task.automationId);
 
-      return NextResponse.json({ success: true, data: alert });
+      return NextResponse.json({ success: true, data: task });
     }
 
-    // 3. Pular alerta
+    // 3. Pular tarefa/alerta
     if (action === 'skip') {
       const { alertId, note } = body;
       if (!alertId) {
         return NextResponse.json({ success: false, error: 'alertId é obrigatório' }, { status: 400 });
       }
 
-      const alert = await prisma.taskAlert.update({
+      const task = await prisma.task.update({
         where: { id: alertId },
         data: {
           status: 'SKIPPED',
@@ -342,59 +361,97 @@ export async function POST(request: Request) {
         }
       });
 
-      await prisma.leadInteraction.create({
+      await prisma.interaction.create({
         data: {
-          leadStateId: alert.leadStateId,
+          customerId: task.customerId,
           authorId: userId,
-          text: `Tarefa pulada/remarcada (${alert.taskType}): ${note || 'Sem observações.'}`
+          text: `Tarefa pulada/remarcada (${task.taskType}): ${note || 'Sem observações.'}`
         }
       });
 
-      return NextResponse.json({ success: true, data: alert });
+      return NextResponse.json({ success: true, data: task });
     }
 
-    // 4. Atender alerta
+    // 4. Atender alerta/tarefa
     if (action === 'atender') {
       const { alertId } = body;
       if (!alertId) {
         return NextResponse.json({ success: false, error: 'alertId é obrigatório' }, { status: 400 });
       }
 
-      const alert = await prisma.taskAlert.findUnique({
-        where: { id: alertId }
+      const task = await prisma.task.findUnique({
+        where: { id: alertId },
+        include: {
+          automation: true,
+          customer: true,
+        }
       });
 
-      if (!alert) {
-        return NextResponse.json({ success: false, error: 'Alerta não encontrado' }, { status: 404 });
+      if (!task) {
+        return NextResponse.json({ success: false, error: 'Tarefa não encontrada' }, { status: 404 });
       }
 
-      const updatedAlert = await prisma.taskAlert.update({
+      // Buscar os detalhes do cliente no MySQL
+      const [personRows] = await pool.query(
+        'SELECT id, fullName, email, phoneNumber FROM people WHERE id = ? LIMIT 1',
+        [task.customer.externalPersonId]
+      );
+      const person = (personRows as any[])[0];
+
+      let msgSentLog = 'Atendimento iniciado pelo operador.';
+      if (person) {
+        const actionConfig = (task.automation?.actionConfig as any) || {};
+        const templateMessage = actionConfig.templateMessage || 'Olá {{nome}}! Como podemos ajudar?';
+        
+        const renderedText = templateMessage
+          .replace(/\{\{nome\}\}/gi, person.fullName || 'Doutor(a)')
+          .replace(/\{\{email\}\}/gi, person.email || '')
+          .replace(/\{\{telefone\}\}/gi, person.phoneNumber || '')
+          .replace(/\{\{plano\}\}/gi, task.snapshotPlanName || '');
+
+        let waSuccess = false;
+        let emailSuccess = false;
+
+        // Disparar WhatsApp se houver telefone
+        if (person.phoneNumber) {
+          waSuccess = await NotificationService.sendWhatsApp(person.phoneNumber, renderedText);
+        }
+
+        // Disparar E-mail se houver email
+        if (person.email) {
+          emailSuccess = await NotificationService.sendEmail(person.email, `DentalGO - ${task.automation?.name || 'Atendimento'}`, renderedText);
+        }
+
+        msgSentLog = `Atendimento iniciado. Notificações disparadas: WhatsApp (${waSuccess ? 'Sucesso' : 'Falha/Não enviado'}), E-mail (${emailSuccess ? 'Sucesso' : 'Falha/Não enviado'}).`;
+      }
+
+      const updatedTask = await prisma.task.update({
         where: { id: alertId },
         data: {
           status: 'COMPLETED',
           completedAt: new Date(),
-          completionNote: 'Atendimento iniciado pelo operador.'
+          completionNote: msgSentLog
         }
       });
 
-      const updatedLeadState = await prisma.leadState.update({
-        where: { id: alert.leadStateId },
+      const updatedCustomer = await prisma.customer.update({
+        where: { id: task.customerId },
         data: {
           stage: 'primeiro_contato'
         }
       });
 
-      await prisma.leadInteraction.create({
+      await prisma.interaction.create({
         data: {
-          leadStateId: alert.leadStateId,
+          customerId: task.customerId,
           authorId: userId,
-          text: `Iniciou atendimento da campanha. Alerta (${alert.taskType}) marcado como concluído.`
+          text: `Iniciou atendimento da campanha. ${msgSentLog}`
         }
       });
 
-      await checkAndExitCampaignIfLastStep(alert.leadStateId, alert.stepId);
+      await checkAndExitCampaignIfLastStep(task.customerId, task.automationId);
 
-      return NextResponse.json({ success: true, data: { alert: updatedAlert, leadState: updatedLeadState } });
+      return NextResponse.json({ success: true, data: { alert: updatedTask, leadState: updatedCustomer } });
     }
 
     return NextResponse.json({ success: false, error: 'Ação inválida' }, { status: 400 });

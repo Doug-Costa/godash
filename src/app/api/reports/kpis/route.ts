@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
+import pool from '@/lib/db';
 
 export async function GET(request: Request) {
   try {
@@ -21,33 +22,33 @@ export async function GET(request: Request) {
       }
     } : {};
 
-    // 1. Métricas Gerais da Campanha
-    const totalLeads = await prisma.leadState.count({
+    // 1. Métricas Gerais da Campanha/Jornada
+    const totalLeads = await prisma.customer.count({
       where: {
-        ...(campaignId && { campaignId }),
+        ...(campaignId && { journeyId: campaignId }),
         ...dateFilter
       }
     });
 
-    const convertedLeads = await prisma.leadState.count({
+    const convertedLeads = await prisma.customer.count({
       where: {
-        ...(campaignId && { campaignId }),
+        ...(campaignId && { journeyId: campaignId }),
         stage: 'ganho',
         ...dateFilter
       }
     });
 
-    const lostLeads = await prisma.leadState.count({
+    const lostLeads = await prisma.customer.count({
       where: {
-        ...(campaignId && { campaignId }),
+        ...(campaignId && { journeyId: campaignId }),
         stage: 'perdido',
         ...dateFilter
       }
     });
 
-    const attendedLeads = await prisma.leadState.count({
+    const attendedLeads = await prisma.customer.count({
       where: {
-        ...(campaignId && { campaignId }),
+        ...(campaignId && { journeyId: campaignId }),
         interactionCount: { gt: 0 },
         ...dateFilter
       }
@@ -56,10 +57,10 @@ export async function GET(request: Request) {
     const winRate = totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0;
 
     // 2. Distribuição de Motivos de Perda
-    const lossReasonsGroup = await prisma.leadState.groupBy({
+    const lossReasonsGroup = await prisma.customer.groupBy({
       by: ['lostReason'],
       where: {
-        ...(campaignId && { campaignId }),
+        ...(campaignId && { journeyId: campaignId }),
         stage: 'perdido',
         lostReason: { not: null },
         ...dateFilter
@@ -75,10 +76,10 @@ export async function GET(request: Request) {
     }));
 
     // 3. Conversões por Operador (User Ranking)
-    const userConversions = await prisma.leadState.groupBy({
+    const userConversions = await prisma.customer.groupBy({
       by: ['assigneeId'],
       where: {
-        ...(campaignId && { campaignId }),
+        ...(campaignId && { journeyId: campaignId }),
         stage: 'ganho',
         assigneeId: { not: null },
         ...dateFilter
@@ -101,9 +102,9 @@ export async function GET(request: Request) {
     })).sort((a, b) => b.conversions - a.conversions);
 
     // 4. SLA e Tempo de Resposta Geral e por Operador
-    const leadsWithInteraction = await prisma.leadState.findMany({
+    const leadsWithInteraction = await prisma.customer.findMany({
       where: {
-        ...(campaignId && { campaignId }),
+        ...(campaignId && { journeyId: campaignId }),
         assigneeId: { not: null },
         lastInteractionAt: { not: null },
         ...dateFilter
@@ -142,10 +143,44 @@ export async function GET(request: Request) {
       count: stats.count
     })).sort((a, b) => a.avgSlaHours - b.avgSlaHours); // Menor tempo de resposta primeiro
 
-    // 5. Totalizador de Campanhas ativas
-    const activeCampaignsCount = await prisma.campaign.count({
+    // 5. Totalizador de Campanhas ativas (Jornadas)
+    const activeCampaignsCount = await prisma.journey.count({
       where: { status: 'ACTIVE' }
     });
+
+    // 6. Receita Recorrente Recuperada (cruzando com MySQL)
+    const convertedCustomers = await prisma.customer.findMany({
+      where: {
+        ...(campaignId && { journeyId: campaignId }),
+        stage: 'ganho',
+        ...dateFilter
+      },
+      select: {
+        externalPersonId: true
+      }
+    });
+
+    let recoveredRevenue = 0;
+    const convertedIds = convertedCustomers.map(c => c.externalPersonId);
+    if (convertedIds.length > 0) {
+      const placeholders = convertedIds.map(() => '?').join(',');
+      const [revRows] = await pool.query(
+        `SELECT SUM(
+          CASE 
+            WHEN (DATEDIFF(s.isValidUntil, s.createdAt) > 400 OR pl.price >= 150000) THEN pl.price / 24.0
+            WHEN (LOWER(pl.title) LIKE '%anual%') THEN pl.price / 12.0
+            ELSE pl.price 
+          END
+        ) as totalMRR
+        FROM subscriptions s
+        JOIN plans pl ON s.planId = pl.id
+        WHERE s.personId IN (${placeholders}) AND s.status = 'active'`,
+        convertedIds
+      );
+      recoveredRevenue = (revRows as any[])[0]?.totalMRR || 0;
+    }
+
+    const responseRate = totalLeads > 0 ? (attendedLeads / totalLeads) * 100 : 0;
 
     return NextResponse.json({
       success: true,
@@ -156,6 +191,8 @@ export async function GET(request: Request) {
           convertedLeads,
           lostLeads,
           winRate,
+          responseRate,
+          recoveredRevenue: Math.round(recoveredRevenue),
           globalAvgSlaHours,
           activeCampaignsCount
         },

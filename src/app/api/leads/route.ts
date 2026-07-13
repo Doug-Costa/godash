@@ -9,6 +9,14 @@ import { LeadTaggingService } from '@/lib/application/LeadTaggingService';
 const crmRepository = new PrismaCrmRepository();
 
 export async function GET(request: Request) {
+  const session = await auth();
+  if (!session || !session.user?.id) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const role = (session.user as any).role || 'AGENT';
+  const userId = session.user.id;
+
   const { searchParams } = new URL(request.url);
   const month = searchParams.get('month'); // YYYY-MM
   const plan = searchParams.get('plan'); // planId or 'none'
@@ -18,6 +26,7 @@ export async function GET(request: Request) {
   const lossReason = searchParams.get('lossReason');
   const tag = searchParams.get('tag');
   const leadId = searchParams.get('leadId');
+  const pipelineId = searchParams.get('pipelineId');
 
   const targetMonth = !month || month === 'all' ? new Date().toISOString().slice(0, 7) : month;
 
@@ -42,33 +51,55 @@ export async function GET(request: Request) {
     `;
     const params: any[] = [];
 
-    // 1. Filter by CRM state from SQLite (stage, assignee, lossReason, tag)
+    // 1. Filter by CRM state from Postgres (stage, assignee, lossReason, tag)
     const hasStage = stage && stage !== '';
     const hasAssignee = assigneeId && assigneeId !== 'all';
     const hasLossReason = lossReason && lossReason !== 'all' && lossReason !== '';
     const hasTag = tag && tag !== 'all' && tag !== '';
 
-    if (!leadId && (hasStage || hasAssignee || hasLossReason || hasTag)) {
-      const crmFilter: any = {};
-      if (hasStage) crmFilter.stage = stage;
-      if (hasAssignee) {
-        crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
-      }
-      if (hasLossReason) crmFilter.lossReason = lossReason;
-      if (hasTag) crmFilter.tag = tag;
-      
-      const matchingStates = await prisma.leadState.findMany({
-        where: crmFilter,
-        select: { externalPersonId: true }
+    const isAgent = role === 'AGENT' || role === 'POST_SALES';
+
+    if (isAgent && leadId) {
+      // Agente consultando um lead específico: verificar se pertence a outro agente
+      const cust = await prisma.customer.findUnique({
+        where: { externalPersonId: Number(leadId) }
       });
-      
-      const matchingIds = matchingStates.map(s => s.externalPersonId);
-      if (matchingIds.length === 0) {
+      if (cust && cust.assigneeId && cust.assigneeId !== userId) {
         return NextResponse.json({ success: true, data: [] });
       }
-      
-      query += ` AND p.id IN (?)`;
-      params.push(matchingIds);
+    }
+
+    if (!leadId) {
+      const crmFilter: any = {};
+      if (isAgent) {
+        crmFilter.assigneeId = userId;
+      } else if (hasAssignee) {
+        crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
+      }
+
+      if (hasStage) crmFilter.stage = stage;
+      if (hasLossReason) crmFilter.lossReason = lossReason;
+      if (hasTag) crmFilter.tag = tag;
+
+      const hasPipeline = pipelineId && pipelineId !== 'all';
+      if (hasPipeline) {
+        crmFilter.pipelineId = pipelineId;
+      }
+
+      if (isAgent || hasStage || hasAssignee || hasLossReason || hasTag || hasPipeline) {
+        const matchingStates = await prisma.customer.findMany({
+          where: crmFilter,
+          select: { externalPersonId: true }
+        });
+        
+        const matchingIds = matchingStates.map(s => s.externalPersonId);
+        if (matchingIds.length === 0) {
+          return NextResponse.json({ success: true, data: [] });
+        }
+        
+        query += ` AND p.id IN (?)`;
+        params.push(matchingIds);
+      }
     }
 
     // 2. Filter by date/month (MySQL)
@@ -108,8 +139,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, data: [] });
     }
 
-    // Fetch corresponding states, interactions, campaign and alerts from SQLite
-    const leadStates = await prisma.leadState.findMany({
+    // Fetch corresponding states, interactions, campaign and alerts from Postgres
+    const customers = await prisma.customer.findMany({
       where: {
         externalPersonId: { in: personIds }
       },
@@ -123,18 +154,18 @@ export async function GET(request: Request) {
         assignee: {
           select: { id: true, name: true }
         },
-        campaign: {
+        journey: {
           select: { id: true, name: true }
         },
-        taskAlerts: {
+        tasks: {
           where: { status: 'PENDING' }
         }
       }
     });
 
     const stateMap = new Map();
-    leadStates.forEach(ls => {
-      stateMap.set(ls.externalPersonId, ls);
+    customers.forEach(c => {
+      stateMap.set(c.externalPersonId, c);
     });
 
     const data = (rows as any[]).map(r => {
@@ -157,17 +188,19 @@ export async function GET(request: Request) {
           id: state.assignee.id,
           name: state.assignee.name
         } : null,
-        campaign: state?.campaign ? {
-          id: state.campaign.id,
-          name: state.campaign.name
+        campaign: state?.journey ? {
+          id: state.journey.id,
+          name: state.journey.name
         } : null,
-        hasPendingAlert: (state?.taskAlerts || []).length > 0,
+        hasPendingAlert: (state?.tasks || []).length > 0,
         notes: (state?.interactions || []).map((i: any) => ({
           id: i.id,
           text: i.text,
           date: i.createdAt ? new Date(i.createdAt).toISOString() : new Date().toISOString(),
-          authorName: i.author?.name || 'Agente'
-        }))
+          authorName: i.author?.name || 'Agente',
+          type: inferInteractionType(i.text)
+        })),
+        metadata: state?.metadata || {}
       };
     });
 
@@ -201,7 +234,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { leadId, stage, note, assigneeId, type, lossReason, scheduledFor, tag, lostReason } = body;
+    const { leadId, stage, note, assigneeId, type, lossReason, scheduledFor, tag, lostReason, metadata } = body;
 
     if (!leadId) {
       return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 });
@@ -229,22 +262,22 @@ export async function POST(request: Request) {
         await crmRepository.updateStage(externalPersonId, stage);
         
         if (stage === 'ganho' || stage === 'perdido') {
-          const ls = await prisma.leadState.findUnique({
+          const customer = await prisma.customer.findUnique({
             where: { externalPersonId }
           });
-          if (ls) {
-            await prisma.leadState.update({
+          if (customer) {
+            await prisma.customer.update({
               where: { externalPersonId },
               data: {
-                campaignId: null,
-                joinedCampaignAt: null,
+                journeyId: null,
+                joinedJourneyAt: null,
                 frozenUntil: null,
                 freezeReason: null
               }
             });
-            await prisma.taskAlert.deleteMany({
+            await prisma.task.deleteMany({
               where: {
-                leadStateId: ls.id,
+                customerId: customer.id,
                 status: 'PENDING'
               }
             });
@@ -258,13 +291,27 @@ export async function POST(request: Request) {
 
     // Explicit tag update if provided
     if (tag) {
-      await crmRepository.updateLeadState(externalPersonId, { tag });
+      await crmRepository.updateCustomer(externalPersonId, { tag });
     }
 
     if (lostReason !== undefined) {
-      await prisma.leadState.update({
+      await prisma.customer.update({
         where: { externalPersonId },
         data: { lostReason }
+      });
+    }
+
+    if (metadata !== undefined) {
+      const customer = await prisma.customer.upsert({
+        where: { externalPersonId },
+        update: {},
+        create: { externalPersonId, stage: 'novo_cadastro' }
+      });
+      const currentMeta = (customer.metadata as Record<string, any>) || {};
+      const newMeta = { ...currentMeta, ...metadata };
+      await prisma.customer.update({
+        where: { externalPersonId },
+        data: { metadata: newMeta }
       });
     }
 
@@ -273,8 +320,8 @@ export async function POST(request: Request) {
       await crmRepository.assignLead(externalPersonId, assigneeId === 'unassigned' || !assigneeId ? null : assigneeId);
     }
 
-    // Fetch the updated lead state to return
-    const updatedState = await prisma.leadState.findUnique({
+    // Fetch the updated customer state to return
+    const updatedState = await prisma.customer.findUnique({
       where: { externalPersonId },
       include: {
         interactions: {
@@ -301,8 +348,10 @@ export async function POST(request: Request) {
         id: i.id,
         text: i.text,
         date: i.createdAt.toISOString(),
-        authorName: i.author?.name || 'Agente'
-      }))
+        authorName: i.author?.name || 'Agente',
+        type: inferInteractionType(i.text)
+      })),
+      metadata: updatedState?.metadata || {}
     };
 
     return NextResponse.json({ success: true, data: formattedData });
@@ -316,4 +365,16 @@ export async function POST(request: Request) {
 async function bcryptHash(password: string): Promise<string> {
   const bcrypt = require('bcryptjs');
   return bcrypt.hash(password, 10);
+}
+
+function inferInteractionType(text: string): string {
+  const t = text.toLowerCase();
+  if (t.includes('congelado') || t.includes('congelar')) return 'FREEZE';
+  if (t.includes('descongelado') || t.includes('descongelar')) return 'UNFREEZE';
+  if (t.includes('motivo:') || t.includes('perdido') || t.includes('descarte')) return 'LOST';
+  if (t.includes('ganho') || t.includes('recuperado')) return 'RECOVERED';
+  if (t.includes('retorno agendado') || t.includes('remarcada') || t.includes('agendamento')) return 'MEETING_SCHEDULED';
+  if (t.includes('iniciou atendimento') || t.includes('contato feito')) return 'CONTACT_ATTEMPT';
+  if (t.includes('sistema')) return 'SYSTEM_LOG';
+  return 'NOTE';
 }

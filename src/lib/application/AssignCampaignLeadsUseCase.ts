@@ -6,17 +6,17 @@ export class AssignCampaignLeadsUseCase {
       throw new Error('Pelo menos um operador deve ser selecionado para a distribuição da campanha.');
     }
 
-    // 1. Buscar a campanha (incluindo os passos do fluxo para pré-geração de alertas)
-    const campaign = await prisma.campaign.findUnique({
+    // 1. Buscar a jornada (incluindo as automações/passos do fluxo para pré-geração de alertas)
+    const journey = await prisma.journey.findUnique({
       where: { id: campaignId },
-      include: { flowSteps: true }
+      include: { automations: true }
     });
 
-    if (!campaign) {
-      throw new Error('Campanha não encontrada.');
+    if (!journey) {
+      throw new Error('Campanha/Jornada não encontrada.');
     }
 
-    const limitPerDay = campaign.limitPerDay;
+    const limitPerDay = journey.limitPerDay;
     const operatorCount = userIds.length;
     const results: { externalPersonId: number; assigneeId: string; joinedCampaignAt: Date }[] = [];
 
@@ -51,13 +51,13 @@ export class AssignCampaignLeadsUseCase {
         joinedCampaignAt.setDate(joinedCampaignAt.getDate() + daysDelay);
       }
 
-      // 2. Upsert do LeadState para vincular ao operador, campanha e definir a data de entrada
-      const leadState = await prisma.leadState.upsert({
+      // 2. Upsert do Customer para vincular ao operador, jornada e definir a data de entrada
+      const customer = await prisma.customer.upsert({
         where: { externalPersonId },
         update: {
           assigneeId,
-          campaignId,
-          joinedCampaignAt,
+          journeyId: campaignId,
+          joinedJourneyAt: joinedCampaignAt,
           stage: 'novo_cadastro', // Reinicia como "novo_cadastro" (Sem Contato) para o rodízio
           frozenUntil: null,      // Remove qualquer congelamento pré-existente
           freezeReason: null,
@@ -66,35 +66,40 @@ export class AssignCampaignLeadsUseCase {
         create: {
           externalPersonId,
           assigneeId,
-          campaignId,
-          joinedCampaignAt,
+          journeyId: campaignId,
+          joinedJourneyAt: joinedCampaignAt,
           stage: 'novo_cadastro',
         }
       });
 
-      // 3. Excluir alertas pendentes anteriores para este lead
-      await prisma.taskAlert.deleteMany({
+      // 3. Excluir alertas pendentes anteriores para este customer
+      await prisma.task.deleteMany({
         where: {
-          leadStateId: leadState.id,
+          customerId: customer.id,
           status: 'PENDING'
         }
       });
 
-      // 4. Pré-gerar alertas de tarefas da campanha se a data agendada for agora ou no passado
-      if (campaign.flowSteps && campaign.flowSteps.length > 0) {
-        for (const step of campaign.flowSteps) {
+      // 4. Pré-gerar alertas de tarefas da jornada se a data agendada for agora ou no passado
+      if (journey.automations && journey.automations.length > 0) {
+        for (const automation of journey.automations) {
+          const config = automation.actionConfig as any;
+          const dayOffset = typeof config?.dayOffset === 'number' ? config.dayOffset : 0;
+          const channel = config?.channel || 'WHATSAPP';
+
           const scheduledFor = new Date(joinedCampaignAt.getTime());
-          scheduledFor.setDate(scheduledFor.getDate() + step.dayOffset);
+          scheduledFor.setDate(scheduledFor.getDate() + dayOffset);
 
           // Se a data de agendamento já passou ou é hoje, gera o alerta
           if (scheduledFor <= now) {
-            await prisma.taskAlert.create({
+            await prisma.task.create({
               data: {
-                leadStateId: leadState.id,
+                customerId: customer.id,
                 assignedToId: assigneeId,
-                stepId: step.id,
+                journeyId: journey.id,
+                automationId: automation.id,
                 scheduledFor,
-                taskType: step.channel,
+                taskType: channel,
                 status: 'PENDING'
               }
             });
@@ -102,7 +107,7 @@ export class AssignCampaignLeadsUseCase {
         }
       }
 
-      results.push({ externalPersonId, assigneeId, joinedCampaignAt });
+      results.push({ externalPersonId, assigneeId, joinedCampaignAt: joinedCampaignAt });
     }
 
     return results;

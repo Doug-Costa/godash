@@ -18,11 +18,11 @@ export class RegisterLeadInteractionService {
     lossReason?: LossReason,
     scheduledFor?: Date
   ) {
-    // 1. Get current lead state
-    let leadState = await this.crmRepo.getLeadState(externalPersonId);
+    // 1. Get current customer state
+    let customer = await this.crmRepo.getCustomer(externalPersonId);
     
     // 2. Map InteractionType to Stage
-    let nextStage = leadState?.stage || 'novo_cadastro';
+    let nextStage = customer?.stage || 'novo_cadastro';
     if (type === 'CONTACT_ATTEMPT') {
       nextStage = 'primeiro_contato';
     } else if (type === 'MEETING_SCHEDULED') {
@@ -52,56 +52,57 @@ export class RegisterLeadInteractionService {
       else text = `Interação comercial registrada: ${type}`;
     }
 
-    // 4. Record the interaction in timeline (adds note, updates lastInteractionAt, increments interactionCount)
+    // 4. Record the interaction in timeline
     await this.crmRepo.addInteraction(externalPersonId, text, authorId);
 
-    // 5. Update state of the lead (stage, lossReason if LOST, scheduledFor if MEETING_SCHEDULED)
+    // 5. Update state of the customer
     const finalScheduledFor = type === 'MEETING_SCHEDULED' 
       ? (scheduledFor || null) 
-      : (type === 'LOST' || type === 'RECOVERED' ? null : (leadState?.scheduledFor || null));
+      : (type === 'LOST' || type === 'RECOVERED' ? null : (customer?.scheduledFor || null));
 
-    leadState = await this.crmRepo.updateLeadState(externalPersonId, {
+    customer = await this.crmRepo.updateCustomer(externalPersonId, {
       stage: nextStage,
       lossReason: type === 'LOST' ? lossReason : null,
       lastInteractionAt: new Date(),
       scheduledFor: finalScheduledFor,
     });
 
-    const dbLead = await prisma.leadState.findUnique({
+    const dbCustomer = await prisma.customer.findUnique({
       where: { externalPersonId }
     });
 
     const isFinalStage = nextStage === 'ganho' || nextStage === 'perdido' || type === 'LOST' || type === 'RECOVERED';
-    if (isFinalStage && dbLead) {
-      await prisma.leadState.update({
-        where: { id: dbLead.id },
+    if (isFinalStage && dbCustomer) {
+      await prisma.customer.update({
+        where: { id: dbCustomer.id },
         data: {
-          campaignId: null,
-          joinedCampaignAt: null,
+          journeyId: null,
+          joinedJourneyAt: null,
           frozenUntil: null,
           freezeReason: null
         }
       });
-      await prisma.taskAlert.deleteMany({
+      await prisma.task.deleteMany({
         where: {
-          leadStateId: dbLead.id,
+          customerId: dbCustomer.id,
           status: 'PENDING'
         }
       });
     }
 
-    if (type === 'MEETING_SCHEDULED' && scheduledFor && dbLead) {
-      await prisma.taskAlert.deleteMany({
+    if (type === 'MEETING_SCHEDULED' && scheduledFor && dbCustomer) {
+      await prisma.task.deleteMany({
         where: {
-          leadStateId: dbLead.id,
+          customerId: dbCustomer.id,
           status: 'PENDING',
-          stepId: null
+          journeyId: null,
+          automationId: null
         }
       });
 
-      await prisma.taskAlert.create({
+      await prisma.task.create({
         data: {
-          leadStateId: dbLead.id,
+          customerId: dbCustomer.id,
           assignedToId: authorId,
           scheduledFor: new Date(scheduledFor),
           taskType: 'RETORNO',
@@ -121,6 +122,6 @@ export class RegisterLeadInteractionService {
       timestamp: new Date(),
     });
 
-    return leadState;
+    return customer;
   }
 }

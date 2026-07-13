@@ -13,50 +13,53 @@ import type {
 // Mappers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function mapSequence(s: {
+function mapSequence(a: {
   id: string;
   name: string;
-  triggerDays: number;
-  templateMessage: string;
+  triggerEvent: string;
+  conditions: any;
+  actionType: string;
+  actionConfig: any;
   isActive: boolean;
-  targetSegment: string;
   createdAt: Date;
   updatedAt: Date;
 }): PostSaleSequenceDTO {
+  const config = a.actionConfig as any;
+  const conditions = a.conditions as any;
   return {
-    id: s.id,
-    name: s.name,
-    triggerDays: s.triggerDays,
-    templateMessage: s.templateMessage,
-    isActive: s.isActive,
-    targetSegment: s.targetSegment as PostSaleTargetSegment,
-    createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
+    id: a.id,
+    name: a.name,
+    triggerDays: typeof config?.triggerDays === 'number' ? config.triggerDays : 0,
+    templateMessage: config?.templateMessage || '',
+    isActive: a.isActive,
+    targetSegment: (conditions?.targetSegment || 'paid') as PostSaleTargetSegment,
+    createdAt: a.createdAt,
+    updatedAt: a.updatedAt,
   };
 }
 
 function mapTask(t: {
   id: string;
-  externalPersonId: number;
-  sequenceId: string;
+  customerId: string;
   assignedToId: string | null;
-  status: string;
   scheduledFor: Date;
+  status: string;
   completedAt: Date | null;
   completionNote: string | null;
   snapshotPlanId: number | null;
   snapshotPlanName: string | null;
   createdAt: Date;
-  updatedAt: Date;
-  sequence: { name: string; templateMessage: string };
+  customer: { externalPersonId: number };
+  automation: { name: string; actionConfig: any } | null;
   assignedTo: { name: string | null } | null;
 }): LeadPostSaleTaskDTO {
+  const config = t.automation?.actionConfig as any;
   return {
     id: t.id,
-    externalPersonId: t.externalPersonId,
-    sequenceId: t.sequenceId,
-    sequenceName: t.sequence.name,
-    templateMessage: t.sequence.templateMessage,
+    externalPersonId: t.customer.externalPersonId,
+    sequenceId: t.automation?.name || '', // Keep sequenceId matching the name or ID
+    sequenceName: t.automation?.name || 'Pós-Venda',
+    templateMessage: config?.templateMessage || '',
     assignedToId: t.assignedToId,
     assignedToName: t.assignedTo?.name ?? null,
     status: t.status as PostSaleTaskStatus,
@@ -70,7 +73,8 @@ function mapTask(t: {
 }
 
 const TASK_INCLUDE = {
-  sequence: { select: { name: true, templateMessage: true } },
+  customer: { select: { externalPersonId: true } },
+  automation: { select: { name: true, actionConfig: true } },
   assignedTo: { select: { name: true } },
 } as const;
 
@@ -82,90 +86,126 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
   // ── Sequências ─────────────────────────────────────────────────────────────
 
   async createSequence(data: CreateSequenceInput): Promise<PostSaleSequenceDTO> {
-    const seq = await prisma.postSaleSequence.create({
+    const seq = await prisma.automation.create({
       data: {
         name: data.name,
-        triggerDays: data.triggerDays,
-        templateMessage: data.templateMessage,
+        triggerEvent: 'POST_SALE',
         isActive: data.isActive ?? true,
-        targetSegment: data.targetSegment ?? 'paid',
+        conditions: { targetSegment: data.targetSegment ?? 'paid' },
+        actionType: 'CREATE_TASK',
+        actionConfig: {
+          triggerDays: data.triggerDays,
+          templateMessage: data.templateMessage,
+        },
       },
     });
     return mapSequence(seq);
   }
 
   async updateSequence(id: string, data: Partial<CreateSequenceInput>): Promise<PostSaleSequenceDTO> {
-    const seq = await prisma.postSaleSequence.update({
+    const existing = await prisma.automation.findUnique({ where: { id } });
+    if (!existing) throw new Error('Sequence not found');
+
+    const currentConfig = (existing.actionConfig as any) || {};
+    const currentConditions = (existing.conditions as any) || {};
+
+    const seq = await prisma.automation.update({
       where: { id },
       data: {
         ...(data.name !== undefined && { name: data.name }),
-        ...(data.triggerDays !== undefined && { triggerDays: data.triggerDays }),
-        ...(data.templateMessage !== undefined && { templateMessage: data.templateMessage }),
         ...(data.isActive !== undefined && { isActive: data.isActive }),
-        ...(data.targetSegment !== undefined && { targetSegment: data.targetSegment }),
+        conditions: {
+          targetSegment: data.targetSegment !== undefined ? data.targetSegment : (currentConditions.targetSegment ?? 'paid')
+        },
+        actionConfig: {
+          triggerDays: data.triggerDays !== undefined ? data.triggerDays : (currentConfig.triggerDays ?? 0),
+          templateMessage: data.templateMessage !== undefined ? data.templateMessage : (currentConfig.templateMessage ?? ''),
+        }
       },
     });
     return mapSequence(seq);
   }
 
   async listSequences(onlyActive = false): Promise<PostSaleSequenceDTO[]> {
-    const sequences = await prisma.postSaleSequence.findMany({
-      where: onlyActive ? { isActive: true } : undefined,
-      orderBy: { triggerDays: 'asc' },
+    const sequences = await prisma.automation.findMany({
+      where: {
+        triggerEvent: 'POST_SALE',
+        ...(onlyActive ? { isActive: true } : {}),
+      },
+      orderBy: { createdAt: 'asc' },
     });
-    return sequences.map(mapSequence);
+    const mapped = sequences.map(mapSequence);
+    return mapped.sort((a, b) => a.triggerDays - b.triggerDays);
   }
 
   async getSequenceById(id: string): Promise<PostSaleSequenceDTO | null> {
-    const seq = await prisma.postSaleSequence.findUnique({ where: { id } });
+    const seq = await prisma.automation.findUnique({ where: { id } });
     return seq ? mapSequence(seq) : null;
   }
 
   // ── Tarefas ────────────────────────────────────────────────────────────────
 
   async createTask(data: CreateTaskInput): Promise<LeadPostSaleTaskDTO> {
-    const task = await prisma.leadPostSaleTask.create({
+    const customer = await prisma.customer.upsert({
+      where: { externalPersonId: data.externalPersonId },
+      update: {},
+      create: { externalPersonId: data.externalPersonId, stage: 'novo_cadastro' }
+    });
+
+    const task = await prisma.task.create({
       data: {
-        externalPersonId: data.externalPersonId,
-        sequenceId: data.sequenceId,
+        customerId: customer.id,
+        automationId: data.sequenceId,
         assignedToId: data.assignedToId ?? null,
         scheduledFor: data.scheduledFor,
         snapshotPlanId: data.snapshotPlanId ?? null,
         snapshotPlanName: data.snapshotPlanName ?? null,
         status: 'PENDING',
+        taskType: 'POST_SALE'
       },
       include: TASK_INCLUDE,
     });
-    return mapTask(task);
+    return mapTask(task as any);
   }
 
   async createManyTasks(data: CreateTaskInput[]): Promise<number> {
     if (data.length === 0) return 0;
-    const result = await prisma.leadPostSaleTask.createMany({
-      data: data.map(d => ({
-        externalPersonId: d.externalPersonId,
-        sequenceId: d.sequenceId,
-        assignedToId: d.assignedToId ?? null,
-        scheduledFor: d.scheduledFor,
-        snapshotPlanId: d.snapshotPlanId ?? null,
-        snapshotPlanName: d.snapshotPlanName ?? null,
-        status: 'PENDING',
-      })),
-      // skipDuplicates: SQLite não suporta — deduplicação feita manualmente antes
-    });
-    return result.count;
+    
+    let count = 0;
+    for (const d of data) {
+      const customer = await prisma.customer.upsert({
+        where: { externalPersonId: d.externalPersonId },
+        update: {},
+        create: { externalPersonId: d.externalPersonId, stage: 'novo_cadastro' }
+      });
+
+      await prisma.task.create({
+        data: {
+          customerId: customer.id,
+          automationId: d.sequenceId,
+          assignedToId: d.assignedToId ?? null,
+          scheduledFor: d.scheduledFor,
+          snapshotPlanId: d.snapshotPlanId ?? null,
+          snapshotPlanName: d.snapshotPlanName ?? null,
+          status: 'PENDING',
+          taskType: 'POST_SALE'
+        }
+      });
+      count++;
+    }
+    return count;
   }
 
   async getTaskById(id: string): Promise<LeadPostSaleTaskDTO | null> {
-    const task = await prisma.leadPostSaleTask.findUnique({
+    const task = await prisma.task.findUnique({
       where: { id },
       include: TASK_INCLUDE,
     });
-    return task ? mapTask(task) : null;
+    return task ? mapTask(task as any) : null;
   }
 
   async completeTask(id: string, note?: string): Promise<LeadPostSaleTaskDTO> {
-    const task = await prisma.leadPostSaleTask.update({
+    const task = await prisma.task.update({
       where: { id },
       data: {
         status: 'COMPLETED',
@@ -174,23 +214,24 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
       },
       include: TASK_INCLUDE,
     });
-    return mapTask(task);
+    return mapTask(task as any);
   }
 
   async cancelTask(id: string): Promise<LeadPostSaleTaskDTO> {
-    const task = await prisma.leadPostSaleTask.update({
+    const task = await prisma.task.update({
       where: { id },
       data: { status: 'CANCELED' },
       include: TASK_INCLUDE,
     });
-    return mapTask(task);
+    return mapTask(task as any);
   }
 
   // ── Alertas ────────────────────────────────────────────────────────────────
 
   async getPendingAlerts(assignedToId?: string): Promise<LeadPostSaleTaskDTO[]> {
-    const tasks = await prisma.leadPostSaleTask.findMany({
+    const tasks = await prisma.task.findMany({
       where: {
+        taskType: 'POST_SALE',
         status: 'PENDING',
         scheduledFor: { lte: new Date() },
         ...(assignedToId ? { assignedToId } : {}),
@@ -198,7 +239,7 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
       include: TASK_INCLUDE,
       orderBy: { scheduledFor: 'asc' },
     });
-    return tasks.map(mapTask);
+    return tasks.map(t => mapTask(t as any));
   }
 
   // ── Verificação de duplicidade ─────────────────────────────────────────────
@@ -207,10 +248,11 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
     externalPersonId: number,
     sequenceId: string
   ): Promise<boolean> {
-    const count = await prisma.leadPostSaleTask.count({
+    const count = await prisma.task.count({
       where: {
-        externalPersonId,
-        sequenceId,
+        taskType: 'POST_SALE',
+        customer: { externalPersonId },
+        automationId: sequenceId,
         status: 'PENDING',
       },
     });

@@ -8,7 +8,17 @@ const crmRepository = new PrismaCrmRepository();
 
 export async function GET() {
   try {
-    const leadStates = await prisma.leadState.findMany({
+    const session = await auth();
+    if (!session || !session.user?.id) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+
+    const role = (session.user as any).role || 'AGENT';
+    const userId = session.user.id;
+    const isAgent = role === 'AGENT' || role === 'POST_SALES';
+
+    const customers = await prisma.customer.findMany({
+      where: isAgent ? { assigneeId: userId } : undefined,
       include: {
         interactions: {
           include: {
@@ -21,11 +31,11 @@ export async function GET() {
       },
     });
 
-    if (leadStates.length === 0) {
+    if (customers.length === 0) {
       return NextResponse.json({ success: true, data: {} });
     }
 
-    const ids = leadStates.map((l) => l.externalPersonId);
+    const ids = customers.map((c) => c.externalPersonId);
     const [peopleRows] = await pool.query(
       'SELECT id, email FROM people WHERE id IN (?)',
       [ids]
@@ -37,12 +47,12 @@ export async function GET() {
     });
 
     const data: Record<string, any> = {};
-    leadStates.forEach((l) => {
-      const email = emailMap.get(l.externalPersonId) || `lead_${l.externalPersonId}@dentalgo.com`;
+    customers.forEach((c) => {
+      const email = emailMap.get(c.externalPersonId) || `lead_${c.externalPersonId}@dentalgo.com`;
       data[email] = {
-        stage: l.stage,
-        assigneeId: l.assigneeId,
-        notes: l.interactions.map((i) => ({
+        stage: c.stage,
+        assigneeId: c.assigneeId,
+        notes: c.interactions.map((i) => ({
           date: i.createdAt.toISOString(),
           text: i.text,
           authorName: i.author?.name || 'Agente',
@@ -109,7 +119,7 @@ export async function POST(request: Request) {
       await crmRepository.assignLead(externalPersonId, assigneeId);
     }
 
-    const leadState = await prisma.leadState.findUnique({
+    const customer = await prisma.customer.findUnique({
       where: { externalPersonId },
       include: {
         interactions: {
@@ -124,9 +134,9 @@ export async function POST(request: Request) {
     });
 
     const formattedData = {
-      stage: leadState?.stage || 'novo_cadastro',
-      assigneeId: leadState?.assigneeId || null,
-      notes: ((leadState as any)?.interactions || []).map((i: any) => ({
+      stage: customer?.stage || 'novo_cadastro',
+      assigneeId: customer?.assigneeId || null,
+      notes: ((customer as any)?.interactions || []).map((i: any) => ({
         date: i.createdAt.toISOString(),
         text: i.text,
         authorName: i.author?.name || 'Agente',
