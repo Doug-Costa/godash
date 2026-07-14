@@ -96,6 +96,7 @@ export async function GET(request: Request) {
     const params: any[] = [];
 
     // 1. Filter by CRM state from Postgres (stage, assignee, lossReason, tag)
+    const isPostgresQueue = !atendimentoFila || atendimentoFila === 'campanhas' || atendimentoFila === 'alerts';
     const hasStage = stage && stage !== '';
     const hasAssignee = assigneeId && assigneeId !== 'all';
     const hasLossReason = lossReason && lossReason !== 'all' && lossReason !== '';
@@ -145,13 +146,10 @@ export async function GET(request: Request) {
       // Filtros específicos da fila
       if (atendimentoFila) {
         if (atendimentoFila === 'campanhas') {
-          crmFilter.tasks = {
-            some: {
-              completedAt: null,
-              automationId: { not: null },
-              scheduledFor: hasMonthFilter ? { lte: endOfMonth! } : undefined
-            }
-          };
+          crmFilter.journeyId = campaignId && campaignId !== 'all' ? campaignId : { not: null };
+          if (hasMonthFilter) {
+            crmFilter.joinedJourneyAt = { lte: endOfMonth! };
+          }
         } else if (atendimentoFila === 'alerts') {
           crmFilter.tasks = {
             some: {
@@ -159,8 +157,6 @@ export async function GET(request: Request) {
               scheduledFor: hasMonthFilter ? { lte: endOfMonth! } : undefined
             }
           };
-        } else if (atendimentoFila === 'cancelados') {
-          crmFilter.tag = 'CANCELED_CLIENT';
         }
       }
 
@@ -175,7 +171,7 @@ export async function GET(request: Request) {
           params.push(assignedIds);
         }
       } else {
-        if (Object.keys(crmFilter).length > 0 || isAgent || hasStage || hasAssignee || hasLossReason || hasTag || hasPipeline || atendimentoFila) {
+        if (Object.keys(crmFilter).length > 0 || isAgent || hasStage || hasAssignee || hasLossReason || hasTag || hasPipeline || (atendimentoFila && isPostgresQueue)) {
           const matchingStates = await prisma.customer.findMany({
             where: crmFilter,
             select: { externalPersonId: true }
@@ -257,10 +253,6 @@ export async function GET(request: Request) {
     if (personIds.length === 0) {
       return NextResponse.json({ success: true, data: [], pagination: { total: totalRecords, page, limit, totalPages: Math.ceil(totalRecords / limit) } });
     }
-
-    // Se a fila for campanhas, alertas ou cancelados, ou geral,
-    // as entidades de negócio principais com estágio individualizado estão no Postgres.
-    const isPostgresQueue = !atendimentoFila || atendimentoFila === 'campanhas' || atendimentoFila === 'alerts' || atendimentoFila === 'cancelados';
 
     // Monta filtros extras no Postgres para buscar exatamente os customers corretos
     const postgresQueryFilter: any = {

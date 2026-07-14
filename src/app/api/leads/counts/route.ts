@@ -30,18 +30,12 @@ export async function GET(request: Request) {
       endOfMonth = new Date(`${y}-${padM}-${padD}T23:59:59.999Z`);
     }
 
-    // 1. Campanhas (leads com tarefas pendentes de automação)
+    // 1. Campanhas (leads associados a campanhas)
     const campanhasCount = await prisma.customer.count({
       where: {
         assigneeId: isAgent ? userId : undefined,
-        journeyId: campaignId && campaignId !== 'all' ? campaignId : undefined,
-        tasks: {
-          some: {
-            completedAt: null,
-            automationId: { not: null },
-            scheduledFor: hasMonthFilter ? { lte: endOfMonth! } : undefined
-          }
-        }
+        journeyId: campaignId && campaignId !== 'all' ? campaignId : { not: null },
+        joinedJourneyAt: hasMonthFilter ? { lte: endOfMonth! } : undefined
       }
     });
 
