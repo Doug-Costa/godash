@@ -4,15 +4,16 @@ import { useRouter, useSearchParams } from 'next/navigation';
 
 interface MonthSelectorProps {
   currentMonth: string; // YYYY-MM
+  allowAll?: boolean;
 }
 
-export default function MonthSelector({ currentMonth }: MonthSelectorProps) {
+export default function MonthSelector({ currentMonth, allowAll = true }: MonthSelectorProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const isAll = currentMonth === 'all';
+  const isAll = allowAll && currentMonth === 'all';
   const defaultMonthStr = new Date().toISOString().slice(0, 7);
-  const activeMonthStr = isAll ? defaultMonthStr : currentMonth;
+  const activeMonthStr = (currentMonth === 'all') ? defaultMonthStr : currentMonth;
   const [year, month] = activeMonthStr.split('-');
   
   const years = [2026, 2025, 2024, 2023, 2022, 2021];
@@ -47,23 +48,25 @@ export default function MonthSelector({ currentMonth }: MonthSelectorProps) {
 
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-      <button
-        type="button"
-        onClick={handleClearFilter}
-        style={{
-          background: isAll ? 'var(--accent)' : 'var(--surface)',
-          border: '1px solid var(--border)',
-          color: isAll ? '#fff' : 'var(--text-secondary)',
-          borderRadius: 8,
-          padding: '6px 12px',
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: 'pointer',
-          transition: 'all 0.2s'
-        }}
-      >
-        📅 Todos os Meses
-      </button>
+      {allowAll && (
+        <button
+          type="button"
+          onClick={handleClearFilter}
+          style={{
+            background: isAll ? 'var(--accent)' : 'var(--surface)',
+            border: '1px solid var(--border)',
+            color: isAll ? '#fff' : 'var(--text-secondary)',
+            borderRadius: 8,
+            padding: '6px 12px',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          📅 Todos os Meses
+        </button>
+      )}
 
       <div style={{ display: 'flex', gap: 4, opacity: isAll ? 0.6 : 1, pointerEvents: isAll ? 'none' : 'auto', alignItems: 'center' }}>
         <select
@@ -103,7 +106,7 @@ export default function MonthSelector({ currentMonth }: MonthSelectorProps) {
         </select>
       </div>
 
-      {!isAll && (
+      {allowAll && !isAll && (
         <button
           type="button"
           onClick={handleClearFilter}

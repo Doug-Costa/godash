@@ -434,6 +434,16 @@ export default function DashboardContent({
   }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, filterCampaignId, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId, activePipelineId, leadsPage, leadsLimit, atendimentoFila, atendimentoViewMode]);
 
   useEffect(() => {
+    if (activeTab !== 'atendimento' && filterMonth === 'all') {
+      const currentMonthStr = new Date().toISOString().slice(0, 7);
+      setFilterMonth(currentMonthStr);
+      const params = new URLSearchParams(window.location.search);
+      params.set('month', currentMonthStr);
+      window.history.pushState(null, '', `${window.location.pathname}?${params.toString()}`);
+    }
+  }, [activeTab, filterMonth]);
+
+  useEffect(() => {
     setLeadsPage(1);
   }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, filterCampaignId, activeTab, atendimentoFila, atendimentoViewMode]);
 
@@ -1393,7 +1403,7 @@ export default function DashboardContent({
 
             <div>
               <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Competência:</label>
-              <MonthSelector currentMonth={filterMonth} />
+              <MonthSelector currentMonth={filterMonth} allowAll={true} />
             </div>
           </div>
         </div>
@@ -1919,7 +1929,7 @@ export default function DashboardContent({
             </h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <span className="label-sm">Competência:</span>
-              <MonthSelector currentMonth={filterMonth} />
+              <MonthSelector currentMonth={filterMonth} allowAll={false} />
             </div>
           </div>
 
