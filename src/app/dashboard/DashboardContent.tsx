@@ -279,9 +279,36 @@ export default function DashboardContent({
     }
   };
 
+  const [isSyncingCRM, setIsSyncingCRM] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+
+  const handleSyncCRM = async () => {
+    setIsSyncingCRM(true);
+    setSyncFeedback(null);
+    try {
+      const res = await fetch('/api/leads/sync', { method: 'POST' });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setSyncFeedback(`✓ Sincronizado: ${json.data.abandonedCount} abandonos, ${json.data.expiringCount} expirações.`);
+          fetchLeads();
+        } else {
+          setSyncFeedback(`❌ Falha: ${json.error || 'Erro desconhecido'}`);
+        }
+      } else {
+        setSyncFeedback(`❌ Erro no servidor: ${res.statusText}`);
+      }
+    } catch (err: any) {
+      setSyncFeedback(`❌ Erro: ${err.message}`);
+    } finally {
+      setIsSyncingCRM(false);
+    }
+  };
+
   const fetchFilaCounts = async () => {
     try {
-      const res = await fetch('/api/leads/counts');
+      const monthParam = (activeTab === 'kanban' && kanbanFilterAllMonths) ? 'all' : filterMonth;
+      const res = await fetch(`/api/leads/counts?month=${monthParam}`);
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
@@ -2524,17 +2551,32 @@ export default function DashboardContent({
               </div>
             </div>
 
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
-              {settingsSavedFeedback && <span style={{ color: '#4ADE80', fontSize: 13, fontWeight: 600 }}>✓ Configurações Salvas!</span>}
-              <button
-                type="button"
-                onClick={handleSaveSettings}
-                disabled={savingSettings}
-                className="btn-action btn-action-purple"
-                style={{ padding: '8px 24px', fontSize: 13, borderRadius: 8 }}
-              >
-                {savingSettings ? 'Salvando...' : '💾 Salvar Configurações'}
-              </button>
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={handleSyncCRM}
+                  disabled={isSyncingCRM}
+                  className="btn-action btn-action-outline"
+                  style={{ padding: '8px 16px', fontSize: 13, borderRadius: 8, borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                >
+                  {isSyncingCRM ? 'Sincronizando...' : '🔄 Sincronizar CRM'}
+                </button>
+                {syncFeedback && <span style={{ color: syncFeedback.startsWith('❌') ? '#F87171' : '#4ADE80', fontSize: 11, fontWeight: 600 }}>{syncFeedback}</span>}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                {settingsSavedFeedback && <span style={{ color: '#4ADE80', fontSize: 13, fontWeight: 600 }}>✓ Configurações Salvas!</span>}
+                <button
+                  type="button"
+                  onClick={handleSaveSettings}
+                  disabled={savingSettings}
+                  className="btn-action btn-action-purple"
+                  style={{ padding: '8px 24px', fontSize: 13, borderRadius: 8 }}
+                >
+                  {savingSettings ? 'Salvando...' : '💾 Salvar Configurações'}
+                </button>
+              </div>
             </div>
           </div>
 

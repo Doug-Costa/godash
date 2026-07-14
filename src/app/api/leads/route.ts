@@ -33,6 +33,18 @@ export async function GET(request: Request) {
   const offset = (page - 1) * limit;
 
   const targetMonth = !month || month === 'all' ? new Date().toISOString().slice(0, 7) : month;
+  const hasMonthFilter = month && month !== 'all';
+
+  let endOfMonth: Date | null = null;
+  if (hasMonthFilter) {
+    const parts = month.split('-');
+    const y = Number(parts[0]);
+    const m = Number(parts[1]);
+    const lastDay = new Date(y, m, 0).getDate();
+    const padM = String(m).padStart(2, '0');
+    const padD = String(lastDay).padStart(2, '0');
+    endOfMonth = new Date(`${y}-${padM}-${padD}T23:59:59.999Z`);
+  }
 
   try {
     let selectFields = `
@@ -60,13 +72,24 @@ export async function GET(request: Request) {
       ) as hasBookPurchase
     `;
 
-    let fromAndJoin = `
-      FROM people p
-      LEFT JOIN subscriptions s ON s.personId = p.id 
-        AND s.createdAt <= LAST_DAY(CONCAT(?, '-01')) 
-        AND (s.canceledAt IS NULL OR s.canceledAt > LAST_DAY(CONCAT(?, '-01')))
-      LEFT JOIN plans pl ON s.planId = pl.id
-    `;
+    // JOIN dinâmico de subscrições: se estiver visualizando filas de atendimento,
+    // não mascara os registros pela competência de June/July nas cláusulas JOIN, permitindo obter as datas de cancelamento verdadeiras.
+    let fromAndJoin = '';
+    if (atendimentoFila) {
+      fromAndJoin = `
+        FROM people p
+        LEFT JOIN subscriptions s ON s.personId = p.id
+        LEFT JOIN plans pl ON s.planId = pl.id
+      `;
+    } else {
+      fromAndJoin = `
+        FROM people p
+        LEFT JOIN subscriptions s ON s.personId = p.id 
+          AND s.createdAt <= LAST_DAY(CONCAT(?, '-01')) 
+          AND (s.canceledAt IS NULL OR s.canceledAt > LAST_DAY(CONCAT(?, '-01')))
+        LEFT JOIN plans pl ON s.planId = pl.id
+      `;
+    }
 
     let whereClause = ' WHERE 1=1';
     const params: any[] = [];
@@ -93,58 +116,46 @@ export async function GET(request: Request) {
       const crmFilter: any = {};
       
       const hasPipeline = pipelineId && pipelineId !== 'all';
-      if (hasPipeline) {
+      if (hasPipeline && !atendimentoFila) {
         crmFilter.pipelineId = pipelineId;
       }
 
+      // Filtros genéricos compartilhados
+      if (isAgent) {
+        crmFilter.assigneeId = userId;
+      } else if (hasAssignee) {
+        crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
+      }
+      if (hasStage) {
+        crmFilter.stage = stage;
+      }
+      if (hasLossReason) {
+        crmFilter.lossReason = lossReason;
+      }
+      if (hasTag && atendimentoFila !== 'cancelados') {
+        crmFilter.tag = tag;
+      }
+
+      // Filtros específicos da fila
       if (atendimentoFila) {
         if (atendimentoFila === 'campanhas') {
-          if (isAgent) {
-            crmFilter.assigneeId = userId;
-          } else if (hasAssignee) {
-            crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
-          }
           crmFilter.tasks = {
             some: {
               completedAt: null,
-              automationId: { not: null }
+              automationId: { not: null },
+              scheduledFor: hasMonthFilter ? { lte: endOfMonth! } : undefined
             }
           };
         } else if (atendimentoFila === 'alerts') {
-          if (isAgent) {
-            crmFilter.assigneeId = userId;
-          } else if (hasAssignee) {
-            crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
-          }
           crmFilter.tasks = {
             some: {
-              completedAt: null
+              completedAt: null,
+              scheduledFor: hasMonthFilter ? { lte: endOfMonth! } : undefined
             }
           };
         } else if (atendimentoFila === 'cancelados') {
-          if (isAgent) {
-            crmFilter.assigneeId = userId;
-          } else if (hasAssignee) {
-            crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
-          }
           crmFilter.tag = 'CANCELED_CLIENT';
-        } else if (atendimentoFila === 'expirar') {
-          if (isAgent) {
-            crmFilter.assigneeId = userId;
-          } else if (hasAssignee) {
-            crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
-          }
         }
-        // 'abandonados' é filtrado via MySQL p.id NOT IN (assignedIds)
-      } else {
-        if (isAgent) {
-          crmFilter.assigneeId = userId;
-        } else if (hasAssignee) {
-          crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
-        }
-        if (hasStage) crmFilter.stage = stage;
-        if (hasLossReason) crmFilter.lossReason = lossReason;
-        if (hasTag) crmFilter.tag = tag;
       }
 
       if (atendimentoFila === 'abandonados') {
@@ -175,10 +186,21 @@ export async function GET(request: Request) {
       }
     }
 
-    // 2. Filter by date/month (MySQL) - IGNORADO SE HOUVER FILA DE ATENDIMENTO ATIVA
-    if (month && month !== 'all' && !leadId && !atendimentoFila) {
-      whereClause += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
-      params.push(month);
+    // 2. Filter by date/month (MySQL)
+    if (month && month !== 'all' && !leadId) {
+      if (atendimentoFila === 'cancelados') {
+        whereClause += ` AND DATE_FORMAT(s.canceledAt, '%Y-%m') = ?`;
+        params.push(month);
+      } else if (atendimentoFila === 'expirar') {
+        whereClause += ` AND DATE_FORMAT(COALESCE(s.isValidUntil, s.expiresIn), '%Y-%m') = ?`;
+        params.push(month);
+      } else if (atendimentoFila === 'abandonados') {
+        whereClause += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
+        params.push(month);
+      } else if (!atendimentoFila) {
+        whereClause += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
+        params.push(month);
+      }
     }
 
     // Filter by leadId directly if provided (MySQL)
@@ -198,9 +220,13 @@ export async function GET(request: Request) {
     }
 
     if (atendimentoFila === 'expirar') {
-      whereClause += ` AND s.status = 'active'
-                 AND COALESCE(s.isValidUntil, s.expiresIn) >= CURDATE()
-                 AND COALESCE(s.isValidUntil, s.expiresIn) <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)`;
+      whereClause += ` AND s.status = 'active'`;
+      if (!hasMonthFilter) {
+        whereClause += ` AND COALESCE(s.isValidUntil, s.expiresIn) >= CURDATE()
+                   AND COALESCE(s.isValidUntil, s.expiresIn) <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)`;
+      }
+    } else if (atendimentoFila === 'cancelados') {
+      whereClause += ` AND (s.status = 'canceled' OR s.canceledAt IS NOT NULL)`;
     }
 
     // 4. Filter by name/email/phone (MySQL)
@@ -209,14 +235,16 @@ export async function GET(request: Request) {
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
+    const joinParams = atendimentoFila ? [] : [targetMonth, targetMonth];
+
     // EXECUTAR CONTAGEM PARA PAGINAÇÃO
     const countQuery = `SELECT COUNT(DISTINCT p.id) as total ${fromAndJoin} ${whereClause}`;
-    const [countRows] = await pool.query(countQuery, [targetMonth, targetMonth, ...params]);
+    const [countRows] = await pool.query(countQuery, [...joinParams, ...params]);
     const totalRecords = (countRows as any[])[0]?.total || 0;
 
     // EXECUTAR CONSULTA DOS DADOS PAGINADOS
     const mainQuery = `SELECT ${selectFields} ${fromAndJoin} ${whereClause} ORDER BY p.createdAt DESC LIMIT ? OFFSET ?`;
-    const [rows] = await pool.query(mainQuery, [targetMonth, targetMonth, ...params, limit, offset]);
+    const [rows] = await pool.query(mainQuery, [...joinParams, ...params, limit, offset]);
 
     const personIds = (rows as any[]).map(r => r.id);
 

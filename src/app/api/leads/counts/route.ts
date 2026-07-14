@@ -14,6 +14,21 @@ export async function GET(request: Request) {
     const userId = session.user.id;
     const isAgent = role === 'AGENT' || role === 'POST_SALES';
 
+    const { searchParams } = new URL(request.url);
+    const month = searchParams.get('month'); // YYYY-MM
+    const hasMonthFilter = month && month !== 'all';
+
+    let endOfMonth: Date | null = null;
+    if (hasMonthFilter) {
+      const parts = month.split('-');
+      const y = Number(parts[0]);
+      const m = Number(parts[1]);
+      const lastDay = new Date(y, m, 0).getDate();
+      const padM = String(m).padStart(2, '0');
+      const padD = String(lastDay).padStart(2, '0');
+      endOfMonth = new Date(`${y}-${padM}-${padD}T23:59:59.999Z`);
+    }
+
     // 1. Campanhas (leads com tarefas pendentes de automação)
     const campanhasCount = await prisma.customer.count({
       where: {
@@ -21,7 +36,8 @@ export async function GET(request: Request) {
         tasks: {
           some: {
             completedAt: null,
-            automationId: { not: null }
+            automationId: { not: null },
+            scheduledFor: hasMonthFilter ? { lte: endOfMonth! } : undefined
           }
         }
       }
@@ -33,30 +49,59 @@ export async function GET(request: Request) {
         assigneeId: isAgent ? userId : undefined,
         tasks: {
           some: {
-            completedAt: null
+            completedAt: null,
+            scheduledFor: hasMonthFilter ? { lte: endOfMonth! } : undefined
           }
         }
       }
     });
 
     // 3. Cancelados
-    const canceladosCount = await prisma.customer.count({
-      where: {
-        assigneeId: isAgent ? userId : undefined,
-        tag: 'CANCELED_CLIENT'
+    let canceladosCount = 0;
+    let canceladosQuery = `
+      SELECT COUNT(DISTINCT p.id) as total
+      FROM people p
+      INNER JOIN subscriptions s ON s.personId = p.id
+      WHERE (s.status = 'canceled' OR s.canceledAt IS NOT NULL)
+    `;
+    const canceladosParams: any[] = [];
+    if (hasMonthFilter) {
+      canceladosQuery += ` AND DATE_FORMAT(s.canceledAt, '%Y-%m') = ?`;
+      canceladosParams.push(month);
+    }
+    if (isAgent) {
+      const assigned = await prisma.customer.findMany({
+        where: { assigneeId: userId },
+        select: { externalPersonId: true }
+      });
+      const ids = assigned.map(c => c.externalPersonId);
+      if (ids.length > 0) {
+        canceladosQuery += ` AND p.id IN (?)`;
+        canceladosParams.push(ids);
+      } else {
+        canceladosQuery += ` AND 1=0`;
       }
-    });
+    }
+    const [canceladosRows] = await pool.query(canceladosQuery, canceladosParams);
+    canceladosCount = (canceladosRows as any[])[0]?.total || 0;
 
-    // 4. A Expirar (assinaturas ativas expirando em 30 dias)
+    // 4. A Expirar (assinaturas ativas expirando no período)
     let expirarQuery = `
       SELECT COUNT(DISTINCT p.id) as total
       FROM people p
       INNER JOIN subscriptions s ON s.personId = p.id
       WHERE s.status = 'active'
-        AND COALESCE(s.isValidUntil, s.expiresIn) >= CURDATE()
-        AND COALESCE(s.isValidUntil, s.expiresIn) <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
     `;
     const expirarParams: any[] = [];
+    if (hasMonthFilter) {
+      expirarQuery += ` AND DATE_FORMAT(COALESCE(s.isValidUntil, s.expiresIn), '%Y-%m') = ?`;
+      expirarParams.push(month);
+    } else {
+      expirarQuery += `
+        AND COALESCE(s.isValidUntil, s.expiresIn) >= CURDATE()
+        AND COALESCE(s.isValidUntil, s.expiresIn) <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+      `;
+    }
     if (isAgent) {
       const assigned = await prisma.customer.findMany({
         where: { assigneeId: userId },
@@ -88,6 +133,10 @@ export async function GET(request: Request) {
       WHERE pl.id IS NULL
     `;
     const abandonadosParams: any[] = [];
+    if (hasMonthFilter) {
+      abandonadosQuery += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
+      abandonadosParams.push(month);
+    }
     if (assignedIds.length > 0) {
       abandonadosQuery += ` AND p.id NOT IN (?)`;
       abandonadosParams.push(assignedIds);
