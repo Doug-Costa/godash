@@ -287,23 +287,33 @@ export async function POST(request: Request) {
       });
       const pipelineId = vendasPipeline?.id || null;
 
-      const customer = await prisma.customer.upsert({
-        where: { externalPersonId: Number(personId) },
-        update: {
-          assigneeId: userId,
-          stage: 'novo_cadastro',
-          frozenUntil: null,
-          freezeReason: null,
-          lostReason: null,
-          ...(pipelineId && { pipelineId })
-        },
-        create: {
-          externalPersonId: Number(personId),
-          assigneeId: userId,
-          stage: 'novo_cadastro',
-          ...(pipelineId && { pipelineId })
-        }
+      let customer = await prisma.customer.findFirst({
+        where: { externalPersonId: Number(personId), journeyId: null }
       });
+
+      if (customer) {
+        customer = await prisma.customer.update({
+          where: { id: customer.id },
+          data: {
+            assigneeId: userId,
+            stage: 'novo_cadastro',
+            frozenUntil: null,
+            freezeReason: null,
+            lostReason: null,
+            ...(pipelineId && { pipelineId })
+          }
+        });
+      } else {
+        customer = await prisma.customer.create({
+          data: {
+            externalPersonId: Number(personId),
+            journeyId: null,
+            assigneeId: userId,
+            stage: 'novo_cadastro',
+            ...(pipelineId && { pipelineId })
+          }
+        });
+      }
 
       await prisma.interaction.create({
         data: {

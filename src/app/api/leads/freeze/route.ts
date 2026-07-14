@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
     const userId = session.user.id;
     const body = await request.json();
-    const { personId, freezeUntil, reason } = body;
+    const { personId, journeyId, freezeUntil, reason } = body;
 
     if (!personId || !freezeUntil || !reason) {
       return NextResponse.json({ success: false, error: 'Parâmetros insuficientes. Informe personId, freezeUntil e reason.' }, { status: 400 });
@@ -22,21 +22,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Data de congelamento inválida.' }, { status: 400 });
     }
 
+    const resolvedJourneyId = journeyId || null;
+
     // Buscar ou criar Customer
-    const customer = await prisma.customer.upsert({
-      where: { externalPersonId: Number(personId) },
-      update: {
-        frozenUntil: dateToFreeze,
-        freezeReason: reason
-      },
-      create: {
-        externalPersonId: Number(personId),
-        stage: 'novo_cadastro',
-        frozenUntil: dateToFreeze,
-        freezeReason: reason,
-        assigneeId: userId // assume se não tiver atribuído
-      }
+    let customer = await prisma.customer.findFirst({
+      where: { externalPersonId: Number(personId), journeyId: resolvedJourneyId }
     });
+
+    if (customer) {
+      customer = await prisma.customer.update({
+        where: { id: customer.id },
+        data: {
+          frozenUntil: dateToFreeze,
+          freezeReason: reason
+        }
+      });
+    } else {
+      customer = await prisma.customer.create({
+        data: {
+          externalPersonId: Number(personId),
+          journeyId: resolvedJourneyId,
+          stage: 'novo_cadastro',
+          frozenUntil: dateToFreeze,
+          freezeReason: reason,
+          assigneeId: userId // assume se não tiver atribuído
+        }
+      });
+    }
 
     // Registrar interação
     const formattedDate = dateToFreeze.toLocaleDateString('pt-BR');

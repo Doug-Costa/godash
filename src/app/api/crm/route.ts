@@ -119,8 +119,8 @@ export async function POST(request: Request) {
       await crmRepository.assignLead(externalPersonId, assigneeId);
     }
 
-    const customer = await prisma.customer.findUnique({
-      where: { externalPersonId },
+    const customer = await prisma.customer.findFirst({
+      where: { externalPersonId, journeyId: null },
       include: {
         interactions: {
           include: {

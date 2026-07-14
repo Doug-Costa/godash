@@ -16,10 +16,11 @@ export class RegisterLeadInteractionService {
     type: InteractionType,
     note?: string,
     lossReason?: LossReason,
-    scheduledFor?: Date
+    scheduledFor?: Date,
+    journeyId?: string | null
   ) {
     // 1. Get current customer state
-    let customer = await this.crmRepo.getCustomer(externalPersonId);
+    let customer = await this.crmRepo.getCustomer(externalPersonId, journeyId);
     
     // 2. Map InteractionType to Stage
     let nextStage = customer?.stage || 'novo_cadastro';
@@ -53,7 +54,7 @@ export class RegisterLeadInteractionService {
     }
 
     // 4. Record the interaction in timeline
-    await this.crmRepo.addInteraction(externalPersonId, text, authorId);
+    await this.crmRepo.addInteraction(externalPersonId, text, authorId, journeyId);
 
     // 5. Update state of the customer
     const finalScheduledFor = type === 'MEETING_SCHEDULED' 
@@ -65,10 +66,10 @@ export class RegisterLeadInteractionService {
       lossReason: type === 'LOST' ? lossReason : null,
       lastInteractionAt: new Date(),
       scheduledFor: finalScheduledFor,
-    });
+    }, journeyId);
 
-    const dbCustomer = await prisma.customer.findUnique({
-      where: { externalPersonId }
+    const dbCustomer = await prisma.customer.findFirst({
+      where: { externalPersonId, journeyId: journeyId || null }
     });
 
     const isFinalStage = nextStage === 'ganho' || nextStage === 'perdido' || type === 'LOST' || type === 'RECOVERED';

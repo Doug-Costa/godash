@@ -79,7 +79,7 @@ model VerificationToken {
 
 model Customer {
   id                String        @id @default(cuid())
-  externalPersonId  Int           @unique
+  externalPersonId  Int
   stage             String        @default("novo_cadastro")
   assigneeId        String?
   pipelineId        String?
@@ -103,6 +103,8 @@ model Customer {
   journey      Journey?      @relation(fields: [journeyId], references: [id], onDelete: SetNull)
   interactions Interaction[]
   tasks        Task[]
+
+  @@unique([externalPersonId, journeyId])
 }
 
 model Journey {

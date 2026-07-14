@@ -10,7 +10,7 @@ export class LeadTaggingService {
     this.crmRepo = crmRepo || new PrismaCrmRepository();
   }
 
-  async tagLead(externalPersonId: number): Promise<LeadTag> {
+  async tagLead(externalPersonId: number, journeyId?: string | null): Promise<LeadTag> {
     // 1. Query purchases for the person in MySQL database (Core)
     const [purchases] = await pool.query(
       `SELECT p.id, pl.title as planTitle
@@ -39,7 +39,7 @@ export class LeadTaggingService {
     }
 
     // 2. Update the Customer tag
-    await this.crmRepo.updateCustomer(externalPersonId, { tag });
+    await this.crmRepo.updateCustomer(externalPersonId, { tag }, journeyId);
 
     // 3. Dispatch domain event
     CrmEventDispatcher.dispatch({

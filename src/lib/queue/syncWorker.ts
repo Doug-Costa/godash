@@ -126,20 +126,27 @@ export const syncWorker = new Worker('CustomerSyncQueue', async (job) => {
           type: 'ABANDONED_CART',
         };
 
-        await prisma.customer.upsert({
-          where: { externalPersonId },
-          update: {
-            metadata,
-            tag: 'ABANDONED_CART',
-          },
-          create: {
-            externalPersonId,
-            stage: 'novo_cadastro',
-            tag: 'ABANDONED_CART',
-            pipelineId: vendasPipelineId,
-            metadata,
-          },
+        let customer = await prisma.customer.findFirst({
+          where: { externalPersonId, journeyId: null }
         });
+
+        if (customer) {
+          await prisma.customer.update({
+            where: { id: customer.id },
+            data: { metadata, tag: 'ABANDONED_CART' }
+          });
+        } else {
+          await prisma.customer.create({
+            data: {
+              externalPersonId,
+              journeyId: null,
+              stage: 'novo_cadastro',
+              tag: 'ABANDONED_CART',
+              pipelineId: vendasPipelineId,
+              metadata
+            }
+          });
+        }
         abandonedCount++;
       }
 
@@ -158,20 +165,27 @@ export const syncWorker = new Worker('CustomerSyncQueue', async (job) => {
           type: 'EXPIRING_SUBSCRIPTION',
         };
 
-        await prisma.customer.upsert({
-          where: { externalPersonId },
-          update: {
-            metadata,
-            tag: 'CANCELED_CLIENT', // tag de oportunidade de renovação
-          },
-          create: {
-            externalPersonId,
-            stage: 'novo_cadastro',
-            tag: 'CANCELED_CLIENT',
-            pipelineId: vendasPipelineId,
-            metadata,
-          },
+        let customer = await prisma.customer.findFirst({
+          where: { externalPersonId, journeyId: null }
         });
+
+        if (customer) {
+          await prisma.customer.update({
+            where: { id: customer.id },
+            data: { metadata, tag: 'CANCELED_CLIENT' }
+          });
+        } else {
+          await prisma.customer.create({
+            data: {
+              externalPersonId,
+              journeyId: null,
+              stage: 'novo_cadastro',
+              tag: 'CANCELED_CLIENT',
+              pipelineId: vendasPipelineId,
+              metadata
+            }
+          });
+        }
         expiringCount++;
       }
 

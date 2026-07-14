@@ -28,6 +28,7 @@ export async function GET(request: Request) {
   const leadId = searchParams.get('leadId');
   const pipelineId = searchParams.get('pipelineId');
   const atendimentoFila = searchParams.get('atendimentoFila');
+  const campaignId = searchParams.get('campaignId');
   const page = searchParams.get('page') ? Number(searchParams.get('page')) : 1;
   const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : 10;
   const offset = (page - 1) * limit;
@@ -104,7 +105,7 @@ export async function GET(request: Request) {
 
     if (isAgent && leadId) {
       // Agente consultando um lead específico: verificar se pertence a outro agente
-      const cust = await prisma.customer.findUnique({
+      const cust = await prisma.customer.findFirst({
         where: { externalPersonId: Number(leadId) }
       });
       if (cust && cust.assigneeId && cust.assigneeId !== userId) {
@@ -118,6 +119,11 @@ export async function GET(request: Request) {
       const hasPipeline = pipelineId && pipelineId !== 'all';
       if (hasPipeline && !atendimentoFila) {
         crmFilter.pipelineId = pipelineId;
+      }
+
+      // Filtro de Campanha (Journey) específico
+      if (campaignId && campaignId !== 'all') {
+        crmFilter.journeyId = campaignId;
       }
 
       // Filtros genéricos compartilhados
@@ -252,11 +258,23 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, data: [], pagination: { total: totalRecords, page, limit, totalPages: Math.ceil(totalRecords / limit) } });
     }
 
+    // Se a fila for campanhas, alertas ou cancelados, ou geral,
+    // as entidades de negócio principais com estágio individualizado estão no Postgres.
+    const isPostgresQueue = !atendimentoFila || atendimentoFila === 'campanhas' || atendimentoFila === 'alerts' || atendimentoFila === 'cancelados';
+
+    // Monta filtros extras no Postgres para buscar exatamente os customers corretos
+    const postgresQueryFilter: any = {
+      externalPersonId: { in: personIds }
+    };
+    if (campaignId && campaignId !== 'all') {
+      postgresQueryFilter.journeyId = campaignId;
+    } else if (atendimentoFila === 'campanhas') {
+      postgresQueryFilter.journeyId = { not: null };
+    }
+
     // Fetch corresponding states, interactions, campaign and alerts from Postgres
     const customers = await prisma.customer.findMany({
-      where: {
-        externalPersonId: { in: personIds }
-      },
+      where: postgresQueryFilter,
       include: {
         interactions: {
           include: {
@@ -276,64 +294,134 @@ export async function GET(request: Request) {
       }
     });
 
-    const stateMap = new Map();
-    customers.forEach(c => {
-      stateMap.set(c.externalPersonId, c);
+    const peopleMap = new Map();
+    (rows as any[]).forEach(r => {
+      peopleMap.set(r.id, r);
     });
 
-    const data = (rows as any[]).map(r => {
-      const state = stateMap.get(r.id);
+    let data: any[] = [];
 
-      let subBadge = 'expirado';
-      if (r.planId) {
-        const now = new Date();
-        const expiresDate = r.subIsValidUntil ? new Date(r.subIsValidUntil) : (r.subExpiresIn ? new Date(r.subExpiresIn) : null);
-        const isCanceled = r.subStatus === 'canceled' || r.subCanceledAt !== null;
-        
-        if (isCanceled) {
-          subBadge = 'cancelado';
-        } else if (expiresDate && expiresDate < now) {
-          subBadge = 'expirado';
-        } else {
-          subBadge = 'ativo';
+    if (isPostgresQueue) {
+      // Mapeia baseando-se nos registros de Customer do Postgres
+      data = customers.map(c => {
+        const r = peopleMap.get(c.externalPersonId);
+        if (!r) return null;
+
+        let subBadge = 'expirado';
+        if (r.planId) {
+          const now = new Date();
+          const expiresDate = r.subIsValidUntil ? new Date(r.subIsValidUntil) : (r.subExpiresIn ? new Date(r.subExpiresIn) : null);
+          const isCanceled = r.subStatus === 'canceled' || r.subCanceledAt !== null;
+          
+          if (isCanceled) {
+            subBadge = 'cancelado';
+          } else if (expiresDate && expiresDate < now) {
+            subBadge = 'expirado';
+          } else {
+            subBadge = 'ativo';
+          }
         }
-      }
 
-      return {
-        id: r.id,
-        fullName: r.fullName || 'Sem Nome',
-        email: r.email || '',
-        phoneNumber: r.phoneNumber || '',
-        createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
-        plan: r.planId ? {
-          id: r.planId,
-          title: r.planTitle,
-          price: r.planPrice,
-          interval: r.planInterval
-        } : null,
-        stage: state?.stage || 'novo_cadastro',
-        tag: state?.tag || null,
-        assignee: state?.assignee ? {
-          id: state.assignee.id,
-          name: state.assignee.name
-        } : null,
-        campaign: state?.journey ? {
-          id: state.journey.id,
-          name: state.journey.name
-        } : null,
-        hasPendingAlert: (state?.tasks || []).length > 0,
-        notes: (state?.interactions || []).map((i: any) => ({
-          id: i.id,
-          text: i.text,
-          date: i.createdAt ? new Date(i.createdAt).toISOString() : new Date().toISOString(),
-          authorName: i.author?.name || 'Agente',
-          type: inferInteractionType(i.text)
-        })),
-        metadata: state?.metadata || {},
-        subscriptionStatus: subBadge,
-        isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1'
-      };
-    });
+        return {
+          id: r.id, // ID no MySQL para o front saber qual lead é (externalPersonId)
+          journeyId: c.journeyId, // A jornada associada a esse card
+          customerCuid: c.id, // O ID único (CUID) do customer no Postgres
+          fullName: r.fullName || 'Sem Nome',
+          email: r.email || '',
+          phoneNumber: r.phoneNumber || '',
+          createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
+          plan: r.planId ? {
+            id: r.planId,
+            title: r.planTitle,
+            price: r.planPrice,
+            interval: r.planInterval
+          } : null,
+          stage: c.stage || 'novo_cadastro',
+          tag: c.tag || null,
+          assignee: c.assignee ? {
+            id: c.assignee.id,
+            name: c.assignee.name
+          } : null,
+          campaign: c.journey ? {
+            id: c.journey.id,
+            name: c.journey.name
+          } : null,
+          hasPendingAlert: (c.tasks || []).length > 0,
+          notes: (c.interactions || []).map((i: any) => ({
+            id: i.id,
+            text: i.text,
+            date: i.createdAt ? new Date(i.createdAt).toISOString() : new Date().toISOString(),
+            authorName: i.author?.name || 'Agente',
+            type: inferInteractionType(i.text)
+          })),
+          metadata: c.metadata || {},
+          subscriptionStatus: subBadge,
+          isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1'
+        };
+      }).filter(Boolean);
+    } else {
+      // Filas do MySQL (abandonados, expirar): mapeia pelos rows diretamente
+      const stateMap = new Map();
+      customers.forEach(c => {
+        stateMap.set(c.externalPersonId, c);
+      });
+
+      data = (rows as any[]).map(r => {
+        const state = stateMap.get(r.id);
+
+        let subBadge = 'expirado';
+        if (r.planId) {
+          const now = new Date();
+          const expiresDate = r.subIsValidUntil ? new Date(r.subIsValidUntil) : (r.subExpiresIn ? new Date(r.subExpiresIn) : null);
+          const isCanceled = r.subStatus === 'canceled' || r.subCanceledAt !== null;
+          
+          if (isCanceled) {
+            subBadge = 'cancelado';
+          } else if (expiresDate && expiresDate < now) {
+            subBadge = 'expirado';
+          } else {
+            subBadge = 'ativo';
+          }
+        }
+
+        return {
+          id: r.id,
+          journeyId: state?.journeyId || null,
+          customerCuid: state?.id || null,
+          fullName: r.fullName || 'Sem Nome',
+          email: r.email || '',
+          phoneNumber: r.phoneNumber || '',
+          createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
+          plan: r.planId ? {
+            id: r.planId,
+            title: r.planTitle,
+            price: r.planPrice,
+            interval: r.planInterval
+          } : null,
+          stage: state?.stage || 'novo_cadastro',
+          tag: state?.tag || null,
+          assignee: state?.assignee ? {
+            id: state.assignee.id,
+            name: state.assignee.name
+          } : null,
+          campaign: state?.journey ? {
+            id: state.journey.id,
+            name: state.journey.name
+          } : null,
+          hasPendingAlert: (state?.tasks || []).length > 0,
+          notes: (state?.interactions || []).map((i: any) => ({
+            id: i.id,
+            text: i.text,
+            date: i.createdAt ? new Date(i.createdAt).toISOString() : new Date().toISOString(),
+            authorName: i.author?.name || 'Agente',
+            type: inferInteractionType(i.text)
+          })),
+          metadata: state?.metadata || {},
+          subscriptionStatus: subBadge,
+          isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1'
+        };
+      });
+    }
 
     return NextResponse.json({
       success: true,
@@ -374,13 +462,14 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { leadId, stage, note, assigneeId, type, lossReason, scheduledFor, tag, lostReason, metadata } = body;
+    const { leadId, journeyId, stage, note, assigneeId, type, lossReason, scheduledFor, tag, lostReason, metadata } = body;
 
     if (!leadId) {
       return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 });
     }
 
     const externalPersonId = Number(leadId);
+    const resolvedJourneyId = journeyId || null;
 
     // 1. Register Quick action/Interaction if type provided
     if (type) {
@@ -391,23 +480,23 @@ export async function POST(request: Request) {
       const parsedScheduledFor = scheduledFor ? new Date(scheduledFor) : undefined;
 
       const registerService = new RegisterLeadInteractionService(crmRepository);
-      await registerService.execute(externalPersonId, authorId, type, note, lossReason, parsedScheduledFor);
+      await registerService.execute(externalPersonId, authorId, type, note, lossReason, parsedScheduledFor, resolvedJourneyId);
 
       // Auto tag the lead
       const taggingService = new LeadTaggingService(crmRepository);
-      await taggingService.tagLead(externalPersonId);
+      await taggingService.tagLead(externalPersonId, resolvedJourneyId);
     } else {
       // Manual updates fallback (old behavior)
       if (stage) {
-        await crmRepository.updateStage(externalPersonId, stage);
+        await crmRepository.updateStage(externalPersonId, stage, resolvedJourneyId);
         
         if (stage === 'ganho' || stage === 'perdido') {
-          const customer = await prisma.customer.findUnique({
-            where: { externalPersonId }
+          const customer = await prisma.customer.findFirst({
+            where: { externalPersonId, journeyId: resolvedJourneyId }
           });
           if (customer) {
             await prisma.customer.update({
-              where: { externalPersonId },
+              where: { id: customer.id },
               data: {
                 journeyId: null,
                 joinedJourneyAt: null,
@@ -425,44 +514,52 @@ export async function POST(request: Request) {
         }
       }
       if (note && note.trim() !== '') {
-        await crmRepository.addInteraction(externalPersonId, note, authorId);
+        await crmRepository.addInteraction(externalPersonId, note, authorId, resolvedJourneyId);
       }
     }
 
     // Explicit tag update if provided
     if (tag) {
-      await crmRepository.updateCustomer(externalPersonId, { tag });
+      await crmRepository.updateCustomer(externalPersonId, { tag }, resolvedJourneyId);
     }
 
     if (lostReason !== undefined) {
-      await prisma.customer.update({
-        where: { externalPersonId },
-        data: { lostReason }
+      const dbCustomer = await prisma.customer.findFirst({
+        where: { externalPersonId, journeyId: resolvedJourneyId }
       });
+      if (dbCustomer) {
+        await prisma.customer.update({
+          where: { id: dbCustomer.id },
+          data: { lostReason }
+        });
+      }
     }
 
     if (metadata !== undefined) {
-      const customer = await prisma.customer.upsert({
-        where: { externalPersonId },
-        update: {},
-        create: { externalPersonId, stage: 'novo_cadastro' }
+      let customer = await prisma.customer.findFirst({
+        where: { externalPersonId, journeyId: resolvedJourneyId }
       });
+      if (!customer) {
+        customer = await prisma.customer.create({
+          data: { externalPersonId, journeyId: resolvedJourneyId, stage: 'novo_cadastro' }
+        });
+      }
       const currentMeta = (customer.metadata as Record<string, any>) || {};
       const newMeta = { ...currentMeta, ...metadata };
       await prisma.customer.update({
-        where: { externalPersonId },
+        where: { id: customer.id },
         data: { metadata: newMeta }
       });
     }
 
     // 2. Assign Lead if provided (separate from quick disposition)
     if (assigneeId !== undefined) {
-      await crmRepository.assignLead(externalPersonId, assigneeId === 'unassigned' || !assigneeId ? null : assigneeId);
+      await crmRepository.assignLead(externalPersonId, assigneeId === 'unassigned' || !assigneeId ? null : assigneeId, resolvedJourneyId);
     }
 
     // Fetch the updated customer state to return
-    const updatedState = await prisma.customer.findUnique({
-      where: { externalPersonId },
+    const updatedState = await prisma.customer.findFirst({
+      where: { externalPersonId, journeyId: resolvedJourneyId },
       include: {
         interactions: {
           include: {

@@ -16,6 +16,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const month = searchParams.get('month'); // YYYY-MM
+    const campaignId = searchParams.get('campaignId');
     const hasMonthFilter = month && month !== 'all';
 
     let endOfMonth: Date | null = null;
@@ -33,6 +34,7 @@ export async function GET(request: Request) {
     const campanhasCount = await prisma.customer.count({
       where: {
         assigneeId: isAgent ? userId : undefined,
+        journeyId: campaignId && campaignId !== 'all' ? campaignId : undefined,
         tasks: {
           some: {
             completedAt: null,
@@ -47,6 +49,7 @@ export async function GET(request: Request) {
     const alertsCount = await prisma.customer.count({
       where: {
         assigneeId: isAgent ? userId : undefined,
+        journeyId: campaignId && campaignId !== 'all' ? campaignId : undefined,
         tasks: {
           some: {
             completedAt: null,

@@ -127,6 +127,7 @@ export default function DashboardContent({
   // Funnel exit lostReason state variables
   const [showLossReasonSelection, setShowLossReasonSelection] = useState(false);
   const [lossTargetLeadId, setLossTargetLeadId] = useState<number | null>(null);
+  const [lossTargetJourneyId, setLossTargetJourneyId] = useState<string | null>(null);
   const [lossTargetStage, setLossTargetStage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -243,6 +244,9 @@ export default function DashboardContent({
   // Filtro de período do Kanban
   const [kanbanFilterAllMonths, setKanbanFilterAllMonths] = useState(false);
 
+  // Filtro de Campanha na aba Atendimento
+  const [filterCampaignId, setFilterCampaignId] = useState('all');
+
   // Load leads based on current filters
   const fetchLeads = async () => {
     setLoadingLeads(true);
@@ -258,7 +262,12 @@ export default function DashboardContent({
       if (filterStage !== '') url += `&stage=${filterStage}`;
       if (filterAssignee !== 'all') url += `&assigneeId=${filterAssignee}`;
       if (activePipelineId !== '') url += `&pipelineId=${activePipelineId}`;
-      if (activeTab === 'atendimento') url += `&atendimentoFila=${atendimentoFila}`;
+      if (activeTab === 'atendimento') {
+        url += `&atendimentoFila=${atendimentoFila}`;
+        if (filterCampaignId !== 'all') {
+          url += `&campaignId=${filterCampaignId}`;
+        }
+      }
 
       const res = await fetch(url);
       if (res.ok) {
@@ -308,7 +317,11 @@ export default function DashboardContent({
   const fetchFilaCounts = async () => {
     try {
       const monthParam = (activeTab === 'kanban' && kanbanFilterAllMonths) ? 'all' : filterMonth;
-      const res = await fetch(`/api/leads/counts?month=${monthParam}`);
+      let url = `/api/leads/counts?month=${monthParam}`;
+      if (filterCampaignId !== 'all') {
+        url += `&campaignId=${filterCampaignId}`;
+      }
+      const res = await fetch(url);
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
@@ -418,11 +431,11 @@ export default function DashboardContent({
       fetchSettings();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId, activePipelineId, leadsPage, leadsLimit, atendimentoFila, atendimentoViewMode]);
+  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, filterCampaignId, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId, activePipelineId, leadsPage, leadsLimit, atendimentoFila, atendimentoViewMode]);
 
   useEffect(() => {
     setLeadsPage(1);
-  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, activeTab, atendimentoFila, atendimentoViewMode]);
+  }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, filterCampaignId, activeTab, atendimentoFila, atendimentoViewMode]);
 
   // Fetch plans list when campaign modal is open
   useEffect(() => {
@@ -506,18 +519,28 @@ export default function DashboardContent({
   };
 
   // Drag and Drop handlers for Kanban
-  const handleDragStart = (e: React.DragEvent, leadId: number) => {
-    e.dataTransfer.setData('text/plain', leadId.toString());
+  const handleDragStart = (e: React.DragEvent, leadId: number, journeyId: string | null = null) => {
+    e.dataTransfer.setData('text/plain', JSON.stringify({ leadId, journeyId }));
   };
 
   const handleDrop = async (e: React.DragEvent, targetStage: string) => {
     e.preventDefault();
-    const leadIdStr = e.dataTransfer.getData('text/plain');
-    if (!leadIdStr) return;
-    const leadId = Number(leadIdStr);
+    const dragDataStr = e.dataTransfer.getData('text/plain');
+    if (!dragDataStr) return;
+    
+    let leadId: number;
+    let journeyId: string | null = null;
+    try {
+      const data = JSON.parse(dragDataStr);
+      leadId = data.leadId;
+      journeyId = data.journeyId;
+    } catch {
+      leadId = Number(dragDataStr);
+    }
 
     if (targetStage === 'perdido') {
       setLossTargetLeadId(leadId);
+      setLossTargetJourneyId(journeyId);
       setLossTargetStage('perdido');
       setShowLossReasonSelection(true);
       return;
@@ -527,7 +550,7 @@ export default function DashboardContent({
       const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId, stage: targetStage }),
+        body: JSON.stringify({ leadId, journeyId, stage: targetStage }),
       });
       if (res.ok) {
         fetchLeads();
@@ -554,6 +577,7 @@ export default function DashboardContent({
     e.preventDefault();
     if (fastStage === 'perdido') {
       setLossTargetLeadId(selectedLead.id);
+      setLossTargetJourneyId(selectedLead.journeyId || null);
       setLossTargetStage('perdido');
       setShowLossReasonSelection(true);
       setShowFastAcquisitionModal(false);
@@ -566,6 +590,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: selectedLead.id,
+          journeyId: selectedLead.journeyId || null,
           stage: fastStage,
           assigneeId: fastAssignee,
           note: fastNote.trim() !== '' ? fastNote : undefined,
@@ -665,10 +690,10 @@ export default function DashboardContent({
     }
   };
 
-  // Update details (stage or assignee) from within timeline modal
   const handleDetailUpdate = async (field: 'stage' | 'assigneeId', value: string) => {
     if (field === 'stage' && value === 'perdido') {
       setLossTargetLeadId(selectedLead.id);
+      setLossTargetJourneyId(selectedLead.journeyId || null);
       setLossTargetStage('perdido');
       setShowLossReasonSelection(true);
       setShowTimelineModal(false);
@@ -681,6 +706,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: selectedLead.id,
+          journeyId: selectedLead.journeyId || null,
           [field]: value,
         }),
       });
@@ -718,6 +744,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           personId: selectedLead.id,
+          journeyId: selectedLead.journeyId || null,
           freezeUntil,
           reason: freezeReason
         })
@@ -814,6 +841,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: lossTargetLeadId,
+          journeyId: lossTargetJourneyId,
           stage: 'perdido',
           type: 'LOST',
           lossReason: reason,
@@ -825,6 +853,7 @@ export default function DashboardContent({
       if (res.ok) {
         setShowLossReasonSelection(false);
         setLossTargetLeadId(null);
+        setLossTargetJourneyId(null);
         setLossTargetStage(null);
         fetchLeads();
         if (activeTab === 'cancelados') {
@@ -1346,6 +1375,22 @@ export default function DashboardContent({
               </div>
             )}
 
+            {atendimentoFila === 'campanhas' && (
+              <div>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>🎯 Campanha Comercial:</label>
+                <select 
+                  value={filterCampaignId} 
+                  onChange={(e) => setFilterCampaignId(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
+                >
+                  <option value="all">Todas as Campanhas</option>
+                  {campaignsData.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Competência:</label>
               <MonthSelector currentMonth={filterMonth} />
@@ -1437,7 +1482,7 @@ export default function DashboardContent({
                           <div 
                             key={lead.id}
                             draggable
-                            onDragStart={(e) => handleDragStart(e, lead.id)}
+                            onDragStart={(e) => handleDragStart(e, lead.id, lead.journeyId)}
                             onClick={() => openTimeline(lead)}
                             style={{
                               background: 'var(--surface-raised)', border: '1px solid var(--border)',

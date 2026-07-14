@@ -146,16 +146,31 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
   // ── Tarefas ────────────────────────────────────────────────────────────────
 
   async createTask(data: CreateTaskInput): Promise<LeadPostSaleTaskDTO> {
-    const customer = await prisma.customer.upsert({
-      where: { externalPersonId: data.externalPersonId },
-      update: {},
-      create: { externalPersonId: data.externalPersonId, stage: 'novo_cadastro' }
+    const seq = data.sequenceId ? await prisma.automation.findUnique({
+      where: { id: data.sequenceId },
+      select: { journeyId: true }
+    }) : null;
+    const journeyId = seq?.journeyId || null;
+
+    let customer = await prisma.customer.findFirst({
+      where: { externalPersonId: data.externalPersonId, journeyId }
     });
+
+    if (!customer) {
+      customer = await prisma.customer.create({
+        data: {
+          externalPersonId: data.externalPersonId,
+          journeyId,
+          stage: 'novo_cadastro'
+        }
+      });
+    }
 
     const task = await prisma.task.create({
       data: {
         customerId: customer.id,
         automationId: data.sequenceId,
+        journeyId: journeyId,
         assignedToId: data.assignedToId ?? null,
         scheduledFor: data.scheduledFor,
         snapshotPlanId: data.snapshotPlanId ?? null,
@@ -173,16 +188,31 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
     
     let count = 0;
     for (const d of data) {
-      const customer = await prisma.customer.upsert({
-        where: { externalPersonId: d.externalPersonId },
-        update: {},
-        create: { externalPersonId: d.externalPersonId, stage: 'novo_cadastro' }
+      const seq = d.sequenceId ? await prisma.automation.findUnique({
+        where: { id: d.sequenceId },
+        select: { journeyId: true }
+      }) : null;
+      const journeyId = seq?.journeyId || null;
+
+      let customer = await prisma.customer.findFirst({
+        where: { externalPersonId: d.externalPersonId, journeyId }
       });
+
+      if (!customer) {
+        customer = await prisma.customer.create({
+          data: {
+            externalPersonId: d.externalPersonId,
+            journeyId,
+            stage: 'novo_cadastro'
+          }
+        });
+      }
 
       await prisma.task.create({
         data: {
           customerId: customer.id,
           automationId: d.sequenceId,
+          journeyId: journeyId,
           assignedToId: d.assignedToId ?? null,
           scheduledFor: d.scheduledFor,
           snapshotPlanId: d.snapshotPlanId ?? null,

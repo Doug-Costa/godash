@@ -51,26 +51,33 @@ export class AssignCampaignLeadsUseCase {
         joinedCampaignAt.setDate(joinedCampaignAt.getDate() + daysDelay);
       }
 
-      // 2. Upsert do Customer para vincular ao operador, jornada e definir a data de entrada
-      const customer = await prisma.customer.upsert({
-        where: { externalPersonId },
-        update: {
-          assigneeId,
-          journeyId: campaignId,
-          joinedJourneyAt: joinedCampaignAt,
-          stage: 'novo_cadastro', // Reinicia como "novo_cadastro" (Sem Contato) para o rodízio
-          frozenUntil: null,      // Remove qualquer congelamento pré-existente
-          freezeReason: null,
-          lostReason: null,
-        },
-        create: {
-          externalPersonId,
-          assigneeId,
-          journeyId: campaignId,
-          joinedJourneyAt: joinedCampaignAt,
-          stage: 'novo_cadastro',
-        }
+      let customer = await prisma.customer.findFirst({
+        where: { externalPersonId, journeyId: campaignId }
       });
+
+      if (customer) {
+        customer = await prisma.customer.update({
+          where: { id: customer.id },
+          data: {
+            assigneeId,
+            joinedJourneyAt: joinedCampaignAt,
+            stage: 'novo_cadastro', // Reinicia como "novo_cadastro" (Sem Contato) para o rodízio
+            frozenUntil: null,      // Remove qualquer congelamento pré-existente
+            freezeReason: null,
+            lostReason: null,
+          }
+        });
+      } else {
+        customer = await prisma.customer.create({
+          data: {
+            externalPersonId,
+            assigneeId,
+            journeyId: campaignId,
+            joinedJourneyAt: joinedCampaignAt,
+            stage: 'novo_cadastro',
+          }
+        });
+      }
 
       // 3. Excluir alertas pendentes anteriores para este customer
       await prisma.task.deleteMany({

@@ -46,15 +46,15 @@ export interface CrmInteraction {
 }
 
 export interface ICrmRepository {
-  getCustomer(externalPersonId: number): Promise<CrmCustomer | null>;
+  getCustomer(externalPersonId: number, journeyId?: string | null): Promise<CrmCustomer | null>;
   getManyCustomers(externalPersonIds: number[]): Promise<CrmCustomer[]>;
-  updateStage(externalPersonId: number, newStage: string): Promise<CrmCustomer>;
-  assignLead(externalPersonId: number, assigneeId: string | null): Promise<CrmCustomer>;
-  addInteraction(externalPersonId: number, text: string, authorId: string): Promise<CrmInteraction>;
-  getInteractions(externalPersonId: number): Promise<CrmInteraction[]>;
+  updateStage(externalPersonId: number, newStage: string, journeyId?: string | null): Promise<CrmCustomer>;
+  assignLead(externalPersonId: number, assigneeId: string | null, journeyId?: string | null): Promise<CrmCustomer>;
+  addInteraction(externalPersonId: number, text: string, authorId: string, journeyId?: string | null): Promise<CrmInteraction>;
+  getInteractions(externalPersonId: number, journeyId?: string | null): Promise<CrmInteraction[]>;
   
   // DDD actions
-  updateCustomer(externalPersonId: number, data: Partial<CrmCustomer>): Promise<CrmCustomer>;
+  updateCustomer(externalPersonId: number, data: Partial<CrmCustomer>, journeyId?: string | null): Promise<CrmCustomer>;
   getCustomersByLossReason(reason: LossReason): Promise<CrmCustomer[]>;
   getCustomersByTag(tag: LeadTag): Promise<CrmCustomer[]>;
   getExpiredSlaCustomers(days: number): Promise<CrmCustomer[]>;
