@@ -416,6 +416,7 @@ export default function DashboardContent({
     fetchLeads();
     if (activeTab === 'atendimento') {
       fetchFilaCounts();
+      fetchCampaigns();
     }
     if (activeTab === 'cancelados') {
       fetchCanceledLeads();
