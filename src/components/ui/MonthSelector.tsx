@@ -10,7 +10,10 @@ export default function MonthSelector({ currentMonth }: MonthSelectorProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [year, month] = currentMonth.split('-');
+  const isAll = currentMonth === 'all';
+  const defaultMonthStr = new Date().toISOString().slice(0, 7);
+  const activeMonthStr = isAll ? defaultMonthStr : currentMonth;
+  const [year, month] = activeMonthStr.split('-');
   
   const years = [2026, 2025, 2024, 2023, 2022, 2021];
   const months = [
@@ -35,43 +38,88 @@ export default function MonthSelector({ currentMonth }: MonthSelectorProps) {
     router.push(`/dashboard?${params.toString()}`);
   };
 
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-      <select
-        value={year}
-        onChange={(e) => handleUpdate(e.target.value, month)}
-        style={{
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-primary)',
-          borderRadius: 8,
-          padding: '6px 10px',
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: 'pointer',
-          outline: 'none'
-        }}
-      >
-        {years.map(y => <option key={y} value={y}>{y}</option>)}
-      </select>
+  const handleClearFilter = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('month', 'all');
+    params.delete('period');
+    router.push(`/dashboard?${params.toString()}`);
+  };
 
-      <select
-        value={month}
-        onChange={(e) => handleUpdate(year, e.target.value)}
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <button
+        type="button"
+        onClick={handleClearFilter}
         style={{
-          background: 'var(--surface)',
+          background: isAll ? 'var(--accent)' : 'var(--surface)',
           border: '1px solid var(--border)',
-          color: 'var(--text-primary)',
+          color: isAll ? '#fff' : 'var(--text-secondary)',
           borderRadius: 8,
-          padding: '6px 10px',
+          padding: '6px 12px',
           fontSize: 12,
           fontWeight: 600,
           cursor: 'pointer',
-          outline: 'none'
+          transition: 'all 0.2s'
         }}
       >
-        {months.map(m => <option key={m.v} value={m.v}>{m.l}</option>)}
-      </select>
+        📅 Todos os Meses
+      </button>
+
+      <div style={{ display: 'flex', gap: 4, opacity: isAll ? 0.6 : 1, pointerEvents: isAll ? 'none' : 'auto', alignItems: 'center' }}>
+        <select
+          value={year}
+          onChange={(e) => handleUpdate(e.target.value, month)}
+          style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            color: 'var(--text-primary)',
+            borderRadius: 8,
+            padding: '6px 10px',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            outline: 'none'
+          }}
+        >
+          {years.map(y => <option key={y} value={y.toString()}>{y}</option>)}
+        </select>
+
+        <select
+          value={month}
+          onChange={(e) => handleUpdate(year, e.target.value)}
+          style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            color: 'var(--text-primary)',
+            borderRadius: 8,
+            padding: '6px 10px',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            outline: 'none'
+          }}
+        >
+          {months.map(m => <option key={m.v} value={m.v}>{m.l}</option>)}
+        </select>
+      </div>
+
+      {!isAll && (
+        <button
+          type="button"
+          onClick={handleClearFilter}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-secondary)',
+            fontSize: 12,
+            cursor: 'pointer',
+            padding: '4px 8px',
+            textDecoration: 'underline'
+          }}
+        >
+          Limpar Filtro
+        </button>
+      )}
     </div>
   );
 }

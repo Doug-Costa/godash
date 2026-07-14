@@ -76,7 +76,7 @@ export async function GET(request: Request) {
     // JOIN dinâmico de subscrições: se estiver visualizando filas de atendimento,
     // não mascara os registros pela competência de June/July nas cláusulas JOIN, permitindo obter as datas de cancelamento verdadeiras.
     let fromAndJoin = '';
-    if (atendimentoFila) {
+    if (atendimentoFila || !hasMonthFilter) {
       fromAndJoin = `
         FROM people p
         LEFT JOIN subscriptions s ON s.personId = p.id
@@ -241,7 +241,7 @@ export async function GET(request: Request) {
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    const joinParams = atendimentoFila ? [] : [targetMonth, targetMonth];
+    const joinParams = (atendimentoFila || !hasMonthFilter) ? [] : [targetMonth, targetMonth];
 
     // EXECUTAR CONTAGEM PARA PAGINAÇÃO
     const countQuery = `SELECT COUNT(DISTINCT p.id) as total ${fromAndJoin} ${whereClause}`;

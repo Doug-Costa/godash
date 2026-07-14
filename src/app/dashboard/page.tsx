@@ -35,7 +35,7 @@ export default async function DashboardPage({
 }) {
   const resolvedParams = await searchParams;
   const period = resolvedParams?.period || '12m';
-  const month = resolvedParams?.month || new Date().toISOString().slice(0, 7); // Default to current YYYY-MM
+  const month = resolvedParams?.month || 'all';
 
   // 1. Resolve Session and Role
   const session = await auth();
