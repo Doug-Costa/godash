@@ -229,6 +229,8 @@ export async function GET(request: Request) {
       }
     } else if (atendimentoFila === 'cancelados') {
       whereClause += ` AND (s.status = 'canceled' OR s.canceledAt IS NOT NULL)`;
+    } else if (atendimentoFila === 'abandonados') {
+      whereClause += ` AND pl.id IS NULL`;
     }
 
     // 4. Filter by name/email/phone (MySQL)
