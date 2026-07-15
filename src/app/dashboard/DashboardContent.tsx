@@ -215,6 +215,30 @@ export default function DashboardContent({
   const [campaignAgentIds, setCampaignAgentIds] = useState<string[]>([]);
   const [campaignLimitPerDay, setCampaignLimitPerDay] = useState<string>('');
   const [campaignLimitEnabled, setCampaignLimitEnabled] = useState<boolean>(false);
+  const [campaignSmtpConfigId, setCampaignSmtpConfigId] = useState('');
+
+  // Estados para SMTP e Templates (DentalGO CRM 360)
+  const [smtpConfigs, setSmtpConfigs] = useState<any[]>([]);
+  const [loadingSmtps, setLoadingSmtps] = useState(false);
+  const [smtpId, setSmtpId] = useState('');
+  const [smtpName, setSmtpName] = useState('');
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState('587');
+  const [smtpUser, setSmtpUser] = useState('');
+  const [smtpPass, setSmtpPass] = useState('');
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpTestResult, setSmtpTestResult] = useState<string | null>(null);
+  const [smtpTesting, setSmtpTesting] = useState(false);
+
+  const [templatesList, setTemplatesList] = useState<any[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [tplId, setTplId] = useState('');
+  const [tplName, setTplName] = useState('');
+  const [tplDesc, setTplDesc] = useState('');
+  const [tplType, setTplType] = useState('EMAIL'); // EMAIL | WHATSAPP
+  const [tplLang, setTplLang] = useState('PT'); // PT | EN | ES
+  const [tplSubject, setTplSubject] = useState('');
+  const [tplContent, setTplContent] = useState('');
 
   // Estados do React Flow para a régua
   const [nodes, setNodes] = useState<any[]>([]);
@@ -807,6 +831,36 @@ export default function DashboardContent({
     }
   };
 
+  const fetchSmtpConfigs = async () => {
+    setLoadingSmtps(true);
+    try {
+      const res = await fetch('/api/settings/smtp');
+      if (res.ok) {
+        const json = await res.json();
+        setSmtpConfigs(json.data || []);
+      }
+    } catch (err) {
+      console.error('Error fetching SMTP configs:', err);
+    } finally {
+      setLoadingSmtps(false);
+    }
+  };
+
+  const fetchTemplatesList = async () => {
+    setLoadingTemplates(true);
+    try {
+      const res = await fetch('/api/settings/templates');
+      if (res.ok) {
+        const json = await res.json();
+        setTemplatesList(json.data || []);
+      }
+    } catch (err) {
+      console.error('Error fetching templates:', err);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
   const fetchSettings = async () => {
     setLoadingSettings(true);
     try {
@@ -817,10 +871,149 @@ export default function DashboardContent({
           setSettingsForm(json.data);
         }
       }
+      await Promise.all([fetchSmtpConfigs(), fetchTemplatesList()]);
     } catch (err) {
       console.error('Failed to fetch settings:', err);
     } finally {
       setLoadingSettings(false);
+    }
+  };
+
+  const handleSaveSmtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/settings/smtp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: smtpId || undefined,
+          name: smtpName,
+          host: smtpHost,
+          port: Number(smtpPort),
+          user: smtpUser,
+          pass: smtpPass,
+          secure: smtpSecure
+        })
+      });
+      if (res.ok) {
+        setSmtpId('');
+        setSmtpName('');
+        setSmtpHost('');
+        setSmtpPort('587');
+        setSmtpUser('');
+        setSmtpPass('');
+        setSmtpSecure(false);
+        setSmtpTestResult(null);
+        fetchSmtpConfigs();
+      } else {
+        const json = await res.json();
+        alert(json.error || 'Erro ao salvar SMTP.');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleTestSmtp = async () => {
+    setSmtpTesting(true);
+    setSmtpTestResult(null);
+    try {
+      const res = await fetch('/api/settings/smtp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'test',
+          id: smtpId || undefined,
+          host: smtpHost,
+          port: Number(smtpPort),
+          user: smtpUser,
+          pass: smtpPass,
+          secure: smtpSecure
+        })
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setSmtpTestResult('🟢 Conexão bem-sucedida!');
+      } else {
+        setSmtpTestResult(`🔴 Falha: ${json.error}`);
+      }
+    } catch (err: any) {
+      setSmtpTestResult(`🔴 Erro na requisição: ${err.message}`);
+    } finally {
+      setSmtpTesting(false);
+    }
+  };
+
+  const handleActivateSmtp = async (id: string) => {
+    try {
+      const res = await fetch('/api/settings/smtp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'activate', id })
+      });
+      if (res.ok) {
+        fetchSmtpConfigs();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteSmtp = async (id: string) => {
+    if (!confirm('Deseja excluir esta configuração SMTP?')) return;
+    try {
+      const res = await fetch(`/api/settings/smtp?id=${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchSmtpConfigs();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveTemplate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/settings/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: tplId || undefined,
+          name: tplName,
+          description: tplDesc,
+          type: tplType,
+          language: tplLang,
+          subject: tplType === 'EMAIL' ? tplSubject : undefined,
+          content: tplContent
+        })
+      });
+      if (res.ok) {
+        setTplId('');
+        setTplName('');
+        setTplDesc('');
+        setTplType('EMAIL');
+        setTplLang('PT');
+        setTplSubject('');
+        setTplContent('');
+        fetchTemplatesList();
+      } else {
+        const json = await res.json();
+        alert(json.error || 'Erro ao salvar template.');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    if (!confirm('Deseja excluir este template?')) return;
+    try {
+      const res = await fetch(`/api/settings/templates?id=${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchTemplatesList();
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -1005,7 +1198,8 @@ export default function DashboardContent({
         .map(n => ({
           dayOffset: Number(n.data.dayOffset) || 0,
           channel: n.data.channel,
-          messageTemplate: n.data.messageTemplate || ''
+          messageTemplate: n.data.messageTemplate || '',
+          templateId: n.data.templateId || null
         }))
         .sort((a, b) => a.dayOffset - b.dayOffset);
 
@@ -1022,6 +1216,7 @@ export default function DashboardContent({
           expiryDays: campaignStatusFilter === 'expired' ? Number(campaignExpiryDays) : undefined,
           userIds: campaignAgentIds,
           limitPerDay: campaignLimitEnabled && campaignLimitPerDay ? Number(campaignLimitPerDay) : null,
+          smtpConfigId: campaignSmtpConfigId || null,
           flowSteps,
           flowGraph: JSON.stringify({ nodes, edges })
         })
@@ -1029,6 +1224,7 @@ export default function DashboardContent({
 
       if (res.ok) {
         setCampaignName('');
+        setCampaignSmtpConfigId('');
         setCampaignPlansFilter('all');
         setCampaignSelectedPlans([]);
         setCampaignStatusFilter('active');
@@ -2445,7 +2641,8 @@ export default function DashboardContent({
       {/* 4. Gerenciar Equipe (ADMIN Only) */}
       {/* 4. Administração (ADMIN Only) */}
       {activeTab === 'team' && isAdmin && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }} className="animate-fadeUp">
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }} className="animate-fadeUp">
           {/* Coluna 1: Configuração de Serviços */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div>
@@ -2700,7 +2897,384 @@ export default function DashboardContent({
             </div>
           </div>
         </div>
-      )}
+
+        {/* Gerenciamento de Servidores SMTP e Biblioteca de Templates (DentalGO CRM 360) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 24 }} className="animate-fadeUp">
+          {/* Card SMTP */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <div className="label" style={{ marginBottom: 4 }}>📧 Servidores SMTP do Sistema</div>
+              <div className="label-sm">Cadastre múltiplos servidores SMTP de disparo para as campanhas.</div>
+            </div>
+
+            <form onSubmit={handleSaveSmtp} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface-raised)', padding: 16, borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase' }}>
+                {smtpId ? '✏️ Editar SMTP' : '➕ Novo SMTP'}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Nome do Servidor:</label>
+                  <input
+                    type="text"
+                    required
+                    value={smtpName}
+                    onChange={(e) => setSmtpName(e.target.value)}
+                    placeholder="Ex: Disparo Mailtrap ou SMTP Locaweb"
+                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                  />
+                </div>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Secure (SSL/TLS):</label>
+                  <select
+                    value={smtpSecure ? 'true' : 'false'}
+                    onChange={(e) => setSmtpSecure(e.target.value === 'true')}
+                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                  >
+                    <option value="false">Não</option>
+                    <option value="true">Sim</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 10 }}>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Host SMTP:</label>
+                  <input
+                    type="text"
+                    required
+                    value={smtpHost}
+                    onChange={(e) => setSmtpHost(e.target.value)}
+                    placeholder="smtp.mailtrap.io"
+                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                  />
+                </div>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Porta:</label>
+                  <input
+                    type="text"
+                    required
+                    value={smtpPort}
+                    onChange={(e) => setSmtpPort(e.target.value)}
+                    placeholder="587"
+                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Usuário SMTP:</label>
+                  <input
+                    type="text"
+                    required
+                    value={smtpUser}
+                    onChange={(e) => setSmtpUser(e.target.value)}
+                    placeholder="remetente@dominio.com"
+                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                  />
+                </div>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Senha SMTP:</label>
+                  <input
+                    type="password"
+                    required={!smtpId}
+                    value={smtpPass}
+                    onChange={(e) => setSmtpPass(e.target.value)}
+                    placeholder={smtpId ? '••••••••' : 'Sua senha'}
+                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                  />
+                </div>
+              </div>
+
+              {smtpTestResult && (
+                <div style={{ fontSize: 11, fontWeight: 600, color: smtpTestResult.startsWith('🟢') ? 'var(--green)' : 'var(--red)', marginTop: 4 }}>
+                  {smtpTestResult}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
+                {smtpId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSmtpId('');
+                      setSmtpName('');
+                      setSmtpHost('');
+                      setSmtpPort('587');
+                      setSmtpUser('');
+                      setSmtpPass('');
+                      setSmtpSecure(false);
+                      setSmtpTestResult(null);
+                    }}
+                    className="btn-action btn-action-outline"
+                    style={{ fontSize: 11, padding: '6px 12px' }}
+                  >
+                    Cancelar
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={smtpTesting}
+                  onClick={handleTestSmtp}
+                  className="btn-action btn-action-outline"
+                  style={{ fontSize: 11, padding: '6px 12px' }}
+                >
+                  {smtpTesting ? 'Testando...' : '🔌 Testar Conexão'}
+                </button>
+                <button
+                  type="submit"
+                  className="btn-action btn-action-purple"
+                  style={{ fontSize: 11, padding: '6px 16px' }}
+                >
+                  💾 {smtpId ? 'Atualizar' : 'Adicionar'}
+                </button>
+              </div>
+            </form>
+
+            <div className="table-container" style={{ overflowY: 'auto', maxHeight: '35vh', marginTop: 10 }}>
+              {loadingSmtps ? (
+                <div className="skeleton" style={{ height: 60, width: '100%' }}></div>
+              ) : smtpConfigs.length === 0 ? (
+                <div className="label-sm" style={{ padding: 20, textAlign: 'center' }}>Nenhum SMTP cadastrado.</div>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Nome / Host</th>
+                      <th>Usuário</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: 'center' }}>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {smtpConfigs.map((config) => (
+                      <tr key={config.id}>
+                        <td style={{ fontWeight: 600 }}>
+                          <div>{config.name}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{config.host}:{config.port}</div>
+                        </td>
+                        <td style={{ fontSize: 11 }}>{config.user}</td>
+                        <td>
+                          {config.active ? (
+                            <span className="badge badge-cyan" style={{ fontSize: 9 }}>Ativo</span>
+                          ) : (
+                            <button
+                              onClick={() => handleActivateSmtp(config.id)}
+                              className="btn-action btn-action-outline"
+                              style={{ fontSize: 9, padding: '2px 6px' }}
+                            >
+                              Ativar
+                            </button>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                            <button
+                              onClick={() => {
+                                setSmtpId(config.id);
+                                setSmtpName(config.name);
+                                setSmtpHost(config.host);
+                                setSmtpPort(String(config.port));
+                                setSmtpUser(config.user);
+                                setSmtpPass('••••••••');
+                                setSmtpSecure(config.secure);
+                                setSmtpTestResult(null);
+                              }}
+                              style={{ padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 10, cursor: 'pointer' }}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSmtp(config.id)}
+                              style={{ padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--red)', fontSize: 10, cursor: 'pointer' }}
+                            >
+                              Excluir
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          {/* Card Templates */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <div className="label" style={{ marginBottom: 4 }}>📝 Biblioteca de Templates de Mensagens</div>
+              <div className="label-sm">Gerencie os modelos de mensagens usados pelas automações (Email e WhatsApp).</div>
+            </div>
+
+            <form onSubmit={handleSaveTemplate} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface-raised)', padding: 16, borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase' }}>
+                {tplId ? '✏️ Editar Template' : '➕ Novo Template'}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Nome do Template:</label>
+                  <input
+                    type="text"
+                    required
+                    value={tplName}
+                    onChange={(e) => setTplName(e.target.value)}
+                    placeholder="Ex: Boas-vindas Premium"
+                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                  />
+                </div>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Tipo:</label>
+                  <select
+                    value={tplType}
+                    onChange={(e) => setTplType(e.target.value)}
+                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                  >
+                    <option value="EMAIL">📧 E-mail</option>
+                    <option value="WHATSAPP">💬 WhatsApp</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Idioma:</label>
+                  <select
+                    value={tplLang}
+                    onChange={(e) => setTplLang(e.target.value)}
+                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                  >
+                    <option value="PT">PT</option>
+                    <option value="EN">EN</option>
+                    <option value="ES">ES</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Descrição (Opcional):</label>
+                <input
+                  type="text"
+                  value={tplDesc}
+                  onChange={(e) => setTplDesc(e.target.value)}
+                  placeholder="Ex: Enviado após assinar o plano premium."
+                  style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                />
+              </div>
+
+              {tplType === 'EMAIL' && (
+                <div className="animate-fadeUp">
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Assunto do E-mail:</label>
+                  <input
+                    type="text"
+                    required={tplType === 'EMAIL'}
+                    value={tplSubject}
+                    onChange={(e) => setTplSubject(e.target.value)}
+                    placeholder="Ex: Seja muito bem-vindo ao DentalGO!"
+                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Conteúdo (Corpo da Mensagem):</label>
+                <textarea
+                  required
+                  value={tplContent}
+                  onChange={(e) => setTplContent(e.target.value)}
+                  placeholder={tplType === 'EMAIL' ? "Olá {{customer.fullName}},\n\nSeja bem-vindo!" : "Olá {{customer.fullName}}, vimos que..."}
+                  style={{ width: '100%', height: 70, padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, resize: 'none', outline: 'none' }}
+                />
+                <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>Variáveis suportadas: {"{{customer.fullName}}"}, {"{{customer.city}}"}, {"{{customer.plan}}"}</span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+                {tplId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTplId('');
+                      setTplName('');
+                      setTplDesc('');
+                      setTplType('EMAIL');
+                      setTplLang('PT');
+                      setTplSubject('');
+                      setTplContent('');
+                    }}
+                    className="btn-action btn-action-outline"
+                    style={{ fontSize: 11, padding: '6px 12px' }}
+                  >
+                    Cancelar
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  className="btn-action btn-action-purple"
+                  style={{ fontSize: 11, padding: '6px 16px' }}
+                >
+                  💾 {tplId ? 'Atualizar' : 'Salvar Template'}
+                </button>
+              </div>
+            </form>
+
+            <div className="table-container" style={{ overflowY: 'auto', maxHeight: '35vh', marginTop: 10 }}>
+              {loadingTemplates ? (
+                <div className="skeleton" style={{ height: 60, width: '100%' }}></div>
+              ) : templatesList.length === 0 ? (
+                <div className="label-sm" style={{ padding: 20, textAlign: 'center' }}>Nenhum template cadastrado.</div>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Nome</th>
+                      <th>Tipo / Idioma</th>
+                      <th style={{ textAlign: 'center' }}>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {templatesList.map((tpl) => (
+                      <tr key={tpl.id}>
+                        <td style={{ fontWeight: 600 }}>
+                          <div>{tpl.name}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{tpl.description || 'Sem descrição.'}</div>
+                        </td>
+                        <td style={{ fontSize: 11 }}>
+                          <span className={`badge ${tpl.type === 'EMAIL' ? 'badge-cyan' : 'badge-purple'}`} style={{ fontSize: 9, marginRight: 6 }}>
+                            {tpl.type === 'EMAIL' ? '📧 Email' : '💬 WhatsApp'}
+                          </span>
+                          <span className="badge badge-neu" style={{ fontSize: 9 }}>{tpl.language}</span>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                            <button
+                              onClick={() => {
+                                setTplId(tpl.id);
+                                setTplName(tpl.name);
+                                setTplDesc(tpl.description || '');
+                                setTplType(tpl.type);
+                                setTplLang(tpl.language);
+                                setTplSubject(tpl.subject || '');
+                                setTplContent(tpl.content);
+                              }}
+                              style={{ padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 10, cursor: 'pointer' }}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTemplate(tpl.id)}
+                              style={{ padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--red)', fontSize: 10, cursor: 'pointer' }}
+                            >
+                              Excluir
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      </>
+    )}
 
       {/* ====================================================================== */}
       {/* MODAL 1: Ação Rápida (Fast Acquisition) */}
@@ -3983,6 +4557,24 @@ export default function DashboardContent({
                       </div>
                     )}
                   </div>
+
+                  {/* Seleção de SMTP (DentalGO CRM 360) */}
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                    <h4 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 8 }}>📧 Servidor SMTP de Disparo</h4>
+                    <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                      Selecione qual servidor SMTP de disparo será associado para as mensagens de e-mail desta campanha.
+                    </p>
+                    <select
+                      value={campaignSmtpConfigId}
+                      onChange={(e) => setCampaignSmtpConfigId(e.target.value)}
+                      style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                    >
+                      <option value="">-- Usar SMTP Padrão Ativo --</option>
+                      {smtpConfigs.map(config => (
+                        <option key={config.id} value={config.id}>{config.name} ({config.user})</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
 
@@ -4085,10 +4677,40 @@ export default function DashboardContent({
                               />
                             </div>
 
+                            <div>
+                              <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Selecionar Template de Mensagem:</label>
+                              <select
+                                value={node.data.templateId || ''}
+                                onChange={(e) => {
+                                  const selectedTplId = e.target.value;
+                                  const selectedTpl = templatesList.find(t => t.id === selectedTplId);
+                                  setNodes(prev => {
+                                    const copy = [...prev];
+                                    copy[nodeIndex].data = {
+                                      ...copy[nodeIndex].data,
+                                      templateId: selectedTplId || null,
+                                      messageTemplate: selectedTpl ? selectedTpl.content : '',
+                                    };
+                                    return copy;
+                                  });
+                                }}
+                                style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, marginBottom: 8 }}
+                              >
+                                <option value="">-- Usar texto livre abaixo --</option>
+                                {templatesList
+                                  .filter(t => t.type === node.data.channel)
+                                  .map(t => (
+                                    <option key={t.id} value={t.id}>{t.name} (v{t.version})</option>
+                                  ))
+                                }
+                              </select>
+                            </div>
+
                             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                              <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Template ou Notas de Script:</label>
+                              <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Conteúdo da Mensagem (Preview ou Texto Livre):</label>
                               <textarea 
-                                value={node.data.messageTemplate}
+                                value={node.data.messageTemplate || ''}
+                                readOnly={!!node.data.templateId}
                                 onChange={(e) => {
                                   setNodes(prev => {
                                     const copy = [...prev];
@@ -4099,8 +4721,8 @@ export default function DashboardContent({
                                     return copy;
                                   });
                                 }}
-                                placeholder="Olá {nome}, vimos que seu plano expirou..."
-                                style={{ width: '100%', flex: 1, minHeight: 120, padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, resize: 'none', outline: 'none' }}
+                                placeholder="Olá {{customer.fullName}}, vimos que seu plano expirou..."
+                                style={{ width: '100%', flex: 1, minHeight: 120, padding: '8px 10px', background: node.data.templateId ? 'var(--surface-raised)' : 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, resize: 'none', outline: 'none' }}
                               />
                             </div>
 

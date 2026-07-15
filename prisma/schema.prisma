@@ -119,10 +119,28 @@ model Journey {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  // Mailer Integration
+  smtpConfigId             String?
+  smtpConfig               SmtpConfig?    @relation(fields: [smtpConfigId], references: [id], onDelete: SetNull)
+  templateId               String?
+  template                 Template?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  sendingMode              String         @default("IMMEDIATE") // IMMEDIATE, FIXED, RANDOM
+  minDelay                 Int            @default(100)        // em ms
+  maxDelay                 Int            @default(1000)       // em ms (usado se RANDOM)
+  totalEmails              Int            @default(0)
+  sentEmails               Int            @default(0)
+  failedEmails             Int            @default(0)
+  openedEmails             Int            @default(0)
+  nextCampaignId           String?        @unique
+  nextCampaignDelayMinutes Int            @default(0)
+  nextCampaign             Journey?       @relation("LinkedCampaigns", fields: [nextCampaignId], references: [id], onDelete: SetNull)
+  prevCampaign             Journey?       @relation("LinkedCampaigns")
+
   // Relations
   customers      Customer[]
   tasks          Task[]
   automations    Automation[]
+  recipients     RecipientLog[]
 }
 
 model Pipeline {
@@ -142,6 +160,10 @@ model Interaction {
   text       String
   authorId   String
   createdAt  DateTime @default(now())
+  
+  // Mailer/Notification extension
+  type       String?  // EMAIL_SENT, WHATS_SENT, etc.
+  metadata   Json?    @default("{}")
 
   // Relations
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -185,7 +207,61 @@ model Automation {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Template Engine
+  templateId   String?
+  template     Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  channel      String?   // "WHATSAPP" | "EMAIL" | "CALL"
+  delay        Int?      // delay em minutos ou dias
+  provider     String?   // "Mailer" | "Evolution" etc
+  retry        Int?      @default(3)
+  timeout      Int?      @default(5000)
+
   // Relations
   journey Journey? @relation(fields: [journeyId], references: [id], onDelete: Cascade)
   tasks   Task[]
+}
+
+model SmtpConfig {
+  id        String     @id @default(cuid())
+  name      String
+  host      String
+  port      Int
+  user      String
+  pass      String     // Encrypted
+  secure    Boolean    @default(false)
+  active    Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  journeys  Journey[]
+}
+
+model Template {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  type        String       // EMAIL, WHATSAPP, etc.
+  version     Int          @default(1)
+  status      String       @default("ACTIVE") // DRAFT, ACTIVE, ARCHIVED
+  language    String       @default("PT") // PT, EN, ES
+  subject     String?
+  content     String       @db.Text
+  variables   Json?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  automations Automation[]
+  journeys    Journey[]
+}
+
+model RecipientLog {
+  id         String    @id @default(cuid())
+  journeyId  String
+  journey    Journey   @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  email      String
+  data       Json      // Variables parsed from Excel row
+  status     String    @default("PENDING") // PENDING, SENT, FAILED
+  opened     Boolean   @default(false)
+  openedAt   DateTime?
+  error      String?
+  sentAt     DateTime?
+  createdAt  DateTime  @default(now())
 }

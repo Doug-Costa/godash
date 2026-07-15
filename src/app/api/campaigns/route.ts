@@ -136,16 +136,21 @@ export async function POST(request: Request) {
           financialGoal: 0,
           targetCriteria,
           limitPerDay: limitPerDay ? Number(limitPerDay) : null,
+          smtpConfigId: body.smtpConfigId || null,
           flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : null,
           automations: flowSteps && Array.isArray(flowSteps) ? {
             create: flowSteps.map((step: any, index: number) => ({
               name: `Passo ${index + 1} - ${step.channel}`,
               triggerEvent: 'JOURNEY_STEP',
               actionType: 'CREATE_TASK',
+              templateId: step.templateId || null,
+              channel: step.channel,
+              delay: Number(step.dayOffset),
               actionConfig: {
                 dayOffset: Number(step.dayOffset),
                 channel: step.channel,
-                messageTemplate: step.messageTemplate
+                messageTemplate: step.messageTemplate || '',
+                templateId: step.templateId || null
               }
             }))
           } : undefined
@@ -221,16 +226,21 @@ export async function POST(request: Request) {
           status,
           targetCriteria: targetCriteria ? (typeof targetCriteria === 'string' ? targetCriteria : JSON.stringify(targetCriteria)) : undefined,
           limitPerDay: limitPerDay ? Number(limitPerDay) : undefined,
+          smtpConfigId: body.smtpConfigId !== undefined ? (body.smtpConfigId || null) : undefined,
           flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : undefined,
           automations: flowSteps && Array.isArray(flowSteps) ? {
             create: flowSteps.map((step: any, index: number) => ({
               name: `Passo ${index + 1} - ${step.channel}`,
               triggerEvent: 'JOURNEY_STEP',
               actionType: 'CREATE_TASK',
+              templateId: step.templateId || null,
+              channel: step.channel,
+              delay: Number(step.dayOffset),
               actionConfig: {
                 dayOffset: Number(step.dayOffset),
                 channel: step.channel,
-                messageTemplate: step.messageTemplate
+                messageTemplate: step.messageTemplate || '',
+                templateId: step.templateId || null
               }
             }))
           } : undefined

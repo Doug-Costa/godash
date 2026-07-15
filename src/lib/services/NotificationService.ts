@@ -1,97 +1,114 @@
+import { MailerProvider } from './providers/MailerProvider';
+import { EvolutionProvider } from './providers/EvolutionProvider';
+import { NotificationProvider } from './providers/NotificationProvider';
+import prisma from '../prisma';
+
 export class NotificationService {
+  private static mailerProvider = new MailerProvider();
+  private static evolutionProvider = new EvolutionProvider();
+
   /**
-   * Envia mensagem de texto via WhatsApp (Evolution API)
+   * Resolve o NotificationProvider adequado para o canal escolhido
    */
-  static async sendWhatsApp(number: string, text: string): Promise<boolean> {
-    const url = process.env.EVOLUTION_API_URL;
-    const key = process.env.EVOLUTION_API_KEY;
-    const instance = process.env.EVOLUTION_API_INSTANCE;
-
-    // Formata o número (garantindo DDI e DDD)
-    let formattedNumber = number.replace(/\D/g, '');
-    if (formattedNumber.length > 0 && !formattedNumber.startsWith('55')) {
-      formattedNumber = '55' + formattedNumber;
+  static resolveProvider(channel: string): NotificationProvider {
+    const ch = channel.toUpperCase();
+    if (ch === 'EMAIL') {
+      return this.mailerProvider;
     }
-
-    console.log(`[NotificationService] Preparando envio de WhatsApp para: ${formattedNumber}`);
-
-    if (!url || !key || !instance) {
-      console.warn('[NotificationService] Evolution API não configurada no .env. Ignorando envio real e logando no console:', {
-        number: formattedNumber,
-        text,
-      });
-      return true; // Mock success
+    if (ch === 'WHATSAPP') {
+      return this.evolutionProvider;
     }
-
-    try {
-      const endpoint = `${url}/message/sendText/${instance}`;
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: key,
-        },
-        body: JSON.stringify({
-          number: formattedNumber,
-          text,
-        }),
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error(`[NotificationService] Erro ao enviar WhatsApp. Status: ${res.status}. Detalhes:`, errText);
-        return false;
-      }
-
-      console.log(`[NotificationService] WhatsApp enviado com sucesso para ${formattedNumber}`);
-      return true;
-    } catch (err) {
-      console.error('[NotificationService] Erro na requisição do WhatsApp:', err);
-      return false;
-    }
+    throw new Error(`Canal de notificação não suportado: ${channel}`);
   }
 
   /**
-   * Envia e-mail via serviço interno de SMTP do cliente
+   * Envia mensagem de texto via WhatsApp (Evolution API)
+   * Mantém compatibilidade com chamadas legadas
+   */
+  static async sendWhatsApp(number: string, text: string): Promise<boolean> {
+    return this.evolutionProvider.sendMessage(number, text, {
+      url: process.env.EVOLUTION_API_URL,
+      apiKey: process.env.EVOLUTION_API_KEY,
+      instance: process.env.EVOLUTION_API_INSTANCE,
+    });
+  }
+
+  /**
+   * Envia e-mail via SMTP ativo no banco ou fallback para SMTP de ambiente
+   * Mantém compatibilidade com chamadas legadas
    */
   static async sendEmail(to: string, subject: string, body: string): Promise<boolean> {
-    const smtpUrl = process.env.SMTP_SERVICE_URL;
-
-    console.log(`[NotificationService] Preparando envio de E-mail para: ${to}`);
-
-    if (!smtpUrl) {
-      console.warn('[NotificationService] SMTP_SERVICE_URL não configurada no .env. Ignorando envio real e logando no console:', {
-        to,
-        subject,
-        body,
+    try {
+      // 1. Tentar buscar SMTP ativo do banco de dados PostgreSQL
+      const activeSmtp = await prisma.smtpConfig.findFirst({
+        where: { active: true },
       });
-      return true; // Mock success
+
+      if (activeSmtp) {
+        console.log(`[NotificationService] Enviando e-mail usando SMTP ativo do banco: "${activeSmtp.name}"`);
+        return this.mailerProvider.sendTemplate(to, { subject, content: body }, {}, activeSmtp);
+      }
+    } catch (dbError) {
+      console.warn('[NotificationService] Falha ao ler SMTP ativo do banco, tentando via env:', dbError);
     }
 
-    try {
-      const res = await fetch(smtpUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          to,
-          subject,
-          body,
-        }),
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error(`[NotificationService] Erro ao enviar E-mail. Status: ${res.status}. Detalhes:`, errText);
+    // 2. Fallback: Envio legado via HTTP POST se SMTP_SERVICE_URL for URL
+    const smtpUrl = process.env.SMTP_SERVICE_URL;
+    if (smtpUrl && (smtpUrl.startsWith('http://') || smtpUrl.startsWith('https://'))) {
+      console.log(`[NotificationService] Enviando e-mail legado via HTTP POST para: ${to}`);
+      try {
+        const res = await fetch(smtpUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            to,
+            subject,
+            body,
+          }),
+        });
+        return res.ok;
+      } catch (err) {
+        console.error('[NotificationService] Erro no envio HTTP SMTP legado:', err);
         return false;
       }
-
-      console.log(`[NotificationService] E-mail enviado com sucesso para ${to}`);
-      return true;
-    } catch (err) {
-      console.error('[NotificationService] Erro na requisição do E-mail:', err);
-      return false;
     }
+
+    // 3. Fallback final: Envio via MailerProvider usando as variáveis de ambiente locais do SMTP
+    return this.mailerProvider.sendTemplate(to, { subject, content: body }, {}, {
+      host: process.env.SMTP_HOST || smtpUrl || '',
+      port: Number(process.env.SMTP_PORT || '587'),
+      user: process.env.SMTP_USER || '',
+      pass: process.env.SMTP_PASS || '',
+      secure: process.env.SMTP_SECURE === 'true',
+    });
+  }
+
+  /**
+   * Envia uma notificação usando templates e variáveis dinâmicas
+   */
+  static async sendTemplate(
+    to: string,
+    channel: string,
+    template: { subject?: string; content: string },
+    variables: Record<string, any>,
+    config?: any
+  ): Promise<boolean> {
+    const provider = this.resolveProvider(channel);
+    return provider.sendTemplate(to, template, variables, config);
+  }
+
+  /**
+   * Envia uma mensagem direta por canal
+   */
+  static async sendMessage(
+    to: string,
+    channel: string,
+    text: string,
+    config?: any
+  ): Promise<boolean> {
+    const provider = this.resolveProvider(channel);
+    return provider.sendMessage(to, text, config);
   }
 }

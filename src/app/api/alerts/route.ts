@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import pool from '@/lib/db';
 import { auth } from '@/auth';
 import { NotificationService } from '@/lib/services/NotificationService';
+import { compileTemplate } from '@/lib/services/providers/MailerProvider';
 
 export async function GET(request: Request) {
   try {
@@ -410,14 +411,31 @@ export async function POST(request: Request) {
 
       let msgSentLog = 'Atendimento iniciado pelo operador.';
       if (person) {
-        const actionConfig = (task.automation?.actionConfig as any) || {};
+        const automation = task.automation;
+        const template = automation?.templateId
+          ? await prisma.template.findUnique({ where: { id: automation.templateId } })
+          : null;
+
+        const actionConfig = (automation?.actionConfig as any) || {};
         const templateMessage = actionConfig.templateMessage || 'Olá {{nome}}! Como podemos ajudar?';
-        
-        const renderedText = templateMessage
-          .replace(/\{\{nome\}\}/gi, person.fullName || 'Doutor(a)')
-          .replace(/\{\{email\}\}/gi, person.email || '')
-          .replace(/\{\{telefone\}\}/gi, person.phoneNumber || '')
-          .replace(/\{\{plano\}\}/gi, task.snapshotPlanName || '');
+
+        const variables = {
+          customer: {
+            fullName: person.fullName || 'Doutor(a)',
+            name: person.fullName || 'Doutor(a)',
+            email: person.email || '',
+            phone: person.phoneNumber || '',
+            plan: task.snapshotPlanName || '',
+          },
+          nome: person.fullName || 'Doutor(a)',
+          email: person.email || '',
+          telefone: person.phoneNumber || '',
+          plano: task.snapshotPlanName || '',
+        };
+
+        const renderedText = template
+          ? compileTemplate(template.content, variables)
+          : compileTemplate(templateMessage, variables);
 
         let waSuccess = false;
         let emailSuccess = false;
@@ -429,7 +447,10 @@ export async function POST(request: Request) {
 
         // Disparar E-mail se houver email
         if (person.email) {
-          emailSuccess = await NotificationService.sendEmail(person.email, `DentalGO - ${task.automation?.name || 'Atendimento'}`, renderedText);
+          const emailSubject = template?.subject
+            ? compileTemplate(template.subject, variables)
+            : `DentalGO - ${automation?.name || 'Atendimento'}`;
+          emailSuccess = await NotificationService.sendEmail(person.email, emailSubject, renderedText);
         }
 
         msgSentLog = `Atendimento iniciado. Notificações disparadas: WhatsApp (${waSuccess ? 'Sucesso' : 'Falha/Não enviado'}), E-mail (${emailSuccess ? 'Sucesso' : 'Falha/Não enviado'}).`;
