@@ -223,6 +223,7 @@ export default function DashboardContent({
   const [campaignOnWinJourneyId, setCampaignOnWinJourneyId] = useState('');
   const [campaignOnLoseJourneyId, setCampaignOnLoseJourneyId] = useState('');
   const [campaignPipelineId, setCampaignPipelineId] = useState('');
+  const [campaignWarmupTemplateId, setCampaignWarmupTemplateId] = useState('');
 
   // Estados para SMTP e Templates (DentalGO CRM 360)
   const [smtpConfigs, setSmtpConfigs] = useState<any[]>([]);
@@ -1226,6 +1227,7 @@ export default function DashboardContent({
           userIds: campaignAgentIds,
           limitPerDay: campaignLimitEnabled && campaignLimitPerDay ? Number(campaignLimitPerDay) : null,
           smtpConfigId: campaignSmtpConfigId || null,
+          warmupTemplateId: campaignWarmupTemplateId || null,
           excludeNurturing,
           pipelineId: campaignPipelineId || null,
           onWinJourneyId: campaignOnWinJourneyId || null,
@@ -1256,6 +1258,7 @@ export default function DashboardContent({
         setCampaignOnWinJourneyId('');
         setCampaignOnLoseJourneyId('');
         setCampaignPipelineId('');
+        setCampaignWarmupTemplateId('');
         setExcludeNurturing(true);
         setCampaignNature('COMMERCIAL');
         setNodes([]);
@@ -4725,6 +4728,24 @@ export default function DashboardContent({
                       <option value="">-- Usar SMTP Padrão Ativo --</option>
                       {smtpConfigs.map(config => (
                         <option key={config.id} value={config.id}>{config.name} ({config.user})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Seleção de Aquecimento */}
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                    <h4 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 8 }}>🚀 Aquecimento / Pré-Contato Automático</h4>
+                    <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                      Envie uma mensagem automática de boas-vindas antes de enviar o lead ao operador.
+                    </p>
+                    <select
+                      value={campaignWarmupTemplateId}
+                      onChange={(e) => setCampaignWarmupTemplateId(e.target.value)}
+                      style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                    >
+                      <option value="">-- Nenhum (Direto para o Comercial, Sem Aquecimento) --</option>
+                      {templatesList.map(t => (
+                        <option key={t.id} value={t.id}>[{t.type}] {t.name} (v{t.version})</option>
                       ))}
                     </select>
                   </div>

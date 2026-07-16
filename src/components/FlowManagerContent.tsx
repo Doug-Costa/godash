@@ -17,8 +17,8 @@ interface FlowManagerContentProps {
 export default function FlowManagerContent({ currentUser }: FlowManagerContentProps) {
   const isAdmin = currentUser?.role === 'ADMIN';
 
-  // Tabs: 'marketing' | 'cs' | 'nurturing'
-  const [activeTab, setActiveTab] = useState<'marketing' | 'cs' | 'nurturing'>('marketing');
+  // Tabs: 'marketing' | 'commercial' | 'cs' | 'nurturing'
+  const [activeTab, setActiveTab] = useState<'marketing' | 'commercial' | 'cs' | 'nurturing'>('marketing');
 
   // Flows list
   const [flows, setFlows] = useState<any[]>([]);
@@ -83,7 +83,7 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
     fetchData();
   }, []);
 
-  // Classify journeys into the 3 tabs based on their pipeline name or objective
+  // Classify journeys into the 4 tabs based on their pipeline name or objective
   const getTabFlows = () => {
     return flows.filter(f => {
       // Find pipeline name
@@ -96,8 +96,11 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
       if (activeTab === 'nurturing') {
         return pipeName === 'Nutrição';
       }
-      // Marketing defaults to everything else (Vendas, empty pipeline, etc.)
-      return pipeName !== 'CS' && pipeName !== 'Nutrição';
+      if (activeTab === 'commercial') {
+        return pipeName === 'Vendas';
+      }
+      // Marketing defaults to everything else (empty pipeline, other pipelines, etc.)
+      return pipeName !== 'CS' && pipeName !== 'Nutrição' && pipeName !== 'Vendas';
     });
   };
 
@@ -169,7 +172,9 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
         ? (pipelines.find(p => p.name === 'CS')?.id || '') 
         : activeTab === 'nurturing'
         ? (pipelines.find(p => p.name === 'Nutrição')?.id || '')
-        : (pipelines.find(p => p.name === 'Vendas')?.id || '')
+        : activeTab === 'commercial'
+        ? (pipelines.find(p => p.name === 'Vendas')?.id || '')
+        : ''
     );
     setFlowSmtpConfigId('');
     setFlowOnWinJourneyId('');
@@ -293,6 +298,17 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
           🌊 Fluxos de Marketing (Aquecimento)
         </button>
         <button
+          onClick={() => setActiveTab('commercial')}
+          style={{
+            padding: '10px 20px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+            borderBottom: activeTab === 'commercial' ? '3px solid var(--accent)' : '3px solid transparent',
+            color: activeTab === 'commercial' ? 'var(--accent)' : 'var(--text-secondary)',
+            transition: 'all 0.2s'
+          }}
+        >
+          🎯 Fluxos Comerciais (Vendas Ativas)
+        </button>
+        <button
           onClick={() => setActiveTab('cs')}
           style={{
             padding: '10px 20px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
@@ -301,7 +317,7 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
             transition: 'all 0.2s'
           }}
         >
-          🚀 Fluxos de Pós-Venda (Onboarding/Ganho)
+          🚀 Fluxos de Pós-Venda (Onboarding/CS)
         </button>
         <button
           onClick={() => setActiveTab('nurturing')}
@@ -312,7 +328,7 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
             transition: 'all 0.2s'
           }}
         >
-          ♻️ Fluxos de Nutrição (Recuperação/Perda)
+          ♻️ Fluxos de Nutrição (Recuperação/Lost)
         </button>
 
         <button 

@@ -87,6 +87,21 @@ export class AssignCampaignLeadsUseCase {
         }
       });
 
+      // Se a jornada tem warmupTemplateId, agenda o envio da mensagem de aquecimento automática
+      if (journey.warmupTemplateId) {
+        const { automationQueue } = await import('../queue/automationQueue');
+        const delayMs = Math.max(0, joinedCampaignAt.getTime() - now.getTime());
+        await automationQueue.add(
+          `warmup-${customer.id}`,
+          {
+            customerId: customer.id,
+            journeyId: journey.id,
+            warmupTemplateId: journey.warmupTemplateId
+          },
+          { delay: delayMs }
+        );
+      }
+
       // 4. Pré-gerar alertas de tarefas da jornada se a data agendada for agora ou no passado
       if (journey.automations && journey.automations.length > 0) {
         for (const automation of journey.automations) {

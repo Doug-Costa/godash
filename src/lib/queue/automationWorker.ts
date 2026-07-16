@@ -8,8 +8,8 @@ import { compileTemplate } from '../services/providers/MailerProvider';
 export const automationWorker = new Worker(
   'automation-queue',
   async (job: Job) => {
-    const { customerId, automationId, journeyId } = job.data;
-    console.log(`[AutomationWorker] 📥 Processing automation job ${automationId} for customer ${customerId}`);
+    const { customerId, automationId, journeyId, warmupTemplateId } = job.data;
+    console.log(`[AutomationWorker] 📥 Processing job ${job.id} for customer ${customerId}`);
 
     // 1. Fetch current Customer state
     const customer = await prisma.customer.findUnique({
@@ -27,15 +27,50 @@ export const automationWorker = new Worker(
       return;
     }
 
-    // 2. Fetch Automation & Template details
-    const automation = await prisma.automation.findUnique({
-      where: { id: automationId },
-      include: { template: true, journey: { include: { smtpConfig: true } } }
-    });
+    let templateSubject = 'Notificação';
+    let templateContent = '';
+    let targetChannel = 'WHATSAPP';
+    let providerName = 'EVOLUTION';
+    let smtpConfig: any = null;
+    let campaignName = '';
 
-    if (!automation || !automation.isActive) {
-      console.log(`[AutomationWorker] Automation step ${automationId} is invalid or inactive. Skipping.`);
-      return;
+    if (!automationId && warmupTemplateId) {
+      // 2a. Warmup Template case
+      const template = await prisma.template.findUnique({
+        where: { id: warmupTemplateId }
+      });
+      if (!template) {
+        console.warn(`[AutomationWorker] Warmup template ${warmupTemplateId} not found. FAILED.`);
+        return;
+      }
+      templateSubject = template.subject || 'Notificação';
+      templateContent = template.content;
+      targetChannel = (template.type || 'WHATSAPP').toUpperCase();
+
+      const journey = await prisma.journey.findUnique({
+        where: { id: journeyId },
+        include: { smtpConfig: true }
+      });
+      campaignName = journey?.name || '';
+      smtpConfig = journey?.smtpConfig || null;
+    } else {
+      // 2b. Regular step automation case
+      const automation = await prisma.automation.findUnique({
+        where: { id: automationId },
+        include: { template: true, journey: { include: { smtpConfig: true } } }
+      });
+
+      if (!automation || !automation.isActive) {
+        console.log(`[AutomationWorker] Automation step ${automationId} is invalid or inactive. Skipping.`);
+        return;
+      }
+
+      templateSubject = automation.template?.subject || 'Notificação';
+      templateContent = automation.template?.content || (automation.actionConfig as any)?.messageTemplate || '';
+      targetChannel = (automation.channel || 'WHATSAPP').toUpperCase();
+      providerName = automation.provider || 'EVOLUTION';
+      smtpConfig = automation.journey?.smtpConfig || null;
+      campaignName = automation.journey?.name || '';
     }
 
     // 3. Fetch recipient data from MySQL database
@@ -55,7 +90,6 @@ export const automationWorker = new Worker(
     const recipientPhone = person?.phoneNumber || customerMeta.phoneNumber || '';
 
     // Check availability of target channels
-    const targetChannel = (automation.channel || 'WHATSAPP').toUpperCase();
     if (targetChannel === 'EMAIL' && !recipientEmail) {
       console.warn(`[AutomationWorker] E-mail channel selected but customer has no email address. FAILED.`);
       await recordFailure(customerId, 'Cliente não possui endereço de e-mail cadastrado.', 'EMAIL');
@@ -67,12 +101,8 @@ export const automationWorker = new Worker(
       return;
     }
 
-    // 4. Resolve Template layout & variables
-    const templateSubject = automation.template?.subject || 'Notificação';
-    const templateContent = automation.template?.content || (automation.actionConfig as any)?.messageTemplate || '';
-
     if (!templateContent) {
-      console.warn(`[AutomationWorker] No message content or template found for automation ${automationId}. FAILED.`);
+      console.warn(`[AutomationWorker] No message content or template found. FAILED.`);
       await recordFailure(customerId, 'Conteúdo do template de automação vazio.', targetChannel);
       return;
     }
@@ -89,7 +119,7 @@ export const automationWorker = new Worker(
         expiration: customerMeta.expirationDate || '',
       },
       campaign: {
-        name: automation.journey?.name || '',
+        name: campaignName || '',
       },
       company: {
         name: 'DentalGO',
@@ -105,7 +135,7 @@ export const automationWorker = new Worker(
 
     try {
       if (targetChannel === 'EMAIL') {
-        const mailConfig = automation.journey?.smtpConfig || undefined;
+        const mailConfig = smtpConfig || undefined;
         success = await NotificationService.sendTemplate(
           recipientEmail,
           'EMAIL',
@@ -120,7 +150,7 @@ export const automationWorker = new Worker(
           { content: compiledContent },
           variables,
           {
-            provider: automation.provider || 'EVOLUTION',
+            provider: providerName || 'EVOLUTION',
             url: process.env.EVOLUTION_API_URL,
             apiKey: process.env.EVOLUTION_API_KEY,
             instance: process.env.EVOLUTION_API_INSTANCE,
