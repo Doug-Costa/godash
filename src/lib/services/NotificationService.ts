@@ -1,24 +1,38 @@
 import { MailerProvider } from './providers/MailerProvider';
 import { EvolutionProvider } from './providers/EvolutionProvider';
+import { ZapiProvider } from './providers/ZapiProvider';
+import { MetaProvider } from './providers/MetaProvider';
 import { NotificationProvider } from './providers/NotificationProvider';
 import prisma from '../prisma';
 
 export class NotificationService {
   private static mailerProvider = new MailerProvider();
   private static evolutionProvider = new EvolutionProvider();
+  private static zapiProvider = new ZapiProvider();
+  private static metaProvider = new MetaProvider();
 
   /**
-   * Resolve o NotificationProvider adequado para o canal escolhido
+   * Resolve o NotificationProvider adequado para o canal e provedor escolhidos
    */
-  static resolveProvider(channel: string): NotificationProvider {
+  static resolveProvider(channel: string, providerName?: string | null): NotificationProvider {
     const ch = channel.toUpperCase();
+    const prov = providerName?.toUpperCase();
+
     if (ch === 'EMAIL') {
       return this.mailerProvider;
     }
+
     if (ch === 'WHATSAPP') {
+      if (prov === 'ZAPI') {
+        return this.zapiProvider;
+      }
+      if (prov === 'META') {
+        return this.metaProvider;
+      }
       return this.evolutionProvider;
     }
-    throw new Error(`Canal de notificação não suportado: ${channel}`);
+
+    throw new Error(`Canal de notificação ou provedor não suportado: ${channel} / ${providerName}`);
   }
 
   /**
@@ -95,7 +109,8 @@ export class NotificationService {
     variables: Record<string, any>,
     config?: any
   ): Promise<boolean> {
-    const provider = this.resolveProvider(channel);
+    const providerName = config?.provider || null;
+    const provider = this.resolveProvider(channel, providerName);
     return provider.sendTemplate(to, template, variables, config);
   }
 
@@ -108,7 +123,8 @@ export class NotificationService {
     text: string,
     config?: any
   ): Promise<boolean> {
-    const provider = this.resolveProvider(channel);
+    const providerName = config?.provider || null;
+    const provider = this.resolveProvider(channel, providerName);
     return provider.sendMessage(to, text, config);
   }
 }

@@ -112,6 +112,17 @@ export async function POST(request: Request) {
         }
       }
 
+      if (body.excludeNurturing !== false) {
+        const nurturingCustomers = await prisma.customer.findMany({
+          where: { isInNurturing: true },
+          select: { externalPersonId: true }
+        });
+        const nurturingIds = nurturingCustomers.map(nc => nc.externalPersonId);
+        if (nurturingIds.length > 0) {
+          query += ` AND p.id NOT IN (${nurturingIds.join(',')})`;
+        }
+      }
+
       const [rows] = await pool.query(query, params);
       const count = (rows as any[])[0]?.count || 0;
 
@@ -137,6 +148,10 @@ export async function POST(request: Request) {
           targetCriteria,
           limitPerDay: limitPerDay ? Number(limitPerDay) : null,
           smtpConfigId: body.smtpConfigId || null,
+          warmupTemplateId: body.warmupTemplateId || null,
+          pipelineId: body.pipelineId || null,
+          onWinJourneyId: body.onWinJourneyId || null,
+          onLoseJourneyId: body.onLoseJourneyId || null,
           flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : null,
           automations: flowSteps && Array.isArray(flowSteps) ? {
             create: flowSteps.map((step: any, index: number) => ({
@@ -146,11 +161,15 @@ export async function POST(request: Request) {
               templateId: step.templateId || null,
               channel: step.channel,
               delay: Number(step.dayOffset),
+              provider: step.provider || 'EVOLUTION',
+              stepNumber: index + 1,
+              delayDays: Number(step.dayOffset),
               actionConfig: {
                 dayOffset: Number(step.dayOffset),
                 channel: step.channel,
                 messageTemplate: step.messageTemplate || '',
-                templateId: step.templateId || null
+                templateId: step.templateId || null,
+                provider: step.provider || 'EVOLUTION'
               }
             }))
           } : undefined
@@ -192,6 +211,17 @@ export async function POST(request: Request) {
         }
       }
 
+      if (body.excludeNurturing !== false) {
+        const nurturingCustomers = await prisma.customer.findMany({
+          where: { isInNurturing: true },
+          select: { externalPersonId: true }
+        });
+        const nurturingIds = nurturingCustomers.map(nc => nc.externalPersonId);
+        if (nurturingIds.length > 0) {
+          targetQuery += ` AND p.id NOT IN (${nurturingIds.join(',')})`;
+        }
+      }
+
       const [rows] = await pool.query(targetQuery, targetParams);
       const externalPersonIds = (rows as any[]).map(r => r.id);
 
@@ -227,6 +257,10 @@ export async function POST(request: Request) {
           targetCriteria: targetCriteria ? (typeof targetCriteria === 'string' ? targetCriteria : JSON.stringify(targetCriteria)) : undefined,
           limitPerDay: limitPerDay ? Number(limitPerDay) : undefined,
           smtpConfigId: body.smtpConfigId !== undefined ? (body.smtpConfigId || null) : undefined,
+          warmupTemplateId: body.warmupTemplateId !== undefined ? (body.warmupTemplateId || null) : undefined,
+          pipelineId: body.pipelineId !== undefined ? (body.pipelineId || null) : undefined,
+          onWinJourneyId: body.onWinJourneyId !== undefined ? (body.onWinJourneyId || null) : undefined,
+          onLoseJourneyId: body.onLoseJourneyId !== undefined ? (body.onLoseJourneyId || null) : undefined,
           flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : undefined,
           automations: flowSteps && Array.isArray(flowSteps) ? {
             create: flowSteps.map((step: any, index: number) => ({
@@ -236,11 +270,15 @@ export async function POST(request: Request) {
               templateId: step.templateId || null,
               channel: step.channel,
               delay: Number(step.dayOffset),
+              provider: step.provider || 'EVOLUTION',
+              stepNumber: index + 1,
+              delayDays: Number(step.dayOffset),
               actionConfig: {
                 dayOffset: Number(step.dayOffset),
                 channel: step.channel,
                 messageTemplate: step.messageTemplate || '',
-                templateId: step.templateId || null
+                templateId: step.templateId || null,
+                provider: step.provider || 'EVOLUTION'
               }
             }))
           } : undefined

@@ -216,6 +216,10 @@ export default function DashboardContent({
   const [campaignLimitPerDay, setCampaignLimitPerDay] = useState<string>('');
   const [campaignLimitEnabled, setCampaignLimitEnabled] = useState<boolean>(false);
   const [campaignSmtpConfigId, setCampaignSmtpConfigId] = useState('');
+  const [excludeNurturing, setExcludeNurturing] = useState(true);
+  const [campaignOnWinJourneyId, setCampaignOnWinJourneyId] = useState('');
+  const [campaignOnLoseJourneyId, setCampaignOnLoseJourneyId] = useState('');
+  const [campaignPipelineId, setCampaignPipelineId] = useState('');
 
   // Estados para SMTP e Templates (DentalGO CRM 360)
   const [smtpConfigs, setSmtpConfigs] = useState<any[]>([]);
@@ -513,7 +517,8 @@ export default function DashboardContent({
             plansFilter: campaignPlansFilter,
             selectedPlans: campaignSelectedPlans,
             statusFilter: campaignStatusFilter,
-            expiryDays: campaignStatusFilter === 'expired' ? Number(campaignExpiryDays) : undefined
+            expiryDays: campaignStatusFilter === 'expired' ? Number(campaignExpiryDays) : undefined,
+            excludeNurturing: excludeNurturing
           })
         });
         if (res.ok) {
@@ -528,7 +533,7 @@ export default function DashboardContent({
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [campaignPlansFilter, campaignSelectedPlans, campaignStatusFilter, campaignExpiryDays, showCampaignModal]);
+  }, [campaignPlansFilter, campaignSelectedPlans, campaignStatusFilter, campaignExpiryDays, excludeNurturing, showCampaignModal]);
 
   useEffect(() => {
     if (activeTab === 'alerts') {
@@ -1217,6 +1222,10 @@ export default function DashboardContent({
           userIds: campaignAgentIds,
           limitPerDay: campaignLimitEnabled && campaignLimitPerDay ? Number(campaignLimitPerDay) : null,
           smtpConfigId: campaignSmtpConfigId || null,
+          excludeNurturing,
+          pipelineId: campaignPipelineId || null,
+          onWinJourneyId: campaignOnWinJourneyId || null,
+          onLoseJourneyId: campaignOnLoseJourneyId || null,
           flowSteps,
           flowGraph: JSON.stringify({ nodes, edges })
         })
@@ -1239,6 +1248,10 @@ export default function DashboardContent({
         setCampaignAgentIds([]);
         setCampaignLimitPerDay('');
         setCampaignLimitEnabled(false);
+        setCampaignOnWinJourneyId('');
+        setCampaignOnLoseJourneyId('');
+        setCampaignPipelineId('');
+        setExcludeNurturing(true);
         setNodes([]);
         setEdges([]);
         setSelectedNodeId(null);
@@ -1731,6 +1744,16 @@ export default function DashboardContent({
                                   🎯 {lead.campaign.name}
                                 </span>
                               )}
+                              {lead.isInNurturing && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(124, 58, 237, 0.15)', color: '#7C3AED', border: '1px solid rgba(124, 58, 237, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  🔄 Nutrição
+                                </span>
+                              )}
+                              {lead.leadScore > 0 && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(234, 179, 8, 0.15)', color: '#CA8A04', border: '1px solid rgba(234, 179, 8, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  🔥 Score: {lead.leadScore}
+                                </span>
+                              )}
                               {lead.hasPendingAlert && (
                                 <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--red)', border: '1px solid var(--red)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                                   ⚠️ Alerta!
@@ -1849,6 +1872,16 @@ export default function DashboardContent({
                               {lead.campaign && (
                                 <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--cyan)', border: '1px solid var(--cyan)' }}>
                                   🎯 {lead.campaign.name}
+                                </span>
+                              )}
+                              {lead.isInNurturing && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(124, 58, 237, 0.15)', color: '#7C3AED', border: '1px solid rgba(124, 58, 237, 0.3)' }}>
+                                  🔄 Nutrição
+                                </span>
+                              )}
+                              {lead.leadScore > 0 && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(234, 179, 8, 0.15)', color: '#CA8A04', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
+                                  🔥 Score: {lead.leadScore}
                                 </span>
                               )}
                               {lead.hasPendingAlert && (
@@ -4358,6 +4391,19 @@ export default function DashboardContent({
                       </div>
                     </div>
 
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, background: 'var(--surface-raised)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                      <input
+                        type="checkbox"
+                        id="excludeNurturing"
+                        checked={excludeNurturing}
+                        onChange={(e) => setExcludeNurturing(e.target.checked)}
+                        style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }}
+                      />
+                      <label htmlFor="excludeNurturing" style={{ fontSize: 12, cursor: 'pointer', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4, margin: 0 }}>
+                        ⚠️ <strong>Ignorar leads em esteira de recuperação/nutrição</strong> (Evita sobreposição de mensagens)
+                      </label>
+                    </div>
+
                     {campaignPlansFilter !== 'all' && (() => {
                       const filteredPlans = plansList.filter(p => {
                         if (campaignPlansFilter === 'pagos') return Number(p.price) > 100;
@@ -4575,6 +4621,53 @@ export default function DashboardContent({
                       ))}
                     </select>
                   </div>
+
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                    <h4 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 12 }}>⚙️ Roteamento de Pós-Venda e Funil</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Funil Destino (Pipeline):</label>
+                        <select
+                          value={campaignPipelineId}
+                          onChange={(e) => setCampaignPipelineId(e.target.value)}
+                          style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                        >
+                          <option value="">-- Padrão (Vendas) --</option>
+                          {pipelines.map(pipe => (
+                            <option key={pipe.id} value={pipe.id}>{pipe.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Se GANHO (WON) &rarr; Mudar para:</label>
+                        <select
+                          value={campaignOnWinJourneyId}
+                          onChange={(e) => setCampaignOnWinJourneyId(e.target.value)}
+                          style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                        >
+                          <option value="">-- Nenhum (Remover da Jornada) --</option>
+                          {campaignsData.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Se PERDIDO (LOST) &rarr; Mudar para:</label>
+                        <select
+                          value={campaignOnLoseJourneyId}
+                          onChange={(e) => setCampaignOnLoseJourneyId(e.target.value)}
+                          style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                        >
+                          <option value="">-- Nenhum (Remover da Jornada) --</option>
+                          {campaignsData.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -4654,6 +4747,31 @@ export default function DashboardContent({
                                 {node.data.channel === 'WHATSAPP' ? '💬 WhatsApp' : node.data.channel === 'CALL' ? '📞 Ligação Telefônica' : '📧 E-mail'}
                               </div>
                             </div>
+
+                            {node.data.channel === 'WHATSAPP' && (
+                              <div>
+                                <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Conector / Provedor WhatsApp:</label>
+                                <select
+                                  value={node.data.provider || 'EVOLUTION'}
+                                  onChange={(e) => {
+                                    const selectedProvider = e.target.value;
+                                    setNodes(prev => {
+                                      const copy = [...prev];
+                                      copy[nodeIndex].data = {
+                                        ...copy[nodeIndex].data,
+                                        provider: selectedProvider
+                                      };
+                                      return copy;
+                                    });
+                                  }}
+                                  style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                                >
+                                  <option value="EVOLUTION">Evolution API (Padrão)</option>
+                                  <option value="ZAPI">Z-API WhatsApp</option>
+                                  <option value="META">Meta Cloud API Oficial</option>
+                                </select>
+                              </div>
+                            )}
 
                             <div>
                               <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Dia de execução (Offset após entrada):</label>

@@ -96,6 +96,9 @@ model Customer {
   frozenUntil       DateTime?
   freezeReason      String?
   lostReason        String?
+  leadScore         Int           @default(0)
+  isInNurturing     Boolean       @default(false)
+  nurturingJourneyId String?
 
   // Relations
   assignee     User?         @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
@@ -136,6 +139,16 @@ model Journey {
   nextCampaign             Journey?       @relation("LinkedCampaigns", fields: [nextCampaignId], references: [id], onDelete: SetNull)
   prevCampaign             Journey?       @relation("LinkedCampaigns")
 
+  // Marketing, Pipeline & Post-Sales Routing
+  warmupTemplateId         String?
+  pipelineId               String?
+  onWinJourneyId           String?
+  onWinJourney             Journey?       @relation("JourneyToWin", fields: [onWinJourneyId], references: [id], onDelete: SetNull)
+  onLoseJourneyId          String?
+  onLoseJourney            Journey?       @relation("JourneyToLose", fields: [onLoseJourneyId], references: [id], onDelete: SetNull)
+  wonJourneys              Journey[]      @relation("JourneyToWin")
+  lostJourneys             Journey[]      @relation("JourneyToLose")
+
   // Relations
   customers      Customer[]
   tasks          Task[]
@@ -155,19 +168,22 @@ model Pipeline {
 }
 
 model Interaction {
-  id         String   @id @default(cuid())
-  customerId String
-  text       String
-  authorId   String
-  createdAt  DateTime @default(now())
+  id             String   @id @default(cuid())
+  customerId     String
+  text           String
+  authorId       String?
+  createdAt      DateTime @default(now())
   
   // Mailer/Notification extension
-  type       String?  // EMAIL_SENT, WHATS_SENT, etc.
-  metadata   Json?    @default("{}")
+  type           String?  // EMAIL_SENT, WHATS_SENT, etc.
+  metadata       Json?    @default("{}")
+  deliveryStatus String   @default("PENDING") // PENDING, SENT, DELIVERED, READ, FAILED
+  errorMessage   String?
+  channel        String?
 
   // Relations
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  author   User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author   User?    @relation(fields: [authorId], references: [id], onDelete: Cascade)
 }
 
 model Task {
@@ -215,6 +231,8 @@ model Automation {
   provider     String?   // "Mailer" | "Evolution" etc
   retry        Int?      @default(3)
   timeout      Int?      @default(5000)
+  stepNumber   Int       @default(1)
+  delayDays    Int       @default(0)
 
   // Relations
   journey Journey? @relation(fields: [journeyId], references: [id], onDelete: Cascade)

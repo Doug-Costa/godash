@@ -2,6 +2,7 @@ import { ICrmRepository, InteractionType, LossReason } from '@/lib/domain/crm.ty
 import { PrismaCrmRepository } from '@/lib/repositories/PrismaCrmRepository';
 import { CrmEventDispatcher } from '@/lib/domain/crm.events';
 import prisma from '@/lib/prisma';
+import { JourneyTransitionService } from '@/lib/services/JourneyTransitionService';
 
 export class RegisterLeadInteractionService {
   private crmRepo: ICrmRepository;
@@ -74,6 +75,18 @@ export class RegisterLeadInteractionService {
 
     const isFinalStage = nextStage === 'ganho' || nextStage === 'perdido' || type === 'LOST' || type === 'RECOVERED';
     if (isFinalStage && dbCustomer) {
+      // Execute the transition first while journeyId is still on the lead!
+      const finalJourneyId = journeyId || dbCustomer.journeyId || null;
+      const transStage = (nextStage === 'ganho' || type === 'RECOVERED') ? 'ganho' : 'perdido';
+
+      await JourneyTransitionService.handleTransition(
+        dbCustomer.id,
+        externalPersonId,
+        finalJourneyId,
+        transStage,
+        authorId
+      );
+
       await prisma.customer.update({
         where: { id: dbCustomer.id },
         data: {

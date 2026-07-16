@@ -5,6 +5,7 @@ import { PrismaCrmRepository } from '@/lib/repositories/PrismaCrmRepository';
 import { auth } from '@/auth';
 import { RegisterLeadInteractionService } from '@/lib/application/RegisterLeadInteractionService';
 import { LeadTaggingService } from '@/lib/application/LeadTaggingService';
+import { JourneyTransitionService } from '@/lib/services/JourneyTransitionService';
 
 const crmRepository = new PrismaCrmRepository();
 
@@ -412,7 +413,9 @@ export async function GET(request: Request) {
           })),
           metadata: state?.metadata || {},
           subscriptionStatus: subBadge,
-          isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1'
+          isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1',
+          isInNurturing: state?.isInNurturing || false,
+          leadScore: state?.leadScore || 0
         };
       });
     }
@@ -489,6 +492,14 @@ export async function POST(request: Request) {
             where: { externalPersonId, journeyId: resolvedJourneyId }
           });
           if (customer) {
+            await JourneyTransitionService.handleTransition(
+              customer.id,
+              externalPersonId,
+              resolvedJourneyId,
+              stage,
+              authorId
+            );
+
             await prisma.customer.update({
               where: { id: customer.id },
               data: {
@@ -582,7 +593,9 @@ export async function POST(request: Request) {
         authorName: i.author?.name || 'Agente',
         type: inferInteractionType(i.text)
       })),
-      metadata: updatedState?.metadata || {}
+      metadata: updatedState?.metadata || {},
+      isInNurturing: updatedState?.isInNurturing || false,
+      leadScore: updatedState?.leadScore || 0
     };
 
     return NextResponse.json({ success: true, data: formattedData });

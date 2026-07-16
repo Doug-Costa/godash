@@ -144,7 +144,7 @@ export class PrismaCrmRepository implements ICrmRepository {
     };
   }
 
-  async addInteraction(externalPersonId: number, text: string, authorId: string, journeyId?: string | null): Promise<CrmInteraction> {
+  async addInteraction(externalPersonId: number, text: string, authorId: string | null, journeyId?: string | null): Promise<CrmInteraction> {
     const customer = await this.findOrCreateCustomer(externalPersonId, journeyId);
 
     await prisma.customer.update({

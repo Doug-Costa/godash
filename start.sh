@@ -7,10 +7,12 @@ cleanup() {
   kill -TERM "$PID_WORKER" 2>/dev/null
   kill -TERM "$PID_SYNC_WORKER" 2>/dev/null
   kill -TERM "$PID_MAIL_WORKER" 2>/dev/null
+  kill -TERM "$PID_AUTO_WORKER" 2>/dev/null
   wait "$PID_SERVER" 2>/dev/null
   wait "$PID_WORKER" 2>/dev/null
   wait "$PID_SYNC_WORKER" 2>/dev/null
   wait "$PID_MAIL_WORKER" 2>/dev/null
+  wait "$PID_AUTO_WORKER" 2>/dev/null
   echo "Services stopped."
   exit 0
 }
@@ -43,8 +45,13 @@ echo "🚀 Starting BullMQ Mail Campaign Worker..."
 npx tsx src/lib/queue/mailWorker.ts &
 PID_MAIL_WORKER=$!
 
+echo "🚀 Starting BullMQ Automation Worker..."
+npx tsx src/lib/queue/automationWorker.ts &
+PID_AUTO_WORKER=$!
+
 # Wait for all processes
 wait "$PID_SERVER"
 wait "$PID_WORKER"
 wait "$PID_SYNC_WORKER"
 wait "$PID_MAIL_WORKER"
+wait "$PID_AUTO_WORKER"

@@ -41,7 +41,7 @@ export interface CrmInteraction {
   id: string;
   customerId: string;
   text: string;
-  authorId: string;
+  authorId: string | null;
   createdAt: Date;
 }
 
@@ -50,7 +50,7 @@ export interface ICrmRepository {
   getManyCustomers(externalPersonIds: number[]): Promise<CrmCustomer[]>;
   updateStage(externalPersonId: number, newStage: string, journeyId?: string | null): Promise<CrmCustomer>;
   assignLead(externalPersonId: number, assigneeId: string | null, journeyId?: string | null): Promise<CrmCustomer>;
-  addInteraction(externalPersonId: number, text: string, authorId: string, journeyId?: string | null): Promise<CrmInteraction>;
+  addInteraction(externalPersonId: number, text: string, authorId: string | null, journeyId?: string | null): Promise<CrmInteraction>;
   getInteractions(externalPersonId: number, journeyId?: string | null): Promise<CrmInteraction[]>;
   
   // DDD actions
