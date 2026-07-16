@@ -115,6 +115,7 @@ model Journey {
   name           String
   status         String       @default("ACTIVE") // "ACTIVE" | "PAUSED" | "COMPLETED"
   objective      String
+  campaignNature String       @default("COMMERCIAL") // "COMMERCIAL" | "AUTOMATED"
   financialGoal  Float?
   targetCriteria String?
   limitPerDay    Int?

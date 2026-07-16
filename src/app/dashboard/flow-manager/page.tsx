@@ -1,8 +1,8 @@
 import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
-import PostSalesContent from '@/components/PostSalesContent';
+import FlowManagerContent from '@/components/FlowManagerContent';
 
-export default async function PostSalesPage() {
+export default async function FlowManagerPage() {
   // 1. Resolve a sessão no servidor
   const session = await auth();
 
@@ -18,7 +18,7 @@ export default async function PostSalesPage() {
     role: (session.user as any).role || 'AGENT',
   };
 
-  // 3. Valida se o perfil logado tem acesso ao pós-venda (apenas ADMIN ou POST_SALES)
+  // 3. Valida se o perfil logado tem acesso ao motor de fluxos (apenas ADMIN ou POST_SALES)
   const hasAccess = currentUser.role === 'ADMIN' || currentUser.role === 'POST_SALES';
 
   if (!hasAccess) {
@@ -26,6 +26,6 @@ export default async function PostSalesPage() {
   }
 
   return (
-    <PostSalesContent currentUser={currentUser} />
+    <FlowManagerContent currentUser={currentUser} />
   );
 }

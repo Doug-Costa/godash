@@ -126,14 +126,70 @@ export async function POST(request: Request) {
       const [rows] = await pool.query(query, params);
       const count = (rows as any[])[0]?.count || 0;
 
-      return NextResponse.json({ success: true, count });
+      // Calculate collisionCount (leads that fit target criteria but are already in nurturing)
+      const nurturingCustomers = await prisma.customer.findMany({
+        where: { isInNurturing: true },
+        select: { externalPersonId: true }
+      });
+      const nurturingIds = nurturingCustomers.map(nc => nc.externalPersonId);
+      let collisionCount = 0;
+
+      if (nurturingIds.length > 0) {
+        let collisionQueryStr = `
+          SELECT COUNT(DISTINCT p.id) as count
+          FROM people p
+          LEFT JOIN subscriptions s ON s.personId = p.id
+          LEFT JOIN plans pl ON s.planId = pl.id
+          WHERE p.admin = 0
+            AND p.id IN (${nurturingIds.join(',')})
+        `;
+        const collisionParams: any[] = [];
+        
+        if (selectedPlans && Array.isArray(selectedPlans) && selectedPlans.length > 0) {
+          collisionQueryStr += ` AND pl.id IN (${selectedPlans.map(() => '?').join(',')})`;
+          collisionParams.push(...selectedPlans);
+        } else {
+          if (plansFilter === 'pagos') {
+            collisionQueryStr += ` AND pl.price > 100`;
+          } else if (plansFilter === 'cortesia') {
+            collisionQueryStr += ` AND pl.price <= 100`;
+          }
+        }
+
+        if (statusFilter === 'active') {
+          collisionQueryStr += ` AND s.status = 'active'`;
+        } else if (statusFilter === 'canceled') {
+          collisionQueryStr += ` AND s.status = 'canceled' AND NOT EXISTS (
+            SELECT 1 FROM subscriptions s2 WHERE s2.personId = p.id AND s2.status = 'active'
+          )`;
+        } else if (statusFilter === 'expired') {
+          collisionQueryStr += ` AND s.status = 'active' AND COALESCE(s.isValidUntil, s.expiresIn) < CURDATE()`;
+          if (expiryDays && Number(expiryDays) > 0) {
+            collisionQueryStr += ` AND COALESCE(s.isValidUntil, s.expiresIn) >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`;
+            collisionParams.push(Number(expiryDays));
+          }
+        }
+
+        const [collisionRows] = await pool.query(collisionQueryStr, collisionParams);
+        collisionCount = (collisionRows as any[])[0]?.count || 0;
+      }
+
+      return NextResponse.json({ success: true, count, collisionCount });
     }
 
     // 3. Ação de Lançamento / Ativação Direta (Wizard Finalizado)
     if (action === 'launch') {
-      const { name, plansFilter, selectedPlans, statusFilter, expiryDays, userIds, limitPerDay, flowSteps, flowGraph, startDate } = body;
-      if (!name || !userIds || !Array.isArray(userIds) || userIds.length === 0) {
-        return NextResponse.json({ success: false, error: 'Nome da campanha e operadores são obrigatórios.' }, { status: 400 });
+      const { name, plansFilter, selectedPlans, statusFilter, expiryDays, userIds, limitPerDay, flowSteps, flowGraph, startDate, campaignNature } = body;
+      const nature = campaignNature || 'COMMERCIAL';
+
+      if (nature === 'COMMERCIAL') {
+        if (!name || !userIds || !Array.isArray(userIds) || userIds.length === 0) {
+          return NextResponse.json({ success: false, error: 'Nome da campanha e operadores são obrigatórios para campanhas comerciais.' }, { status: 400 });
+        }
+      } else {
+        if (!name) {
+          return NextResponse.json({ success: false, error: 'Nome da campanha é obrigatório.' }, { status: 400 });
+        }
       }
 
       const targetCriteria = JSON.stringify({ plansFilter, selectedPlans, statusFilter, expiryDays, startDate });
@@ -144,6 +200,7 @@ export async function POST(request: Request) {
           name,
           status: 'ACTIVE',
           objective: 'Recuperação de Leads',
+          campaignNature: nature,
           financialGoal: 0,
           targetCriteria,
           limitPerDay: limitPerDay ? Number(limitPerDay) : null,
@@ -225,18 +282,110 @@ export async function POST(request: Request) {
       const [rows] = await pool.query(targetQuery, targetParams);
       const externalPersonIds = (rows as any[]).map(r => r.id);
 
-      // Distribuir leads com limitador via Round-Robin
+      // Distribuir ou enfileirar leads
       let resultsCount = 0;
-      if (externalPersonIds.length > 0) {
+      if (nature === 'COMMERCIAL' && externalPersonIds.length > 0) {
         const useCase = new AssignCampaignLeadsUseCase();
         const results = await useCase.execute(externalPersonIds, journey.id, userIds, startDate);
         resultsCount = results.length;
+      } else if (nature === 'AUTOMATED' && externalPersonIds.length > 0) {
+        // Para campanhas automáticas, cria os customers diretamente no funil e agenda os disparos
+        for (const personId of externalPersonIds) {
+          let targetPipelineId = body.pipelineId;
+          if (!targetPipelineId) {
+            const defaultPipe = await prisma.pipeline.findFirst({
+              where: { name: 'Vendas' }
+            });
+            targetPipelineId = defaultPipe?.id;
+          }
+
+          const customer = await prisma.customer.create({
+            data: {
+              externalPersonId: Number(personId),
+              journeyId: journey.id,
+              pipelineId: targetPipelineId,
+              stage: 'novo_cadastro',
+              joinedJourneyAt: new Date(),
+              metadata: {
+                fullName: 'Lead Automático',
+                type: 'AUTOMATED_CAMPAIGN'
+              }
+            }
+          });
+
+          if (flowSteps && Array.isArray(flowSteps)) {
+            const { automationQueue } = await import('@/lib/queue/automationQueue');
+            const createdAutomations = await prisma.automation.findMany({
+              where: { journeyId: journey.id }
+            });
+            for (const auto of createdAutomations) {
+              const delayMs = auto.delayDays > 0
+                ? auto.delayDays * 24 * 60 * 60 * 1000
+                : (auto.delay || 0) * 60 * 1000;
+
+              await automationQueue.add(
+                'execute-automation',
+                {
+                  customerId: customer.id,
+                  automationId: auto.id,
+                  journeyId: journey.id
+                },
+                { delay: delayMs }
+              );
+            }
+          }
+        }
+        resultsCount = externalPersonIds.length;
       }
 
       return NextResponse.json({ success: true, data: journey, leadsAssignedCount: resultsCount });
     }
 
-    // 4. Ação de Atualização / Edição
+    // 4. Ação de Salvar Fluxo Estático (sem Leads)
+    if (action === 'save-flow') {
+      const { name, pipelineId, flowSteps, flowGraph, smtpConfigId, onWinJourneyId, onLoseJourneyId } = body;
+      if (!name) {
+        return NextResponse.json({ success: false, error: 'Nome do fluxo é obrigatório.' }, { status: 400 });
+      }
+
+      const journey = await prisma.journey.create({
+        data: {
+          name,
+          status: 'ACTIVE',
+          objective: 'Jornada Automática',
+          financialGoal: 0,
+          pipelineId: pipelineId || null,
+          smtpConfigId: smtpConfigId || null,
+          onWinJourneyId: onWinJourneyId || null,
+          onLoseJourneyId: onLoseJourneyId || null,
+          flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : null,
+          automations: flowSteps && Array.isArray(flowSteps) ? {
+            create: flowSteps.map((step: any, index: number) => ({
+              name: `Passo ${index + 1} - ${step.channel}`,
+              triggerEvent: 'JOURNEY_STEP',
+              actionType: 'CREATE_TASK',
+              templateId: step.templateId || null,
+              channel: step.channel,
+              delay: Number(step.dayOffset),
+              provider: step.provider || 'EVOLUTION',
+              stepNumber: index + 1,
+              delayDays: Number(step.dayOffset),
+              actionConfig: {
+                dayOffset: Number(step.dayOffset),
+                channel: step.channel,
+                messageTemplate: step.messageTemplate || '',
+                templateId: step.templateId || null,
+                provider: step.provider || 'EVOLUTION'
+              }
+            }))
+          } : undefined
+        }
+      });
+
+      return NextResponse.json({ success: true, data: journey });
+    }
+
+    // 5. Ação de Atualização / Edição
     if (action === 'update') {
       const { campaignId, name, status, flowSteps, targetCriteria, limitPerDay, flowGraph } = body;
       if (!campaignId) {

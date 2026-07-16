@@ -13,6 +13,7 @@ import CohortTable from '@/components/charts/CohortTable';
 import ThemeToggle from '@/components/ThemeToggle';
 import MonthSelector from '@/components/ui/MonthSelector';
 import Timeline from '@/components/ui/Timeline';
+import AutomatedCampaignAnalytics from '@/components/AutomatedCampaignAnalytics';
 
 const formatBRL = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -196,7 +197,9 @@ export default function DashboardContent({
   const [assignUserIds, setAssignUserIds] = useState<string[]>([]);
 
   // Estados do Wizard de Campanhas
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
+  const [campaignNature, setCampaignNature] = useState<'COMMERCIAL' | 'AUTOMATED'>('COMMERCIAL');
+  const [campaignCollisionCount, setCampaignCollisionCount] = useState<number>(0);
   const [campaignPlansFilter, setCampaignPlansFilter] = useState<'all' | 'pagos' | 'cortesia'>('all');
   const [plansList, setPlansList] = useState<any[]>([]);
   const [campaignSelectedPlans, setCampaignSelectedPlans] = useState<any[]>([]);
@@ -524,6 +527,7 @@ export default function DashboardContent({
         if (res.ok) {
           const data = await res.json();
           setEstimatedAudience(data.count || 0);
+          setCampaignCollisionCount(data.collisionCount || 0);
         }
       } catch (err) {
         console.error('Failed to estimate audience:', err);
@@ -1226,6 +1230,7 @@ export default function DashboardContent({
           pipelineId: campaignPipelineId || null,
           onWinJourneyId: campaignOnWinJourneyId || null,
           onLoseJourneyId: campaignOnLoseJourneyId || null,
+          campaignNature,
           flowSteps,
           flowGraph: JSON.stringify({ nodes, edges })
         })
@@ -1252,6 +1257,7 @@ export default function DashboardContent({
         setCampaignOnLoseJourneyId('');
         setCampaignPipelineId('');
         setExcludeNurturing(true);
+        setCampaignNature('COMMERCIAL');
         setNodes([]);
         setEdges([]);
         setSelectedNodeId(null);
@@ -1749,6 +1755,11 @@ export default function DashboardContent({
                                   🔄 Nutrição
                                 </span>
                               )}
+                              {lead.isInNurturing && lead.leadScore >= 50 && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.3)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  ⚡ Esquentou (Nutrição)!
+                                </span>
+                              )}
                               {lead.leadScore > 0 && (
                                 <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(234, 179, 8, 0.15)', color: '#CA8A04', border: '1px solid rgba(234, 179, 8, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                                   🔥 Score: {lead.leadScore}
@@ -1877,6 +1888,11 @@ export default function DashboardContent({
                               {lead.isInNurturing && (
                                 <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(124, 58, 237, 0.15)', color: '#7C3AED', border: '1px solid rgba(124, 58, 237, 0.3)' }}>
                                   🔄 Nutrição
+                                </span>
+                              )}
+                              {lead.isInNurturing && lead.leadScore >= 50 && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.3)', fontWeight: 'bold' }}>
+                                  ⚡ Esquentou (Nutrição)!
                                 </span>
                               )}
                               {lead.leadScore > 0 && (
@@ -2114,7 +2130,7 @@ export default function DashboardContent({
 
           {(isAdmin || currentUser?.role === 'POST_SALES') && (
             <button 
-              onClick={() => window.location.href = '/dashboard/post-sales'}
+              onClick={() => window.location.href = '/dashboard/flow-manager'}
               style={{
                 padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 background: 'transparent',
@@ -2122,7 +2138,7 @@ export default function DashboardContent({
                 transition: 'all 0.2s'
               }}
             >
-              📣 Pós-Venda
+              🔄 Central de Jornadas
             </button>
           )}
         </nav>
@@ -2426,7 +2442,15 @@ export default function DashboardContent({
           </div>
 
           {/* Section: KPI Panel */}
-          <div className="card">
+          {selectedKpiCampaignId && campaignsData.find((c: any) => c.id === selectedKpiCampaignId)?.campaignNature === 'AUTOMATED' ? (
+            <div className="card">
+              <AutomatedCampaignAnalytics 
+                campaignId={selectedKpiCampaignId} 
+                onBack={() => setSelectedKpiCampaignId('')} 
+              />
+            </div>
+          ) : (
+            <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
               <div>
                 <h3 className="label">📊 BI & KPIs da Equipe</h3>
@@ -2668,6 +2692,7 @@ export default function DashboardContent({
               </div>
             )}
           </div>
+          )}
         </div>
       )}
 
@@ -3446,48 +3471,64 @@ export default function DashboardContent({
               <div>
                 <label className="label-sm" style={{ display: 'block', marginBottom: 8, color: 'var(--text-secondary)' }}>Ações Rápidas de Atendimento:</label>
                 {!showLossReasons && !showScheduler ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <button
-                      onClick={() => handleActionDisposition('CONTACT_ATTEMPT')}
-                      style={{
-                        padding: '10px 8px', background: 'rgba(192, 132, 252, 0.15)', border: '1px solid var(--accent)',
-                        borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
-                      }}
-                    >
-                      💬 Contato Feito
-                    </button>
-                    <button
-                      onClick={() => setShowScheduler(true)}
-                      style={{
-                        padding: '10px 8px', background: 'rgba(96, 165, 250, 0.15)', border: '1px solid #60A5FA',
-                        borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
-                      }}
-                    >
-                      📅 Agendar Retorno
-                    </button>
-                    <button
-                      onClick={() => handleActionDisposition('RECOVERED')}
-                      style={{
-                        padding: '10px 8px', background: 'rgba(74, 222, 128, 0.15)', border: '1px solid #4ADE80',
-                        borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
-                      }}
-                    >
-                      🤝 Ganho
-                    </button>
-                    <button
-                      onClick={() => setShowLossReasons(true)}
-                      style={{
-                        padding: '10px 8px', background: 'rgba(248, 113, 113, 0.15)', border: '1px solid #F87171',
-                        borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
-                      }}
-                    >
-                      🚨 Perda / Descarte
-                    </button>
-                  </div>
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <button
+                        onClick={() => handleActionDisposition('CONTACT_ATTEMPT')}
+                        style={{
+                          padding: '10px 8px', background: 'rgba(192, 132, 252, 0.15)', border: '1px solid var(--accent)',
+                          borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
+                        }}
+                      >
+                        💬 Contato Feito
+                      </button>
+                      <button
+                        onClick={() => setShowScheduler(true)}
+                        style={{
+                          padding: '10px 8px', background: 'rgba(96, 165, 250, 0.15)', border: '1px solid #60A5FA',
+                          borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
+                        }}
+                      >
+                        📅 Agendar Retorno
+                      </button>
+                      <button
+                        onClick={() => handleActionDisposition('RECOVERED')}
+                        style={{
+                          padding: '10px 8px', background: 'rgba(74, 222, 128, 0.15)', border: '1px solid #4ADE80',
+                          borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
+                        }}
+                      >
+                        🤝 Ganho
+                      </button>
+                      <button
+                        onClick={() => setShowLossReasons(true)}
+                        style={{
+                          padding: '10px 8px', background: 'rgba(248, 113, 113, 0.15)', border: '1px solid #F87171',
+                          borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all 0.2s'
+                        }}
+                      >
+                        🚨 Perda / Descarte
+                      </button>
+                    </div>
+
+                    <div style={{ marginTop: 12, width: '100%' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--surface-raised)', borderRadius: 8, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 6, width: '100%', boxSizing: 'border-box' }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>⚙️ <strong>Status RevOps:</strong></span>
+                        <span className="badge" style={{ 
+                          fontSize: 10, padding: '2px 8px', borderRadius: 12, fontWeight: 700,
+                          background: selectedLead.isInNurturing ? 'rgba(124, 58, 237, 0.15)' : 'rgba(6, 182, 212, 0.15)',
+                          color: selectedLead.isInNurturing ? '#7C3AED' : 'var(--cyan)',
+                          border: selectedLead.isInNurturing ? '1px solid rgba(124, 58, 237, 0.3)' : '1px solid var(--cyan)'
+                        }}>
+                          {selectedLead.isInNurturing ? '♻️ Em Nutrição' : '🎯 Em Campanha (Comercial)'}
+                        </span>
+                      </div>
+                    </div>
+                  </>
                 ) : showScheduler ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -4306,32 +4347,89 @@ export default function DashboardContent({
             </div>
 
             {/* Stepper Header */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
-              {[1, 2, 3].map((s) => (
-                <div 
-                  key={s} 
-                  style={{ 
-                    flex: 1, display: 'flex', alignItems: 'center', gap: 8, 
-                    color: wizardStep === s ? 'var(--accent)' : 'var(--text-secondary)',
-                    fontWeight: wizardStep === s ? 700 : 500, fontSize: 13
-                  }}
-                >
-                  <span style={{ 
-                    display: 'inline-flex', width: 24, height: 24, borderRadius: '50%', 
-                    background: wizardStep === s ? 'var(--accent)' : 'var(--surface-raised)',
-                    color: wizardStep === s ? '#fff' : 'var(--text-secondary)',
-                    alignItems: 'center', justifyContent: 'center', fontSize: 11
-                  }}>
-                    {s}
-                  </span>
-                  <span>{s === 1 ? 'Segmentação' : s === 2 ? 'Roteamento' : 'Régua de Relacionamento'}</span>
+            {(() => {
+              const steps = [
+                { num: 1, label: 'Natureza' },
+                { num: 2, label: 'Segmentação' },
+                ...(campaignNature === 'COMMERCIAL' ? [{ num: 3, label: 'Roteamento' }] : []),
+                { num: 4, label: 'Régua de Relacionamento' }
+              ];
+              return (
+                <div style={{ display: 'flex', gap: 12, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
+                  {steps.map((st, idx) => (
+                    <div 
+                      key={st.num} 
+                      style={{ 
+                        flex: 1, display: 'flex', alignItems: 'center', gap: 8, 
+                        color: wizardStep === st.num ? 'var(--accent)' : 'var(--text-secondary)',
+                        fontWeight: wizardStep === st.num ? 700 : 500, fontSize: 13
+                      }}
+                    >
+                      <span style={{ 
+                        display: 'inline-flex', width: 24, height: 24, borderRadius: '50%', 
+                        background: wizardStep === st.num ? 'var(--accent)' : 'var(--surface-raised)',
+                        color: wizardStep === st.num ? '#fff' : 'var(--text-secondary)',
+                        alignItems: 'center', justifyContent: 'center', fontSize: 11
+                      }}>
+                        {idx + 1}
+                      </span>
+                      <span>{st.label}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
 
             {/* Content Body */}
             <div style={{ flex: 1, overflowY: 'auto', marginBottom: 16 }}>
               {wizardStep === 1 && (
+                <div className="animate-fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                  <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                    <h4 style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>Qual é o tipo de campanha que deseja lançar?</h4>
+                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>Escolha o motor de atendimento ideal para o seu objetivo comercial ou de marketing.</p>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                    {/* Comercial Card */}
+                    <div 
+                      onClick={() => setCampaignNature('COMMERCIAL')}
+                      style={{ 
+                        background: campaignNature === 'COMMERCIAL' ? 'rgba(124, 58, 237, 0.08)' : 'var(--surface-raised)',
+                        border: campaignNature === 'COMMERCIAL' ? '2px solid var(--accent)' : '2px solid var(--border)',
+                        borderRadius: 16, padding: 24, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center'
+                      }}
+                    >
+                      <span style={{ fontSize: 36 }}>🎯</span>
+                      <div>
+                        <h5 style={{ fontWeight: 800, fontSize: 15, color: 'var(--text-primary)', margin: 0 }}>Campanha Comercial (Ativa)</h5>
+                        <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.4 }}>
+                          Direciona os leads qualificados automaticamente para o funil Kanban de vendas do time comercial. Exige atribuição de operadores.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Automatica Card */}
+                    <div 
+                      onClick={() => setCampaignNature('AUTOMATED')}
+                      style={{ 
+                        background: campaignNature === 'AUTOMATED' ? 'rgba(124, 58, 237, 0.08)' : 'var(--surface-raised)',
+                        border: campaignNature === 'AUTOMATED' ? '2px solid var(--accent)' : '2px solid var(--border)',
+                        borderRadius: 16, padding: 24, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center'
+                      }}
+                    >
+                      <span style={{ fontSize: 36 }}>🤖</span>
+                      <div>
+                        <h5 style={{ fontWeight: 800, fontSize: 15, color: 'var(--text-primary)', margin: 0 }}>Campanha Automática (Marketing/Nutrição)</h5>
+                        <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.4 }}>
+                          100% automatizada pelo robô de régua de relacionamento. Envia e-mails e WhatsApp sem envolver equipe comercial no Kanban.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {wizardStep === 2 && (
                 <div className="animate-fadeUp" style={{ display: 'flex', gap: 24 }}>
                   <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
@@ -4523,14 +4621,23 @@ export default function DashboardContent({
                         {estimatedAudience}
                       </div>
                     )}
-                    <p style={{ fontSize: 11, color: 'var(--text-secondary)', maxWidth: 200 }}>
+                    <p style={{ fontSize: 11, color: 'var(--text-secondary)', maxWidth: 200, marginBottom: 0 }}>
                       leads atendem às regras lógicas configuradas ao lado.
                     </p>
+
+                    {campaignCollisionCount > 0 && (
+                      <div style={{ background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.3)', color: '#CA8A04', padding: '10px 14px', borderRadius: 8, fontSize: 11, display: 'flex', alignItems: 'start', gap: 6, marginTop: 12, textAlign: 'left' }}>
+                        <span>⚠️</span>
+                        <div>
+                          <strong>Atenção:</strong> {campaignCollisionCount} leads desta lista já estão ativos em outras jornadas de nutrição. Deixe a opção de <strong>ignorar leads em esteira</strong> marcada para evitar contatos duplicados.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {wizardStep === 2 && (
+              {wizardStep === 3 && (
                 <div className="animate-fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                   <div>
                     <label className="label-sm" style={{ display: 'block', marginBottom: 8 }}>
@@ -4671,7 +4778,7 @@ export default function DashboardContent({
                 </div>
               )}
 
-              {wizardStep === 3 && (
+              {wizardStep === 4 && (
                 <div className="animate-fadeUp" style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr', gap: 16, height: '48vh' }}>
                   {/* React Flow Board */}
                   <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface-raised)', position: 'relative', overflow: 'hidden' }}>
@@ -4769,6 +4876,32 @@ export default function DashboardContent({
                                   <option value="EVOLUTION">Evolution API (Padrão)</option>
                                   <option value="ZAPI">Z-API WhatsApp</option>
                                   <option value="META">Meta Cloud API Oficial</option>
+                                </select>
+                              </div>
+                            )}
+
+                            {node.data.channel === 'EMAIL' && (
+                              <div>
+                                <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Servidor SMTP:</label>
+                                <select
+                                  value={node.data.smtpConfigId || ''}
+                                  onChange={(e) => {
+                                    const selectedSmtp = e.target.value;
+                                    setNodes(prev => {
+                                      const copy = [...prev];
+                                      copy[nodeIndex].data = {
+                                        ...copy[nodeIndex].data,
+                                        smtpConfigId: selectedSmtp || null
+                                      };
+                                      return copy;
+                                    });
+                                  }}
+                                  style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                                >
+                                  <option value="">-- SMTP Ativo Padrão --</option>
+                                  {smtpConfigs.map(s => (
+                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                  ))}
                                 </select>
                               </div>
                             )}
@@ -4874,7 +5007,13 @@ export default function DashboardContent({
               <button 
                 type="button" 
                 onClick={() => {
-                  if (wizardStep > 1) {
+                  if (wizardStep === 4) {
+                    if (campaignNature === 'AUTOMATED') {
+                      setWizardStep(2);
+                    } else {
+                      setWizardStep(3);
+                    }
+                  } else if (wizardStep > 1) {
                     setWizardStep((wizardStep - 1) as any);
                   } else {
                     setShowCampaignModal(false);
@@ -4890,12 +5029,24 @@ export default function DashboardContent({
                 type="button" 
                 onClick={async () => {
                   if (wizardStep === 1) {
+                    setWizardStep(2);
+                  } else if (wizardStep === 2) {
                     if (!campaignName) {
                       alert('Por favor, informe o nome da campanha.');
                       return;
                     }
-                    setWizardStep(2);
-                  } else if (wizardStep === 2) {
+                    if (campaignNature === 'COMMERCIAL') {
+                      setWizardStep(3);
+                    } else {
+                      if (nodes.length === 0) {
+                        setNodes([
+                          { id: 'start', type: 'input', data: { label: '🚀 Início: Entrada na Campanha' }, position: { x: 200, y: 50 }, deletable: false, style: { background: 'var(--accent-glow)', border: '1px solid var(--accent)', borderRadius: 8, fontWeight: 700 } }
+                        ]);
+                        setEdges([]);
+                      }
+                      setWizardStep(4);
+                    }
+                  } else if (wizardStep === 3) {
                     if (campaignAgentIds.length === 0) {
                       alert('Selecione pelo menos um operador para atendimento.');
                       return;
@@ -4906,7 +5057,7 @@ export default function DashboardContent({
                       ]);
                       setEdges([]);
                     }
-                    setWizardStep(3);
+                    setWizardStep(4);
                   } else {
                     await handleLaunchCampaignSubmit();
                   }
@@ -4914,7 +5065,7 @@ export default function DashboardContent({
                 className="btn-action btn-action-purple"
                 style={{ padding: '8px 20px' }}
               >
-                {wizardStep === 3 ? '🚀 Lançar & Ativar Campanha' : 'Continuar ▶️'}
+                {wizardStep === 4 ? '🚀 Lançar & Ativar Campanha' : 'Continuar ▶️'}
               </button>
             </div>
           </div>
