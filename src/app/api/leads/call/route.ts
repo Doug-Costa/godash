@@ -17,9 +17,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'leadId é obrigatório' }, { status: 400 });
     }
 
-    const customer = await prisma.customer.findUnique({
-      where: { id: leadId }
-    });
+    let customer = null;
+    const isCuid = typeof leadId === 'string' && !/^\d+$/.test(leadId);
+
+    if (isCuid) {
+      customer = await prisma.customer.findUnique({
+        where: { id: leadId }
+      });
+    } else {
+      const extId = Number(leadId);
+      customer = await prisma.customer.findFirst({
+        where: { externalPersonId: extId, journeyId: null }
+      });
+      if (!customer) {
+        customer = await prisma.customer.create({
+          data: {
+            externalPersonId: extId,
+            journeyId: null,
+            stage: 'novo_cadastro'
+          }
+        });
+      }
+    }
 
     if (!customer) {
       return NextResponse.json({ success: false, error: 'Lead não encontrado' }, { status: 404 });

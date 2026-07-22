@@ -70,11 +70,13 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { emailOrId, stage, note, assigneeId } = body;
+    const { emailOrId, stage, note, assigneeId, journeyId } = body;
 
     if (!emailOrId) {
       return NextResponse.json({ success: false, error: 'emailOrId is required' }, { status: 400 });
     }
+
+    const resolvedJourneyId = journeyId || null;
 
     let externalPersonId: number;
     const isNum = !isNaN(Number(emailOrId));
@@ -108,39 +110,52 @@ export async function POST(request: Request) {
     }
 
     if (stage) {
-      await crmRepository.updateStage(externalPersonId, stage);
+      await crmRepository.updateStage(externalPersonId, stage, resolvedJourneyId);
     }
 
     if (note) {
-      await crmRepository.addInteraction(externalPersonId, note, authorId);
+      await crmRepository.addInteraction(externalPersonId, note, authorId, resolvedJourneyId);
     }
 
     if (assigneeId !== undefined) {
-      await crmRepository.assignLead(externalPersonId, assigneeId);
+      await crmRepository.assignLead(externalPersonId, assigneeId, resolvedJourneyId);
     }
 
     const customer = await prisma.customer.findFirst({
-      where: { externalPersonId, journeyId: null },
+      where: { externalPersonId, journeyId: resolvedJourneyId }
+    });
+
+    // Fetch all customer records for this externalPersonId to construct unified notes
+    const allStates = await prisma.customer.findMany({
+      where: { externalPersonId },
       include: {
         interactions: {
           include: {
-            author: {
-              select: { name: true },
-            },
+            author: { select: { name: true } }
           },
-          orderBy: { createdAt: 'desc' },
-        },
-      },
+          orderBy: { createdAt: 'desc' }
+        }
+      }
     });
+
+    const unifiedNotes: any[] = [];
+    allStates.forEach(cust => {
+      (cust.interactions || []).forEach((i: any) => {
+        unifiedNotes.push({
+          date: i.createdAt.toISOString(),
+          text: i.text,
+          authorName: i.author?.name || 'Agente',
+        });
+      });
+    });
+
+    // Sort notes descending
+    unifiedNotes.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const formattedData = {
       stage: customer?.stage || 'novo_cadastro',
       assigneeId: customer?.assigneeId || null,
-      notes: ((customer as any)?.interactions || []).map((i: any) => ({
-        date: i.createdAt.toISOString(),
-        text: i.text,
-        authorName: i.author?.name || 'Agente',
-      })),
+      notes: unifiedNotes,
     };
 
     return NextResponse.json({ success: true, data: formattedData });

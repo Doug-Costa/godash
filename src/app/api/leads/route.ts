@@ -271,12 +271,6 @@ export async function GET(request: Request) {
     const customers = await prisma.customer.findMany({
       where: postgresQueryFilter,
       include: {
-        interactions: {
-          include: {
-            author: { select: { name: true } }
-          },
-          orderBy: { createdAt: 'desc' }
-        },
         assignee: {
           select: { id: true, name: true }
         },
@@ -288,6 +282,53 @@ export async function GET(request: Request) {
         }
       }
     });
+
+    // Fetch all customer states for these personIds to get consolidated metadata and interactions
+    const allCustomersForTimeline = await prisma.customer.findMany({
+      where: {
+        externalPersonId: { in: personIds }
+      },
+      include: {
+        interactions: {
+          include: {
+            author: { select: { name: true } }
+          },
+          orderBy: { createdAt: 'desc' }
+        }
+      }
+    });
+
+    const interactionsByPersonId = new Map<number, any[]>();
+    const metadataByPersonId = new Map<number, any>();
+    const scheduledForByPersonId = new Map<number, Date | null>();
+
+    allCustomersForTimeline.forEach(cust => {
+      // 1. Group interactions
+      const existingInts = interactionsByPersonId.get(cust.externalPersonId) || [];
+      const mappedInts = (cust.interactions || []).map((i: any) => ({
+        id: i.id,
+        text: i.text,
+        date: i.createdAt ? i.createdAt.toISOString() : new Date().toISOString(),
+        authorName: i.author?.name || 'Agente',
+        type: inferInteractionType(i.text)
+      }));
+      interactionsByPersonId.set(cust.externalPersonId, [...existingInts, ...mappedInts]);
+
+      // 2. Merge metadata
+      const existingMeta = metadataByPersonId.get(cust.externalPersonId) || {};
+      const newMeta = (cust.metadata as Record<string, any>) || {};
+      metadataByPersonId.set(cust.externalPersonId, { ...existingMeta, ...newMeta });
+
+      // 3. Keep scheduledFor if found
+      if (cust.scheduledFor) {
+        scheduledForByPersonId.set(cust.externalPersonId, cust.scheduledFor);
+      }
+    });
+
+    // Sort interactions by date descending for each personId
+    for (const [personId, ints] of interactionsByPersonId.entries()) {
+      ints.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }
 
     const peopleMap = new Map();
     (rows as any[]).forEach(r => {
@@ -342,14 +383,9 @@ export async function GET(request: Request) {
             name: c.journey.name
           } : null,
           hasPendingAlert: (c.tasks || []).length > 0,
-          notes: (c.interactions || []).map((i: any) => ({
-            id: i.id,
-            text: i.text,
-            date: i.createdAt ? new Date(i.createdAt).toISOString() : new Date().toISOString(),
-            authorName: i.author?.name || 'Agente',
-            type: inferInteractionType(i.text)
-          })),
-          metadata: c.metadata || {},
+          notes: interactionsByPersonId.get(r.id) || [],
+          metadata: metadataByPersonId.get(r.id) || {},
+          scheduledFor: scheduledForByPersonId.get(r.id) || c.scheduledFor || null,
           subscriptionStatus: subBadge,
           isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1'
         };
@@ -404,14 +440,9 @@ export async function GET(request: Request) {
             name: state.journey.name
           } : null,
           hasPendingAlert: (state?.tasks || []).length > 0,
-          notes: (state?.interactions || []).map((i: any) => ({
-            id: i.id,
-            text: i.text,
-            date: i.createdAt ? new Date(i.createdAt).toISOString() : new Date().toISOString(),
-            authorName: i.author?.name || 'Agente',
-            type: inferInteractionType(i.text)
-          })),
-          metadata: state?.metadata || {},
+          notes: interactionsByPersonId.get(r.id) || [],
+          metadata: metadataByPersonId.get(r.id) || {},
+          scheduledFor: scheduledForByPersonId.get(r.id) || state?.scheduledFor || null,
           subscriptionStatus: subBadge,
           isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1',
           isInNurturing: state?.isInNurturing || false,
@@ -566,17 +597,51 @@ export async function POST(request: Request) {
     const updatedState = await prisma.customer.findFirst({
       where: { externalPersonId, journeyId: resolvedJourneyId },
       include: {
-        interactions: {
-          include: {
-            author: { select: { name: true } }
-          },
-          orderBy: { createdAt: 'desc' }
-        },
         assignee: {
           select: { id: true, name: true }
         }
       }
     });
+
+    // Fetch all customer records for this externalPersonId to construct unified notes and metadata
+    const allStates = await prisma.customer.findMany({
+      where: { externalPersonId },
+      include: {
+        interactions: {
+          include: {
+            author: { select: { name: true } }
+          },
+          orderBy: { createdAt: 'desc' }
+        }
+      }
+    });
+
+    const unifiedNotes: any[] = [];
+    const unifiedMeta: any = {};
+    let unifiedScheduledFor: any = null;
+
+    allStates.forEach(cust => {
+      // Merge metadata
+      if (cust.metadata) {
+        Object.assign(unifiedMeta, cust.metadata);
+      }
+      if (cust.scheduledFor) {
+        unifiedScheduledFor = cust.scheduledFor;
+      }
+      // Gather interactions
+      (cust.interactions || []).forEach((i: any) => {
+        unifiedNotes.push({
+          id: i.id,
+          text: i.text,
+          date: i.createdAt.toISOString(),
+          authorName: i.author?.name || 'Agente',
+          type: inferInteractionType(i.text)
+        });
+      });
+    });
+
+    // Sort unified notes by date descending
+    unifiedNotes.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     const formattedData = {
       leadId: externalPersonId,
@@ -586,14 +651,9 @@ export async function POST(request: Request) {
         id: updatedState.assignee.id,
         name: updatedState.assignee.name
       } : null,
-      notes: (updatedState?.interactions || []).map((i: any) => ({
-        id: i.id,
-        text: i.text,
-        date: i.createdAt.toISOString(),
-        authorName: i.author?.name || 'Agente',
-        type: inferInteractionType(i.text)
-      })),
-      metadata: updatedState?.metadata || {},
+      notes: unifiedNotes,
+      metadata: unifiedMeta,
+      scheduledFor: unifiedScheduledFor,
       isInNurturing: updatedState?.isInNurturing || false,
       leadScore: updatedState?.leadScore || 0
     };

@@ -675,6 +675,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: selectedLead.id,
+          journeyId: selectedLead.journeyId || null,
           type,
           lossReason,
           lostReason: lossReason, // Mapeamento para o novo campo do SQLite
@@ -687,7 +688,7 @@ export default function DashboardContent({
         const json = await res.json();
         setSelectedLead((prev: any) => ({
           ...prev,
-          stage: json.data.stage,
+          ...json.data,
           notes: json.data.notes || [],
         }));
         setDetailNote('');
@@ -716,6 +717,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: selectedLead.id,
+          journeyId: selectedLead.journeyId || null,
           note: detailNote,
         }),
       });
@@ -725,6 +727,7 @@ export default function DashboardContent({
         // Update local modal data
         setSelectedLead((prev: any) => ({
           ...prev,
+          ...json.data,
           notes: json.data.notes || [],
         }));
         setDetailNote('');
@@ -818,6 +821,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: selectedLead.id,
+          journeyId: selectedLead.journeyId || null,
           metadata: {
             instagram: targetInst,
             specialty: targetSpec,
@@ -1125,7 +1129,8 @@ export default function DashboardContent({
         if (leadRes.ok) {
           const leadJson = await leadRes.json();
           if (leadJson.success && leadJson.data.length > 0) {
-            openTimeline(leadJson.data[0]);
+            const matched = leadJson.data.find((l: any) => l.journeyId === alert.leadState.journeyId) || leadJson.data[0];
+            openTimeline(matched);
           }
         }
         fetchAlerts();
@@ -3865,7 +3870,8 @@ export default function DashboardContent({
                             body: JSON.stringify({
                               emailOrId: selectedLead.id,
                               note: `💬 [WhatsApp RapidFire]:\n"${waPasteText}"`,
-                              stage: selectedLead.stage
+                              stage: selectedLead.stage,
+                              journeyId: selectedLead.journeyId || null
                             })
                           });
                           if (res.ok) {
@@ -3875,7 +3881,8 @@ export default function DashboardContent({
                             if (leadsRes.ok) {
                               const json = await leadsRes.json();
                               if (json.data && json.data.length > 0) {
-                                setSelectedLead(json.data[0]);
+                                const matched = json.data.find((l: any) => l.journeyId === selectedLead.journeyId) || json.data[0];
+                                setSelectedLead(matched);
                               }
                             }
                             fetchLeads();
@@ -3932,7 +3939,7 @@ export default function DashboardContent({
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                              leadId: selectedLead.id,
+                              leadId: selectedLead.customerCuid || selectedLead.id,
                               subject: emailSubject,
                               emailBody: emailBodyText
                             })
@@ -3944,7 +3951,8 @@ export default function DashboardContent({
                             if (leadsRes.ok) {
                               const json = await leadsRes.json();
                               if (json.data && json.data.length > 0) {
-                                setSelectedLead(json.data[0]);
+                                const matched = json.data.find((l: any) => l.journeyId === selectedLead.journeyId) || json.data[0];
+                                setSelectedLead(matched);
                               }
                             }
                             fetchLeads();
@@ -3983,7 +3991,7 @@ export default function DashboardContent({
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                              leadId: selectedLead.id
+                              leadId: selectedLead.customerCuid || selectedLead.id
                             })
                           });
                           if (res.ok) {
@@ -3992,7 +4000,8 @@ export default function DashboardContent({
                             if (leadsRes.ok) {
                               const json = await leadsRes.json();
                               if (json.data && json.data.length > 0) {
-                                setSelectedLead(json.data[0]);
+                                 const matched = json.data.find((l: any) => l.journeyId === selectedLead.journeyId) || json.data[0];
+                                 setSelectedLead(matched);
                               }
                             }
                             fetchLeads();
@@ -4016,7 +4025,7 @@ export default function DashboardContent({
             {/* Timeline Notes Area */}
             <div style={{ flex: 1, overflowY: 'auto', marginBottom: 24, paddingRight: 8 }}>
               <div className="label" style={{ marginBottom: 12 }}>Histórico de Interações (Timeline)</div>
-              <Timeline events={selectedLead.notes || []} />
+              <Timeline key={selectedLead.id + '-' + (selectedLead.journeyId || 'none')} events={selectedLead.notes || []} />
             </div>
 
             {/* Note Input Box */}
