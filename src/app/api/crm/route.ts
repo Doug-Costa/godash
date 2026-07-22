@@ -95,6 +95,13 @@ export async function POST(request: Request) {
     const session = await auth();
     let authorId = (session?.user as any)?.id;
 
+    if (authorId) {
+      const userExists = await prisma.user.findUnique({ where: { id: authorId } });
+      if (!userExists) {
+        authorId = null;
+      }
+    }
+
     if (!authorId) {
       let agent = await prisma.user.findFirst();
       if (!agent) {
