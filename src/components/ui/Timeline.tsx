@@ -69,6 +69,27 @@ const TYPE_CONFIGS: Record<string, { label: string; icon: string; bg: string; bo
     border: 'var(--border)',
     color: 'var(--text-primary)',
   },
+  TASK_COMPLETED: {
+    label: 'Compromisso Cumprido',
+    icon: '✅',
+    bg: 'rgba(34, 197, 94, 0.12)',
+    border: '#22c55e',
+    color: '#22c55e',
+  },
+  TASK_CANCELED: {
+    label: 'Compromisso Cancelado/Pulado',
+    icon: '❌',
+    bg: 'rgba(239, 68, 68, 0.12)',
+    border: '#ef4444',
+    color: '#ef4444',
+  },
+  CAMPAIGN: {
+    label: 'Participação em Campanha',
+    icon: '🎯',
+    bg: 'rgba(124, 58, 237, 0.12)',
+    border: '#7c3aed',
+    color: '#7c3aed',
+  },
 };
 
 export default function Timeline({ events }: TimelineProps) {

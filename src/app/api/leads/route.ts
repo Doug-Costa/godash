@@ -294,6 +294,14 @@ export async function GET(request: Request) {
             author: { select: { name: true } }
           },
           orderBy: { createdAt: 'desc' }
+        },
+        journey: {
+          select: { name: true }
+        },
+        tasks: {
+          include: {
+            assignedTo: { select: { name: true } }
+          }
         }
       }
     });
@@ -303,8 +311,10 @@ export async function GET(request: Request) {
     const scheduledForByPersonId = new Map<number, Date | null>();
 
     allCustomersForTimeline.forEach(cust => {
+      const extId = cust.externalPersonId;
+
       // 1. Group interactions
-      const existingInts = interactionsByPersonId.get(cust.externalPersonId) || [];
+      const existingInts = interactionsByPersonId.get(extId) || [];
       const mappedInts = (cust.interactions || []).map((i: any) => ({
         id: i.id,
         text: i.text,
@@ -312,16 +322,55 @@ export async function GET(request: Request) {
         authorName: i.author?.name || 'Agente',
         type: inferInteractionType(i.text)
       }));
-      interactionsByPersonId.set(cust.externalPersonId, [...existingInts, ...mappedInts]);
 
-      // 2. Merge metadata
-      const existingMeta = metadataByPersonId.get(cust.externalPersonId) || {};
+      // 2. Group campaign participations
+      const mappedCampaigns = cust.journeyId ? [{
+        id: `journey-${cust.id}`,
+        text: `🎯 Participando da campanha/esteira comercial: "${cust.journey?.name || 'Campanha'}" (Início em ${cust.joinedJourneyAt ? cust.joinedJourneyAt.toLocaleDateString('pt-BR') : cust.createdAt.toLocaleDateString('pt-BR')})`,
+        date: (cust.joinedJourneyAt || cust.createdAt).toISOString(),
+        authorName: 'Sistema',
+        type: 'CAMPAIGN'
+      }] : [];
+
+      // 3. Group tasks/commitments
+      const mappedTasks = (cust.tasks || []).map((t: any) => {
+        let taskTypeLabel = 'Compromisso';
+        if (t.taskType === 'RETORNO') taskTypeLabel = 'Retorno Agendado';
+        else if (t.taskType === 'WHATSAPP') taskTypeLabel = 'Mensagem de WhatsApp';
+        else if (t.taskType === 'EMAIL') taskTypeLabel = 'Envio de E-mail';
+        
+        let statusText = '';
+        let type = 'MEETING_SCHEDULED';
+        if (t.status === 'PENDING') {
+          statusText = `📅 [Agendado] ${taskTypeLabel} marcado para ${t.scheduledFor.toLocaleString('pt-BR')}${t.assignedTo ? ` (Responsável: ${t.assignedTo.name})` : ''}`;
+          type = 'MEETING_SCHEDULED';
+        } else if (t.status === 'COMPLETED') {
+          statusText = `✅ [Cumprido] ${taskTypeLabel} realizado em ${t.completedAt ? t.completedAt.toLocaleString('pt-BR') : t.updatedAt.toLocaleString('pt-BR')}${t.completionNote ? `. Obs: "${t.completionNote}"` : ''}`;
+          type = 'TASK_COMPLETED';
+        } else {
+          statusText = `❌ [Cancelado/Ignorado] ${taskTypeLabel}. Status: ${t.status}`;
+          type = 'TASK_CANCELED';
+        }
+
+        return {
+          id: t.id,
+          text: statusText,
+          date: (t.completedAt || t.scheduledFor || t.updatedAt).toISOString(),
+          authorName: t.assignedTo?.name || 'Agente',
+          type
+        };
+      });
+
+      interactionsByPersonId.set(extId, [...existingInts, ...mappedInts, ...mappedCampaigns, ...mappedTasks]);
+
+      // 4. Merge metadata
+      const existingMeta = metadataByPersonId.get(extId) || {};
       const newMeta = (cust.metadata as Record<string, any>) || {};
-      metadataByPersonId.set(cust.externalPersonId, { ...existingMeta, ...newMeta });
+      metadataByPersonId.set(extId, { ...existingMeta, ...newMeta });
 
-      // 3. Keep scheduledFor if found
+      // 5. Keep scheduledFor if found
       if (cust.scheduledFor) {
-        scheduledForByPersonId.set(cust.externalPersonId, cust.scheduledFor);
+        scheduledForByPersonId.set(extId, cust.scheduledFor);
       }
     });
 
@@ -531,21 +580,31 @@ export async function POST(request: Request) {
               authorId
             );
 
-            await prisma.customer.update({
-              where: { id: customer.id },
-              data: {
-                journeyId: null,
-                joinedJourneyAt: null,
-                frozenUntil: null,
-                freezeReason: null
-              }
-            });
             await prisma.task.deleteMany({
               where: {
                 customerId: customer.id,
                 status: 'PENDING'
               }
             });
+
+            if (customer.journeyId !== null) {
+              await JourneyTransitionService.mergeCustomerToGeneric(
+                customer.id,
+                externalPersonId,
+                stage,
+                authorId
+              );
+            } else {
+              await prisma.customer.update({
+                where: { id: customer.id },
+                data: {
+                  stage,
+                  joinedJourneyAt: null,
+                  frozenUntil: null,
+                  freezeReason: null
+                }
+              });
+            }
           }
         }
       }
@@ -603,7 +662,7 @@ export async function POST(request: Request) {
       }
     });
 
-    // Fetch all customer records for this externalPersonId to construct unified notes and metadata
+    // Fetch all customer records for this externalPersonId to construct unified notes, tasks, and campaigns
     const allStates = await prisma.customer.findMany({
       where: { externalPersonId },
       include: {
@@ -612,6 +671,14 @@ export async function POST(request: Request) {
             author: { select: { name: true } }
           },
           orderBy: { createdAt: 'desc' }
+        },
+        journey: {
+          select: { name: true }
+        },
+        tasks: {
+          include: {
+            assignedTo: { select: { name: true } }
+          }
         }
       }
     });
@@ -636,6 +703,44 @@ export async function POST(request: Request) {
           date: i.createdAt.toISOString(),
           authorName: i.author?.name || 'Agente',
           type: inferInteractionType(i.text)
+        });
+      });
+      // Gather campaigns
+      if (cust.journeyId) {
+        unifiedNotes.push({
+          id: `journey-${cust.id}`,
+          text: `🎯 Participando da campanha/esteira comercial: "${cust.journey?.name || 'Campanha'}" (Início em ${cust.joinedJourneyAt ? cust.joinedJourneyAt.toLocaleDateString('pt-BR') : cust.createdAt.toLocaleDateString('pt-BR')})`,
+          date: (cust.joinedJourneyAt || cust.createdAt).toISOString(),
+          authorName: 'Sistema',
+          type: 'CAMPAIGN'
+        });
+      }
+      // Gather tasks
+      (cust.tasks || []).forEach((t: any) => {
+        let taskTypeLabel = 'Compromisso';
+        if (t.taskType === 'RETORNO') taskTypeLabel = 'Retorno Agendado';
+        else if (t.taskType === 'WHATSAPP') taskTypeLabel = 'Mensagem de WhatsApp';
+        else if (t.taskType === 'EMAIL') taskTypeLabel = 'Envio de E-mail';
+        
+        let statusText = '';
+        let type = 'MEETING_SCHEDULED';
+        if (t.status === 'PENDING') {
+          statusText = `📅 [Agendado] ${taskTypeLabel} marcado para ${t.scheduledFor.toLocaleString('pt-BR')}${t.assignedTo ? ` (Responsável: ${t.assignedTo.name})` : ''}`;
+          type = 'MEETING_SCHEDULED';
+        } else if (t.status === 'COMPLETED') {
+          statusText = `✅ [Cumprido] ${taskTypeLabel} realizado em ${t.completedAt ? t.completedAt.toLocaleString('pt-BR') : t.updatedAt.toLocaleString('pt-BR')}${t.completionNote ? `. Obs: "${t.completionNote}"` : ''}`;
+          type = 'TASK_COMPLETED';
+        } else {
+          statusText = `❌ [Cancelado/Ignorado] ${taskTypeLabel}. Status: ${t.status}`;
+          type = 'TASK_CANCELED';
+        }
+
+        unifiedNotes.push({
+          id: t.id,
+          text: statusText,
+          date: (t.completedAt || t.scheduledFor || t.updatedAt).toISOString(),
+          authorName: t.assignedTo?.name || 'Agente',
+          type
         });
       });
     });

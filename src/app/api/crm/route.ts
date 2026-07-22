@@ -125,7 +125,7 @@ export async function POST(request: Request) {
       where: { externalPersonId, journeyId: resolvedJourneyId }
     });
 
-    // Fetch all customer records for this externalPersonId to construct unified notes
+    // Fetch all customer records for this externalPersonId to construct unified notes, tasks, and campaigns
     const allStates = await prisma.customer.findMany({
       where: { externalPersonId },
       include: {
@@ -134,17 +134,56 @@ export async function POST(request: Request) {
             author: { select: { name: true } }
           },
           orderBy: { createdAt: 'desc' }
+        },
+        journey: {
+          select: { name: true }
+        },
+        tasks: {
+          include: {
+            assignedTo: { select: { name: true } }
+          }
         }
       }
     });
 
     const unifiedNotes: any[] = [];
     allStates.forEach(cust => {
+      // Gather interactions
       (cust.interactions || []).forEach((i: any) => {
         unifiedNotes.push({
           date: i.createdAt.toISOString(),
           text: i.text,
           authorName: i.author?.name || 'Agente',
+        });
+      });
+      // Gather campaigns
+      if (cust.journeyId) {
+        unifiedNotes.push({
+          date: (cust.joinedJourneyAt || cust.createdAt).toISOString(),
+          text: `🎯 Participando da campanha/esteira comercial: "${cust.journey?.name || 'Campanha'}" (Início em ${cust.joinedJourneyAt ? cust.joinedJourneyAt.toLocaleDateString('pt-BR') : cust.createdAt.toLocaleDateString('pt-BR')})`,
+          authorName: 'Sistema',
+        });
+      }
+      // Gather tasks
+      (cust.tasks || []).forEach((t: any) => {
+        let taskTypeLabel = 'Compromisso';
+        if (t.taskType === 'RETORNO') taskTypeLabel = 'Retorno Agendado';
+        else if (t.taskType === 'WHATSAPP') taskTypeLabel = 'Mensagem de WhatsApp';
+        else if (t.taskType === 'EMAIL') taskTypeLabel = 'Envio de E-mail';
+        
+        let statusText = '';
+        if (t.status === 'PENDING') {
+          statusText = `📅 [Agendado] ${taskTypeLabel} marcado para ${t.scheduledFor.toLocaleString('pt-BR')}${t.assignedTo ? ` (Responsável: ${t.assignedTo.name})` : ''}`;
+        } else if (t.status === 'COMPLETED') {
+          statusText = `✅ [Cumprido] ${taskTypeLabel} realizado em ${t.completedAt ? t.completedAt.toLocaleString('pt-BR') : t.updatedAt.toLocaleString('pt-BR')}${t.completionNote ? `. Obs: "${t.completionNote}"` : ''}`;
+        } else {
+          statusText = `❌ [Cancelado/Ignorado] ${taskTypeLabel}. Status: ${t.status}`;
+        }
+
+        unifiedNotes.push({
+          date: (t.completedAt || t.scheduledFor || t.updatedAt).toISOString(),
+          text: statusText,
+          authorName: t.assignedTo?.name || 'Agente',
         });
       });
     });

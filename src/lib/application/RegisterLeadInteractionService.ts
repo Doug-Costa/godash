@@ -87,21 +87,31 @@ export class RegisterLeadInteractionService {
         authorId
       );
 
-      await prisma.customer.update({
-        where: { id: dbCustomer.id },
-        data: {
-          journeyId: null,
-          joinedJourneyAt: null,
-          frozenUntil: null,
-          freezeReason: null
-        }
-      });
       await prisma.task.deleteMany({
         where: {
           customerId: dbCustomer.id,
           status: 'PENDING'
         }
       });
+
+      if (dbCustomer.journeyId !== null) {
+        await JourneyTransitionService.mergeCustomerToGeneric(
+          dbCustomer.id,
+          externalPersonId,
+          nextStage,
+          authorId
+        );
+      } else {
+        await prisma.customer.update({
+          where: { id: dbCustomer.id },
+          data: {
+            stage: nextStage,
+            joinedJourneyAt: null,
+            frozenUntil: null,
+            freezeReason: null
+          }
+        });
+      }
     }
 
     if (type === 'MEETING_SCHEDULED' && scheduledFor && dbCustomer) {
