@@ -1429,117 +1429,112 @@ export default function DashboardContent({
               </h2>
               <p className="label-sm" style={{ marginTop: 2 }}>Gerencie leads, atenda alertas, reverta cancelados e controle as suas oportunidades em uma única fila.</p>
             </div>
-
-            {/* Seletor "Ver como" */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface-raised)', padding: 4, borderRadius: 8, border: '1px solid var(--border)' }}>
-              <span style={{ fontSize: 11, fontWeight: 700, paddingLeft: 8, color: 'var(--text-secondary)' }}>Ver como:</span>
-              <button
-                type="button"
-                onClick={() => setAtendimentoViewMode('kanban')}
-                style={{
-                  padding: '6px 12px', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  background: atendimentoViewMode === 'kanban' ? 'var(--accent)' : 'transparent',
-                  color: atendimentoViewMode === 'kanban' ? '#fff' : 'var(--text-secondary)',
-                  transition: 'all 0.2s'
-                }}
-              >
-                📋 Kanban
-              </button>
-              <button
-                type="button"
-                onClick={() => setAtendimentoViewMode('list')}
-                style={{
-                  padding: '6px 12px', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  background: atendimentoViewMode === 'list' ? 'var(--accent)' : 'transparent',
-                  color: atendimentoViewMode === 'list' ? '#fff' : 'var(--text-secondary)',
-                  transition: 'all 0.2s'
-                }}
-              >
-                📄 Lista
-              </button>
-            </div>
           </div>
 
           {/* Filas de Atendimento (Row 2) */}
-          {atendimentoViewMode === 'list' && (
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
-              <button
-                type="button"
-                onClick={() => setAtendimentoFila('alerts')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
-                  borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                  background: atendimentoFila === 'alerts' ? 'var(--accent-glow)' : 'var(--surface)',
-                  borderColor: atendimentoFila === 'alerts' ? 'var(--accent)' : 'var(--border)',
-                  color: atendimentoFila === 'alerts' ? 'var(--accent)' : 'var(--text-secondary)'
-                }}
-              >
-                🔔 Alertas / Tarefas
-                {filaCounts.alerts > 0 && (
-                  <span className="badge" style={{ background: 'var(--accent)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
-                    {filaCounts.alerts}
-                  </span>
-                )}
-              </button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => setAtendimentoViewMode('kanban')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
+                borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                background: atendimentoViewMode === 'kanban' ? 'var(--accent-glow)' : 'var(--surface)',
+                borderColor: atendimentoViewMode === 'kanban' ? 'var(--accent)' : 'var(--border)',
+                color: atendimentoViewMode === 'kanban' ? 'var(--accent)' : 'var(--text-secondary)'
+              }}
+            >
+              📋 Meu Atendimento (Kanban)
+            </button>
 
-              <button
-                type="button"
-                onClick={() => setAtendimentoFila('cancelados')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
-                  borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                  background: atendimentoFila === 'cancelados' ? 'rgba(239, 68, 68, 0.1)' : 'var(--surface)',
-                  borderColor: atendimentoFila === 'cancelados' ? '#EF4444' : 'var(--border)',
-                  color: atendimentoFila === 'cancelados' ? '#EF4444' : 'var(--text-secondary)'
-                }}
-              >
-                🚫 Cancelados
-                {filaCounts.cancelados > 0 && (
-                  <span className="badge" style={{ background: '#EF4444', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
-                    {filaCounts.cancelados}
-                  </span>
-                )}
-              </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAtendimentoViewMode('list');
+                setAtendimentoFila('alerts');
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
+                borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                background: (atendimentoViewMode === 'list' && atendimentoFila === 'alerts') ? 'var(--accent-glow)' : 'var(--surface)',
+                borderColor: (atendimentoViewMode === 'list' && atendimentoFila === 'alerts') ? 'var(--accent)' : 'var(--border)',
+                color: (atendimentoViewMode === 'list' && atendimentoFila === 'alerts') ? 'var(--accent)' : 'var(--text-secondary)'
+              }}
+            >
+              🔔 Alertas / Tarefas
+              {filaCounts.alerts > 0 && (
+                <span className="badge" style={{ background: 'var(--accent)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
+                  {filaCounts.alerts}
+                </span>
+              )}
+            </button>
 
-              <button
-                type="button"
-                onClick={() => setAtendimentoFila('expirar')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
-                  borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                  background: atendimentoFila === 'expirar' ? 'rgba(245, 158, 11, 0.1)' : 'var(--surface)',
-                  borderColor: atendimentoFila === 'expirar' ? '#F59E0B' : 'var(--border)',
-                  color: atendimentoFila === 'expirar' ? '#F59E0B' : 'var(--text-secondary)'
-                }}
-              >
-                ⏳ A Expirar
-                {filaCounts.expirar > 0 && (
-                  <span className="badge" style={{ background: '#F59E0B', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
-                    {filaCounts.expirar}
-                  </span>
-                )}
-              </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAtendimentoViewMode('list');
+                setAtendimentoFila('cancelados');
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
+                borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                background: (atendimentoViewMode === 'list' && atendimentoFila === 'cancelados') ? 'rgba(239, 68, 68, 0.1)' : 'var(--surface)',
+                borderColor: (atendimentoViewMode === 'list' && atendimentoFila === 'cancelados') ? '#EF4444' : 'var(--border)',
+                color: (atendimentoViewMode === 'list' && atendimentoFila === 'cancelados') ? '#EF4444' : 'var(--text-secondary)'
+              }}
+            >
+              🚫 Cancelados
+              {filaCounts.cancelados > 0 && (
+                <span className="badge" style={{ background: '#EF4444', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
+                  {filaCounts.cancelados}
+                </span>
+              )}
+            </button>
 
-              <button
-                type="button"
-                onClick={() => setAtendimentoFila('abandonados')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
-                  borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
-                  background: atendimentoFila === 'abandonados' ? 'rgba(6, 182, 212, 0.1)' : 'var(--surface)',
-                  borderColor: atendimentoFila === 'abandonados' ? 'var(--cyan)' : 'var(--border)',
-                  color: atendimentoFila === 'abandonados' ? 'var(--cyan)' : 'var(--text-secondary)'
-                }}
-              >
-                🛒 Abandonados (Fila Geral)
-                {filaCounts.abandonados > 0 && (
-                  <span className="badge" style={{ background: 'var(--cyan)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
-                    {filaCounts.abandonados}
-                  </span>
-                )}
-              </button>
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={() => {
+                setAtendimentoViewMode('list');
+                setAtendimentoFila('expirar');
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
+                borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                background: (atendimentoViewMode === 'list' && atendimentoFila === 'expirar') ? 'rgba(245, 158, 11, 0.1)' : 'var(--surface)',
+                borderColor: (atendimentoViewMode === 'list' && atendimentoFila === 'expirar') ? '#F59E0B' : 'var(--border)',
+                color: (atendimentoViewMode === 'list' && atendimentoFila === 'expirar') ? '#F59E0B' : 'var(--text-secondary)'
+              }}
+            >
+              ⏳ A Expirar
+              {filaCounts.expirar > 0 && (
+                <span className="badge" style={{ background: '#F59E0B', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
+                  {filaCounts.expirar}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setAtendimentoViewMode('list');
+                setAtendimentoFila('abandonados');
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', border: '1px solid var(--border)',
+                borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                background: (atendimentoViewMode === 'list' && atendimentoFila === 'abandonados') ? 'rgba(6, 182, 212, 0.1)' : 'var(--surface)',
+                borderColor: (atendimentoViewMode === 'list' && atendimentoFila === 'abandonados') ? 'var(--cyan)' : 'var(--border)',
+                color: (atendimentoViewMode === 'list' && atendimentoFila === 'abandonados') ? 'var(--cyan)' : 'var(--text-secondary)'
+              }}
+            >
+              🛒 Abandonados (Fila Geral)
+              {filaCounts.abandonados > 0 && (
+                <span className="badge" style={{ background: 'var(--cyan)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 10 }}>
+                  {filaCounts.abandonados}
+                </span>
+              )}
+            </button>
+          </div>
 
           {/* Controles de Filtro e Busca Unificados */}
           <div style={{
