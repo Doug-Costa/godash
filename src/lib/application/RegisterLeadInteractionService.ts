@@ -2,6 +2,8 @@ import { ICrmRepository, InteractionType, LossReason } from '@/lib/domain/crm.ty
 import { PrismaCrmRepository } from '@/lib/repositories/PrismaCrmRepository';
 import { CrmEventDispatcher } from '@/lib/domain/crm.events';
 import prisma from '@/lib/prisma';
+import pool from '@/lib/db';
+import { NotificationService } from '@/lib/services/NotificationService';
 import { JourneyTransitionService } from '@/lib/services/JourneyTransitionService';
 
 export class RegisterLeadInteractionService {
@@ -75,42 +77,101 @@ export class RegisterLeadInteractionService {
 
     const isFinalStage = nextStage === 'ganho' || nextStage === 'perdido' || type === 'LOST' || type === 'RECOVERED';
     if (isFinalStage && dbCustomer) {
-      // Execute the transition first while journeyId is still on the lead!
       const finalJourneyId = journeyId || dbCustomer.journeyId || null;
       const transStage = (nextStage === 'ganho' || type === 'RECOVERED') ? 'ganho' : 'perdido';
 
-      await JourneyTransitionService.handleTransition(
-        dbCustomer.id,
-        externalPersonId,
-        finalJourneyId,
-        transStage,
-        authorId
-      );
-
-      await prisma.task.deleteMany({
-        where: {
-          customerId: dbCustomer.id,
-          status: 'PENDING'
-        }
-      });
-
-      if (dbCustomer.journeyId !== null) {
-        await JourneyTransitionService.mergeCustomerToGeneric(
-          dbCustomer.id,
-          externalPersonId,
-          nextStage,
-          authorId
-        );
-      } else {
-        await prisma.customer.update({
-          where: { id: dbCustomer.id },
-          data: {
-            stage: nextStage,
-            joinedJourneyAt: null,
-            frozenUntil: null,
-            freezeReason: null
+      if (lossReason === 'DISCARD') {
+        // Tag as DISCARDED and clear tasks/journey, skip transition & WhatsApp flows
+        await prisma.task.deleteMany({
+          where: {
+            customerId: dbCustomer.id,
+            status: 'PENDING'
           }
         });
+
+        if (dbCustomer.journeyId !== null) {
+          // Merge to generic, setting tag to DISCARDED
+          await JourneyTransitionService.mergeCustomerToGeneric(
+            dbCustomer.id,
+            externalPersonId,
+            'perdido',
+            authorId
+          );
+          // Set tag as DISCARDED on the generic record
+          await prisma.customer.updateMany({
+            where: { externalPersonId, journeyId: null },
+            data: { tag: 'DISCARDED', lostReason: 'DISCARD' }
+          });
+        } else {
+          await prisma.customer.update({
+            where: { id: dbCustomer.id },
+            data: {
+              stage: 'perdido',
+              lostReason: 'DISCARD',
+              tag: 'DISCARDED',
+              joinedJourneyAt: null,
+              frozenUntil: null,
+              freezeReason: null
+            }
+          });
+        }
+      } else {
+        // Enviar fluxo padrão (WhatsApp oficial via Meta) de forma assíncrona
+        try {
+          const [personRows]: any = await pool.query(
+            'SELECT phoneNumber, fullName FROM people WHERE id = ? LIMIT 1',
+            [externalPersonId]
+          );
+          const person = personRows[0];
+          if (person && person.phoneNumber) {
+            if (transStage === 'ganho') {
+              const welcomeText = `Olá, ${person.fullName || 'Doutor(a)'}! Seja muito bem-vindo(a) ao DentalGO. É um prazer ter você conosco! Seu plano está ativo e começamos a nossa jornada de sucesso. Qualquer dúvida, estamos à inteira disposição!`;
+              await NotificationService.sendMessage(person.phoneNumber, 'WHATSAPP', welcomeText, { provider: 'META' });
+              console.log(`[Welcome WA] Enviado com sucesso para ${person.phoneNumber}`);
+            } else if (transStage === 'perdido') {
+              const cordialText = `Olá, ${person.fullName || 'Doutor(a)'}. Agradecemos muito pelo seu tempo e atenção durante o nosso contato. De qualquer forma, continuamos à sua inteira disposição! Foi muito bom conversar com você e desejamos muito sucesso em sua jornada.`;
+              await NotificationService.sendMessage(person.phoneNumber, 'WHATSAPP', cordialText, { provider: 'META' });
+              console.log(`[Cordial WA] Enviado com sucesso para ${person.phoneNumber}`);
+            }
+          }
+        } catch (waErr) {
+          console.error('[RegisterLeadInteractionService] WhatsApp dispatch error:', waErr);
+        }
+
+        // Run transition and merge/update
+        await JourneyTransitionService.handleTransition(
+          dbCustomer.id,
+          externalPersonId,
+          finalJourneyId,
+          transStage,
+          authorId
+        );
+
+        await prisma.task.deleteMany({
+          where: {
+            customerId: dbCustomer.id,
+            status: 'PENDING'
+          }
+        });
+
+        if (dbCustomer.journeyId !== null) {
+          await JourneyTransitionService.mergeCustomerToGeneric(
+            dbCustomer.id,
+            externalPersonId,
+            nextStage,
+            authorId
+          );
+        } else {
+          await prisma.customer.update({
+            where: { id: dbCustomer.id },
+            data: {
+              stage: nextStage,
+              joinedJourneyAt: null,
+              frozenUntil: null,
+              freezeReason: null
+            }
+          });
+        }
       }
     }
 

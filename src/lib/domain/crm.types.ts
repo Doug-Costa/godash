@@ -12,7 +12,8 @@ export type LossReason =
   | 'GHOSTING'
   | 'UNQUALIFIED'
   | 'PRICE'
-  | 'NO_RESPONSE';
+  | 'NO_RESPONSE'
+  | 'DISCARD';
 
 export type LeadTag = 'BOOK_CLIENT' | 'ABANDONED_CART' | 'CANCELED_CLIENT';
 

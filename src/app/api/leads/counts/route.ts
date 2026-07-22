@@ -30,12 +30,26 @@ export async function GET(request: Request) {
       endOfMonth = new Date(`${y}-${padM}-${padD}T23:59:59.999Z`);
     }
 
+    // Fetch all occupied customer IDs to exclude from free lists
+    const occupiedCustomers = await prisma.customer.findMany({
+      where: {
+        OR: [
+          { assigneeId: { not: null } },
+          { journeyId: { not: null } },
+          { tag: 'DISCARDED' }
+        ]
+      },
+      select: { externalPersonId: true }
+    });
+    const excludedIds = occupiedCustomers.map(c => c.externalPersonId);
+
     // 1. Campanhas (leads associados a campanhas)
     const campanhasCount = await prisma.customer.count({
       where: {
         assigneeId: isAgent ? userId : undefined,
         journeyId: campaignId && campaignId !== 'all' ? campaignId : { not: null },
-        joinedJourneyAt: hasMonthFilter ? { lte: endOfMonth! } : undefined
+        joinedJourneyAt: hasMonthFilter ? { lte: endOfMonth! } : undefined,
+        tag: { not: 'DISCARDED' }
       }
     });
 
@@ -44,6 +58,7 @@ export async function GET(request: Request) {
       where: {
         assigneeId: isAgent ? userId : undefined,
         journeyId: campaignId && campaignId !== 'all' ? campaignId : undefined,
+        tag: { not: 'DISCARDED' },
         tasks: {
           some: {
             completedAt: null,
@@ -53,7 +68,7 @@ export async function GET(request: Request) {
       }
     });
 
-    // 3. Cancelados
+    // 3. Cancelados (livres)
     let canceladosCount = 0;
     let canceladosQuery = `
       SELECT COUNT(DISTINCT p.id) as total
@@ -66,23 +81,14 @@ export async function GET(request: Request) {
       canceladosQuery += ` AND DATE_FORMAT(s.canceledAt, '%Y-%m') = ?`;
       canceladosParams.push(month);
     }
-    if (isAgent) {
-      const assigned = await prisma.customer.findMany({
-        where: { assigneeId: userId },
-        select: { externalPersonId: true }
-      });
-      const ids = assigned.map(c => c.externalPersonId);
-      if (ids.length > 0) {
-        canceladosQuery += ` AND p.id IN (?)`;
-        canceladosParams.push(ids);
-      } else {
-        canceladosQuery += ` AND 1=0`;
-      }
+    if (excludedIds.length > 0) {
+      canceladosQuery += ` AND p.id NOT IN (?)`;
+      canceladosParams.push(excludedIds);
     }
     const [canceladosRows] = await pool.query(canceladosQuery, canceladosParams);
     canceladosCount = (canceladosRows as any[])[0]?.total || 0;
 
-    // 4. A Expirar (assinaturas ativas expirando no período)
+    // 4. A Expirar (assinaturas ativas expirando no período - livres)
     let expirarQuery = `
       SELECT COUNT(DISTINCT p.id) as total
       FROM people p
@@ -99,29 +105,14 @@ export async function GET(request: Request) {
         AND COALESCE(s.isValidUntil, s.expiresIn) <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
       `;
     }
-    if (isAgent) {
-      const assigned = await prisma.customer.findMany({
-        where: { assigneeId: userId },
-        select: { externalPersonId: true }
-      });
-      const ids = assigned.map(c => c.externalPersonId);
-      if (ids.length > 0) {
-        expirarQuery += ` AND p.id IN (?)`;
-        expirarParams.push(ids);
-      } else {
-        expirarQuery += ` AND 1=0`;
-      }
+    if (excludedIds.length > 0) {
+      expirarQuery += ` AND p.id NOT IN (?)`;
+      expirarParams.push(excludedIds);
     }
     const [expirarRows] = await pool.query(expirarQuery, expirarParams);
     const expirarCount = (expirarRows as any[])[0]?.total || 0;
 
-    // 5. Abandonados (sem operador e sem plano ativo)
-    const assigned = await prisma.customer.findMany({
-      where: { assigneeId: { not: null } },
-      select: { externalPersonId: true }
-    });
-    const assignedIds = assigned.map(c => c.externalPersonId);
-
+    // 5. Abandonados (sem operador e sem plano ativo - livres)
     let abandonadosQuery = `
       SELECT COUNT(DISTINCT p.id) as total
       FROM people p
@@ -134,9 +125,9 @@ export async function GET(request: Request) {
       abandonadosQuery += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
       abandonadosParams.push(month);
     }
-    if (assignedIds.length > 0) {
+    if (excludedIds.length > 0) {
       abandonadosQuery += ` AND p.id NOT IN (?)`;
-      abandonadosParams.push(assignedIds);
+      abandonadosParams.push(excludedIds);
     }
     const [abandonadosRows] = await pool.query(abandonadosQuery, abandonadosParams);
     const abandonadosCount = (abandonadosRows as any[])[0]?.total || 0;

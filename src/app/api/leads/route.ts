@@ -144,6 +144,11 @@ export async function GET(request: Request) {
         crmFilter.tag = tag;
       }
 
+      // Exclude discarded from general queries
+      if (!atendimentoFila) {
+        crmFilter.tag = { not: 'DISCARDED' };
+      }
+
       // Filtros específicos da fila
       if (atendimentoFila) {
         if (atendimentoFila === 'campanhas') {
@@ -152,6 +157,7 @@ export async function GET(request: Request) {
             crmFilter.joinedJourneyAt = { lte: endOfMonth! };
           }
         } else if (atendimentoFila === 'alerts') {
+          crmFilter.tag = { not: 'DISCARDED' };
           crmFilter.tasks = {
             some: {
               completedAt: null,
@@ -161,15 +167,22 @@ export async function GET(request: Request) {
         }
       }
 
-      if (atendimentoFila === 'abandonados') {
-        const assignedCustomers = await prisma.customer.findMany({
-          where: { assigneeId: { not: null } },
+      const isFreeSearchQueue = atendimentoFila === 'cancelados' || atendimentoFila === 'expirar' || atendimentoFila === 'abandonados';
+      if (isFreeSearchQueue) {
+        const occupiedCustomers = await prisma.customer.findMany({
+          where: {
+            OR: [
+              { assigneeId: { not: null } },
+              { journeyId: { not: null } },
+              { tag: 'DISCARDED' }
+            ]
+          },
           select: { externalPersonId: true }
         });
-        const assignedIds = assignedCustomers.map(c => c.externalPersonId);
-        if (assignedIds.length > 0) {
+        const excludedIds = occupiedCustomers.map(c => c.externalPersonId);
+        if (excludedIds.length > 0) {
           whereClause += ` AND p.id NOT IN (?)`;
-          params.push(assignedIds);
+          params.push(excludedIds);
         }
       } else {
         if (Object.keys(crmFilter).length > 0 || isAgent || hasStage || hasAssignee || hasLossReason || hasTag || hasPipeline || (atendimentoFila && isPostgresQueue)) {
@@ -275,7 +288,7 @@ export async function GET(request: Request) {
           select: { id: true, name: true }
         },
         journey: {
-          select: { id: true, name: true }
+          select: { id: true, name: true, durationDays: true }
         },
         tasks: {
           where: { status: 'PENDING' }
@@ -379,6 +392,18 @@ export async function GET(request: Request) {
       ints.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
 
+    // Fetch all customer states for these personIds to populate assigneeByPersonId
+    const allStatesForAssignee = await prisma.customer.findMany({
+      where: { externalPersonId: { in: personIds } },
+      include: { assignee: { select: { id: true, name: true } } }
+    });
+    const assigneeByPersonId = new Map();
+    allStatesForAssignee.forEach(s => {
+      if (s.assignee) {
+        assigneeByPersonId.set(s.externalPersonId, s.assignee);
+      }
+    });
+
     const peopleMap = new Map();
     (rows as any[]).forEach(r => {
       peopleMap.set(r.id, r);
@@ -409,7 +434,12 @@ export async function GET(request: Request) {
 
         return {
           id: r.id, // ID no MySQL para o front saber qual lead é (externalPersonId)
-          journeyId: c.journeyId, // A jornada associada a esse card
+          journeyId: c.journey && (() => {
+            const joinedAt = c.joinedJourneyAt || c.createdAt;
+            const durationDays = c.journey.durationDays || 30;
+            const elapsedMs = new Date().getTime() - new Date(joinedAt).getTime();
+            return elapsedMs <= durationDays * 24 * 60 * 60 * 1000;
+          })() ? c.journeyId : null,
           customerCuid: c.id, // O ID único (CUID) do customer no Postgres
           fullName: r.fullName || 'Sem Nome',
           email: r.email || '',
@@ -423,11 +453,19 @@ export async function GET(request: Request) {
           } : null,
           stage: c.stage || 'novo_cadastro',
           tag: c.tag || null,
-          assignee: c.assignee ? {
+          assignee: assigneeByPersonId.has(r.id) ? {
+            id: assigneeByPersonId.get(r.id).id,
+            name: assigneeByPersonId.get(r.id).name
+          } : c.assignee ? {
             id: c.assignee.id,
             name: c.assignee.name
           } : null,
-          campaign: c.journey ? {
+          campaign: c.journey && (() => {
+            const joinedAt = c.joinedJourneyAt || c.createdAt;
+            const durationDays = c.journey.durationDays || 30;
+            const elapsedMs = new Date().getTime() - new Date(joinedAt).getTime();
+            return elapsedMs <= durationDays * 24 * 60 * 60 * 1000;
+          })() ? {
             id: c.journey.id,
             name: c.journey.name
           } : null,
@@ -466,7 +504,12 @@ export async function GET(request: Request) {
 
         return {
           id: r.id,
-          journeyId: state?.journeyId || null,
+          journeyId: state?.journey && (() => {
+            const joinedAt = state.joinedJourneyAt || state.createdAt;
+            const durationDays = state.journey.durationDays || 30;
+            const elapsedMs = new Date().getTime() - new Date(joinedAt).getTime();
+            return elapsedMs <= durationDays * 24 * 60 * 60 * 1000;
+          })() ? state.journeyId : null,
           customerCuid: state?.id || null,
           fullName: r.fullName || 'Sem Nome',
           email: r.email || '',
@@ -480,11 +523,19 @@ export async function GET(request: Request) {
           } : null,
           stage: state?.stage || 'novo_cadastro',
           tag: state?.tag || null,
-          assignee: state?.assignee ? {
+          assignee: assigneeByPersonId.has(r.id) ? {
+            id: assigneeByPersonId.get(r.id).id,
+            name: assigneeByPersonId.get(r.id).name
+          } : state?.assignee ? {
             id: state.assignee.id,
             name: state.assignee.name
           } : null,
-          campaign: state?.journey ? {
+          campaign: state?.journey && (() => {
+            const joinedAt = state.joinedJourneyAt || state.createdAt;
+            const durationDays = state.journey.durationDays || 30;
+            const elapsedMs = new Date().getTime() - new Date(joinedAt).getTime();
+            return elapsedMs <= durationDays * 24 * 60 * 60 * 1000;
+          })() ? {
             id: state.journey.id,
             name: state.journey.name
           } : null,
@@ -755,6 +806,29 @@ export async function POST(request: Request) {
     // Sort unified notes by date descending
     unifiedNotes.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+    // Fetch campaign details if active
+    let activeCampaign = null;
+    let activeJourneyId = null;
+
+    if (updatedState && updatedState.journeyId) {
+      const journey = await prisma.journey.findUnique({
+        where: { id: updatedState.journeyId }
+      });
+      if (journey) {
+        const joinedAt = updatedState.joinedJourneyAt || updatedState.createdAt;
+        const durationDays = journey.durationDays || 30;
+        const elapsedMs = new Date().getTime() - new Date(joinedAt).getTime();
+        const isCampaignActive = elapsedMs <= durationDays * 24 * 60 * 60 * 1000;
+        if (isCampaignActive) {
+          activeJourneyId = updatedState.journeyId;
+          activeCampaign = {
+            id: journey.id,
+            name: journey.name
+          };
+        }
+      }
+    }
+
     const formattedData = {
       leadId: externalPersonId,
       stage: updatedState?.stage || 'novo_cadastro',
@@ -763,6 +837,8 @@ export async function POST(request: Request) {
         id: updatedState.assignee.id,
         name: updatedState.assignee.name
       } : null,
+      journeyId: activeJourneyId,
+      campaign: activeCampaign,
       notes: unifiedNotes,
       metadata: unifiedMeta,
       scheduledFor: unifiedScheduledFor,
