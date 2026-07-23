@@ -15,11 +15,30 @@ export async function GET() {
       }
     });
 
+    const lastUpdatedCustomers = await prisma.customer.findMany({
+      take: 10,
+      orderBy: { updatedAt: 'desc' },
+      include: {
+        assignee: { select: { name: true } },
+        pipeline: { select: { name: true } }
+      }
+    });
+
+    const adminCustomers = await prisma.customer.findMany({
+      where: { assigneeId: 'cmrjimfi40003qa25nrnser6j' },
+      include: {
+        assignee: { select: { name: true } },
+        pipeline: { select: { name: true } }
+      }
+    });
+
     return NextResponse.json({
       success: true,
       users,
       customersCount: customers.length,
-      customers
+      last10Updated: lastUpdatedCustomers,
+      adminCustomersCount: adminCustomers.length,
+      adminCustomers
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message });
