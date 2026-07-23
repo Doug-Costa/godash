@@ -671,6 +671,8 @@ export default function DashboardContent({
   const handleActionDisposition = async (type: string, lossReason?: string, scheduledFor?: string) => {
     if (!selectedLead) return;
 
+    const autoAssign = !selectedLead.assignee && currentUser?.id && type !== 'LOST' && type !== 'RECOVERED';
+
     try {
       const res = await fetch('/api/leads', {
         method: 'POST',
@@ -683,25 +685,30 @@ export default function DashboardContent({
           lostReason: lossReason, // Mapeamento para o novo campo do SQLite
           note: detailNote.trim() !== '' ? detailNote : undefined,
           scheduledFor,
+          ...(autoAssign && { assigneeId: currentUser.id, stage: 'contato_inicial' })
         }),
       });
 
       if (res.ok) {
         const json = await res.json();
-        setSelectedLead((prev: any) => ({
-          ...prev,
-          ...json.data,
-          notes: json.data.notes || [],
-        }));
+        if (autoAssign || type === 'LOST' || type === 'RECOVERED') {
+          setShowTimelineModal(false);
+          if (autoAssign) {
+            setAtendimentoViewMode('kanban');
+            setActiveTab('atendimento');
+          }
+        } else {
+          setSelectedLead((prev: any) => ({
+            ...prev,
+            ...json.data,
+            notes: json.data.notes || [],
+          }));
+        }
         setDetailNote('');
         setShowLossReasons(false);
         setShowScheduler(false);
         setScheduledDate('');
         fetchLeads();
-
-        if (type === 'LOST' || type === 'RECOVERED') {
-          setShowTimelineModal(false);
-        }
       }
     } catch (err) {
       console.error('Failed to register action disposition:', err);
@@ -713,6 +720,8 @@ export default function DashboardContent({
     e.preventDefault();
     if (!selectedLead || detailNote.trim() === '') return;
 
+    const autoAssign = !selectedLead.assignee && currentUser?.id;
+
     try {
       const res = await fetch('/api/leads', {
         method: 'POST',
@@ -721,17 +730,23 @@ export default function DashboardContent({
           leadId: selectedLead.id,
           journeyId: selectedLead.journeyId || null,
           note: detailNote,
+          ...(autoAssign && { assigneeId: currentUser.id, stage: 'contato_inicial' })
         }),
       });
 
       if (res.ok) {
         const json = await res.json();
-        // Update local modal data
-        setSelectedLead((prev: any) => ({
-          ...prev,
-          ...json.data,
-          notes: json.data.notes || [],
-        }));
+        if (autoAssign) {
+          setShowTimelineModal(false);
+          setAtendimentoViewMode('kanban');
+          setActiveTab('atendimento');
+        } else {
+          setSelectedLead((prev: any) => ({
+            ...prev,
+            ...json.data,
+            notes: json.data.notes || [],
+          }));
+        }
         setDetailNote('');
         fetchLeads();
       }
@@ -751,6 +766,8 @@ export default function DashboardContent({
     }
 
     try {
+      const isAssigningToMe = field === 'assigneeId' && value === currentUser?.id;
+
       const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -758,16 +775,23 @@ export default function DashboardContent({
           leadId: selectedLead.id,
           journeyId: selectedLead.journeyId || null,
           [field]: value,
+          ...(isAssigningToMe && { stage: 'contato_inicial' })
         }),
       });
 
       if (res.ok) {
         const json = await res.json();
-        setSelectedLead((prev: any) => ({
-          ...prev,
-          stage: json.data.stage,
-          assignee: json.data.assignee,
-        }));
+        if (isAssigningToMe) {
+          setShowTimelineModal(false);
+          setAtendimentoViewMode('kanban');
+          setActiveTab('atendimento');
+        } else {
+          setSelectedLead((prev: any) => ({
+            ...prev,
+            stage: json.data.stage,
+            assignee: json.data.assignee,
+          }));
+        }
         fetchLeads();
       }
     } catch (err) {
@@ -1940,6 +1964,8 @@ export default function DashboardContent({
                                         })
                                       });
                                       if (res.ok) {
+                                        setAtendimentoViewMode('kanban');
+                                        setActiveTab('atendimento');
                                         fetchLeads();
                                       }
                                     } catch (err) {
