@@ -6,6 +6,22 @@ import prisma from '@/lib/prisma';
 
 const crmRepository = new PrismaCrmRepository();
 
+async function ensureUserExists(userId: string, session: any) {
+  const userExists = await prisma.user.findUnique({ where: { id: userId } });
+  if (!userExists) {
+    await prisma.user.create({
+      data: {
+        id: userId,
+        name: session.user.name || 'Operador',
+        email: session.user.email || 'operador@dentalgo.com',
+        role: (session.user as any).role || 'AGENT',
+        isActive: true
+      }
+    });
+    console.log(`[AutoHeal] Created missing user in Postgres: ${userId}`);
+  }
+}
+
 export async function GET() {
   try {
     const session = await auth();
@@ -15,6 +31,7 @@ export async function GET() {
 
     const role = (session.user as any).role || 'AGENT';
     const userId = session.user.id;
+    await ensureUserExists(userId, session);
     const isAgent = role === 'AGENT' || role === 'POST_SALES';
 
     const customers = await prisma.customer.findMany({
@@ -94,12 +111,8 @@ export async function POST(request: Request) {
 
     const session = await auth();
     let authorId = (session?.user as any)?.id;
-
     if (authorId) {
-      const userExists = await prisma.user.findUnique({ where: { id: authorId } });
-      if (!userExists) {
-        authorId = null;
-      }
+      await ensureUserExists(authorId, session);
     }
 
     if (!authorId) {

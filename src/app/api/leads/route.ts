@@ -9,6 +9,22 @@ import { JourneyTransitionService } from '@/lib/services/JourneyTransitionServic
 
 const crmRepository = new PrismaCrmRepository();
 
+async function ensureUserExists(userId: string, session: any) {
+  const userExists = await prisma.user.findUnique({ where: { id: userId } });
+  if (!userExists) {
+    await prisma.user.create({
+      data: {
+        id: userId,
+        name: session.user.name || 'Operador',
+        email: session.user.email || 'operador@dentalgo.com',
+        role: (session.user as any).role || 'AGENT',
+        isActive: true
+      }
+    });
+    console.log(`[AutoHeal] Created missing user in Postgres: ${userId}`);
+  }
+}
+
 export async function GET(request: Request) {
   const session = await auth();
   if (!session || !session.user?.id) {
@@ -17,6 +33,7 @@ export async function GET(request: Request) {
 
   const role = (session.user as any).role || 'AGENT';
   const userId = session.user.id;
+  await ensureUserExists(userId, session);
 
   const { searchParams } = new URL(request.url);
   const month = searchParams.get('month'); // YYYY-MM
@@ -578,12 +595,8 @@ export async function POST(request: Request) {
   try {
     const session = await auth();
     let authorId = (session?.user as any)?.id;
-
     if (authorId) {
-      const userExists = await prisma.user.findUnique({ where: { id: authorId } });
-      if (!userExists) {
-        authorId = null;
-      }
+      await ensureUserExists(authorId, session);
     }
 
     if (!authorId) {

@@ -5,6 +5,22 @@ import { auth } from '@/auth';
 import { NotificationService } from '@/lib/services/NotificationService';
 import { compileTemplate } from '@/lib/services/providers/MailerProvider';
 
+async function ensureUserExists(userId: string, session: any) {
+  const userExists = await prisma.user.findUnique({ where: { id: userId } });
+  if (!userExists) {
+    await prisma.user.create({
+      data: {
+        id: userId,
+        name: session.user.name || 'Operador',
+        email: session.user.email || 'operador@dentalgo.com',
+        role: (session.user as any).role || 'AGENT',
+        isActive: true
+      }
+    });
+    console.log(`[AutoHeal] Created missing user in Postgres: ${userId}`);
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const session = await auth();
@@ -13,6 +29,7 @@ export async function GET(request: Request) {
     }
 
     const userId = session.user.id;
+    await ensureUserExists(userId, session);
     const { searchParams } = new URL(request.url);
 
     // Parâmetros de Paginação
@@ -273,6 +290,7 @@ export async function POST(request: Request) {
     }
 
     const userId = session.user.id;
+    await ensureUserExists(userId, session);
     const body = await request.json();
     const { action } = body;
 
