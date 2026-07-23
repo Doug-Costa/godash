@@ -5,6 +5,46 @@ import { auth } from '@/auth';
 import { NotificationService } from '@/lib/services/NotificationService';
 import { compileTemplate } from '@/lib/services/providers/MailerProvider';
 
+async function ensurePipelinesExist() {
+  const pipelineCount = await prisma.pipeline.count();
+  if (pipelineCount === 0) {
+    const defaultPipelines = ['Vendas', 'CS', 'Nutrição'];
+    let vendasId = '';
+    for (const name of defaultPipelines) {
+      const created = await prisma.pipeline.create({
+        data: {
+          name,
+          description: `Funil padrão de ${name}`
+        }
+      });
+      if (name === 'Vendas') {
+        vendasId = created.id;
+      }
+    }
+    console.log(`[AutoHeal] Created default pipelines`);
+
+    if (vendasId) {
+      const healedCount = await prisma.customer.updateMany({
+        where: { pipelineId: null },
+        data: { pipelineId: vendasId }
+      });
+      console.log(`[AutoHeal] Associated ${healedCount.count} customers with Vendas pipeline`);
+    }
+  } else {
+    const orphanCount = await prisma.customer.count({ where: { pipelineId: null } });
+    if (orphanCount > 0) {
+      const vendasPipeline = await prisma.pipeline.findFirst({ where: { name: 'Vendas' } }) || await prisma.pipeline.findFirst();
+      if (vendasPipeline) {
+        const healedCount = await prisma.customer.updateMany({
+          where: { pipelineId: null },
+          data: { pipelineId: vendasPipeline.id }
+        });
+        console.log(`[AutoHeal] Associated ${healedCount.count} orphan customers with Vendas pipeline`);
+      }
+    }
+  }
+}
+
 async function ensureUserExists(userId: string, session: any) {
   const userExists = await prisma.user.findUnique({ where: { id: userId } });
   if (!userExists) {
@@ -30,6 +70,7 @@ export async function GET(request: Request) {
 
     const userId = session.user.id;
     await ensureUserExists(userId, session);
+    await ensurePipelinesExist();
     const { searchParams } = new URL(request.url);
 
     // Parâmetros de Paginação
@@ -291,6 +332,7 @@ export async function POST(request: Request) {
 
     const userId = session.user.id;
     await ensureUserExists(userId, session);
+    await ensurePipelinesExist();
     const body = await request.json();
     const { action } = body;
 
