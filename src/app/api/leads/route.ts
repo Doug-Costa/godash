@@ -93,22 +93,11 @@ export async function GET(request: Request) {
 
     // JOIN dinâmico de subscrições: se estiver visualizando filas de atendimento,
     // não mascara os registros pela competência de June/July nas cláusulas JOIN, permitindo obter as datas de cancelamento verdadeiras.
-    let fromAndJoin = '';
-    if (!atendimentoFila || !hasMonthFilter) {
-      fromAndJoin = `
-        FROM people p
-        LEFT JOIN subscriptions s ON s.personId = p.id
-        LEFT JOIN plans pl ON s.planId = pl.id
-      `;
-    } else {
-      fromAndJoin = `
-        FROM people p
-        LEFT JOIN subscriptions s ON s.personId = p.id 
-          AND s.createdAt <= LAST_DAY(CONCAT(?, '-01')) 
-          AND (s.canceledAt IS NULL OR s.canceledAt > LAST_DAY(CONCAT(?, '-01')))
-        LEFT JOIN plans pl ON s.planId = pl.id
-      `;
-    }
+    const fromAndJoin = `
+      FROM people p
+      LEFT JOIN subscriptions s ON s.personId = p.id
+      LEFT JOIN plans pl ON s.planId = pl.id
+    `;
 
     let whereClause = ' WHERE 1=1';
     const params: any[] = [];
@@ -267,7 +256,7 @@ export async function GET(request: Request) {
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    const joinParams = (atendimentoFila && hasMonthFilter) ? [targetMonth, targetMonth] : [];
+    const joinParams: any[] = [];
 
     // EXECUTAR CONTAGEM PARA PAGINAÇÃO
     const countQuery = `SELECT COUNT(DISTINCT p.id) as total ${fromAndJoin} ${whereClause}`;
