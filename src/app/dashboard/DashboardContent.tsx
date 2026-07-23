@@ -1668,7 +1668,7 @@ export default function DashboardContent({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, overflowX: 'auto', minHeight: '60vh' }}>
             {(() => {
               const currentPipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0];
-              const stages = currentPipeline ? currentPipeline.stages : [
+              const stages = (currentPipeline && currentPipeline.stages) ? currentPipeline.stages : [
                 { key: 'novo_cadastro', label: 'Novo Cadastro' },
                 { key: 'contato_inicial', label: 'Contato Inicial' },
                 { key: 'negociacao', label: 'Em Negociação' },
