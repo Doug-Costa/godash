@@ -38,7 +38,9 @@ export default function RevenueChart({ data, month, totalSalesCount, totalYield,
   const totalSalesFromBars = data.reduce((sum, d) => sum + Number(d.sales), 0);
   
   // Fix for Timezone: Add T12:00:00 to month string
-  const monthLabel = month ? new Date(month + '-01T12:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) : 'Meses Anteriores';
+  const monthLabel = month && month !== 'all'
+    ? new Date(month + '-01T12:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+    : 'Histórico Completo';
 
 
 

@@ -29,7 +29,9 @@ const formatPeriod = (periodStr: string) => {
 };
 
 export default function GrowthTrendChart({ data, month }: GrowthTrendChartProps) {
-  const monthLabel = month ? new Date(month + '-01T12:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) : 'Tendência de Crescimento';
+  const monthLabel = month && month !== 'all'
+    ? new Date(month + '-01T12:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+    : 'Histórico Completo';
 
   return (
     <div className="card animate-fadeUp" style={{ animationDelay: '200ms', minHeight: 400, display: 'flex', flexDirection: 'column' }}>
