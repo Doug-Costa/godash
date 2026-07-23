@@ -12,11 +12,16 @@ export class PrismaCrmRepository implements ICrmRepository {
 
     if (existing) return existing;
 
+    const defaultPipeline = await prisma.pipeline.findFirst({
+      where: { name: 'Vendas' }
+    }) || await prisma.pipeline.findFirst();
+
     return prisma.customer.create({
       data: {
         externalPersonId,
         journeyId: journeyId || null,
-        stage: 'novo_cadastro'
+        stage: 'novo_cadastro',
+        pipelineId: defaultPipeline?.id || null
       }
     });
   }
@@ -87,9 +92,16 @@ export class PrismaCrmRepository implements ICrmRepository {
   async updateStage(externalPersonId: number, newStage: string, journeyId?: string | null): Promise<CrmCustomer> {
     const customer = await this.findOrCreateCustomer(externalPersonId, journeyId);
     
+    const defaultPipeline = !customer.pipelineId 
+      ? (await prisma.pipeline.findFirst({ where: { name: 'Vendas' } }) || await prisma.pipeline.findFirst())
+      : null;
+
     const updated = await prisma.customer.update({
       where: { id: customer.id },
-      data: { stage: newStage }
+      data: { 
+        stage: newStage,
+        ...(defaultPipeline && { pipelineId: defaultPipeline.id })
+      }
     });
 
     return {
@@ -117,9 +129,16 @@ export class PrismaCrmRepository implements ICrmRepository {
   async assignLead(externalPersonId: number, assigneeId: string | null, journeyId?: string | null): Promise<CrmCustomer> {
     const customer = await this.findOrCreateCustomer(externalPersonId, journeyId);
 
+    const defaultPipeline = !customer.pipelineId 
+      ? (await prisma.pipeline.findFirst({ where: { name: 'Vendas' } }) || await prisma.pipeline.findFirst())
+      : null;
+
     const updated = await prisma.customer.update({
       where: { id: customer.id },
-      data: { assigneeId }
+      data: { 
+        assigneeId,
+        ...(defaultPipeline && { pipelineId: defaultPipeline.id })
+      }
     });
 
     return {
