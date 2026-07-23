@@ -398,8 +398,15 @@ export async function GET(request: Request) {
       include: { assignee: { select: { id: true, name: true } } }
     });
     const assigneeByPersonId = new Map();
+    // First, set assignees from campaign records (journeyId is not null)
     allStatesForAssignee.forEach(s => {
-      if (s.assignee) {
+      if (s.journeyId !== null && s.assignee) {
+        assigneeByPersonId.set(s.externalPersonId, s.assignee);
+      }
+    });
+    // Then, overwrite with the assignee of the general record (journeyId is null), which has highest priority
+    allStatesForAssignee.forEach(s => {
+      if (s.journeyId === null && s.assignee) {
         assigneeByPersonId.set(s.externalPersonId, s.assignee);
       }
     });

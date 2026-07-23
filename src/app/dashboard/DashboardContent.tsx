@@ -294,8 +294,10 @@ export default function DashboardContent({
       if (filterStage !== '') url += `&stage=${filterStage}`;
       if (filterAssignee !== 'all') url += `&assigneeId=${filterAssignee}`;
       if (activePipelineId !== '') url += `&pipelineId=${activePipelineId}`;
-      if (activeTab === 'atendimento' && atendimentoViewMode === 'list') {
-        url += `&atendimentoFila=${atendimentoFila}`;
+      if (activeTab === 'atendimento') {
+        if (atendimentoViewMode === 'list') {
+          url += `&atendimentoFila=${atendimentoFila}`;
+        }
         if (filterCampaignId !== 'all') {
           url += `&campaignId=${filterCampaignId}`;
         }
@@ -1566,6 +1568,20 @@ export default function DashboardContent({
                 <option value="none">Cadastro Grátis (Sem Plano)</option>
                 {users?.usersByPlan?.map((p: any) => (
                   <option key={p.planId} value={p.planId}>{p.planTitle}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>🎯 Campanha:</label>
+              <select 
+                value={filterCampaignId} 
+                onChange={(e) => setFilterCampaignId(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
+              >
+                <option value="all">Todas as Campanhas</option>
+                {campaignsData.map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
