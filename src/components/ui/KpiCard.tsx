@@ -15,16 +15,18 @@ interface KpiCardProps {
 }
 
 const accentColors: Record<string, { border: string; text: string }> = {
-  cyan:   { border: 'var(--accent)',  text: 'var(--accent)' },
-  green:  { border: 'var(--green)',   text: 'var(--green)' },
-  yellow: { border: 'var(--yellow)',  text: 'var(--yellow)' },
-  red:    { border: 'var(--red)',     text: 'var(--red)' },
-  purple: { border: 'var(--purple)',  text: 'var(--purple)' },
+  cyan:    { border: 'var(--accent)',  text: 'var(--accent)' },
+  green:   { border: 'var(--green)',   text: 'var(--green)' },
+  yellow:  { border: 'var(--yellow)',  text: 'var(--yellow)' },
+  red:     { border: 'var(--red)',     text: 'var(--red)' },
+  purple:  { border: 'var(--purple)',  text: 'var(--purple)' },
+  emerald: { border: 'var(--green)',   text: 'var(--green)' },
+  blue:    { border: 'var(--accent)',  text: 'var(--accent)' },
 };
 
 export default function KpiCard({ title, value, subtitle, trend, accent = 'cyan', delay = 0 }: KpiCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
-  const colors = accentColors[accent];
+  const colors = accentColors[accent] || accentColors.cyan;
 
   useEffect(() => {
     const el = cardRef.current;
