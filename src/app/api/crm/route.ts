@@ -49,11 +49,18 @@ async function ensurePipelinesExist() {
 async function ensureUserExists(userId: string, session: any) {
   const userExists = await prisma.user.findUnique({ where: { id: userId } });
   if (!userExists) {
+    const email = session?.user?.email || 'operador@dentalgo.com';
+    const userByEmail = await prisma.user.findFirst({ where: { email } });
+    if (userByEmail) {
+      console.warn(`[AutoHeal] User with email ${email} already exists in database with ID ${userByEmail.id}. Skipping creation for ID ${userId} to avoid unique constraint error.`);
+      return;
+    }
+
     await prisma.user.create({
       data: {
         id: userId,
         name: session.user.name || 'Operador',
-        email: session.user.email || 'operador@dentalgo.com',
+        email,
         role: (session.user as any).role || 'AGENT',
         isActive: true
       }
