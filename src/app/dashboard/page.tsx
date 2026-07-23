@@ -69,36 +69,46 @@ export default async function DashboardPage({
     users = await fetchData('users', { month });
   }
 
-  // 3. Fetch agents list from SQLite and format nullable properties
-  const rawAgents = await prisma.user.findMany({
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-    },
-    orderBy: { name: 'asc' },
-  });
+  // 3. Fetch agents list from Database and format nullable properties
+  let agents: any[] = [];
+  try {
+    const rawAgents = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+      },
+      orderBy: { name: 'asc' },
+    });
 
-  const agents = rawAgents.map(a => ({
-    id: a.id,
-    name: a.name || 'Agente',
-    email: a.email || '',
-    role: a.role,
-    isActive: a.isActive
-  }));
+    agents = rawAgents.map(a => ({
+      id: a.id,
+      name: a.name || 'Agente',
+      email: a.email || '',
+      role: a.role,
+      isActive: a.isActive
+    }));
+  } catch (err: any) {
+    console.error('❌ Error fetching agents in DashboardPage:', err.message);
+  }
 
-  // 4. Fetch pipelines from PostgreSQL
-  const rawPipelines = await prisma.pipeline.findMany({
-    orderBy: { name: 'asc' }
-  });
+  // 4. Fetch pipelines from Database
+  let pipelines: any[] = [];
+  try {
+    const rawPipelines = await prisma.pipeline.findMany({
+      orderBy: { name: 'asc' }
+    });
 
-  const pipelines = rawPipelines.map(p => ({
-    id: p.id,
-    name: p.name,
-    description: p.description
-  }));
+    pipelines = rawPipelines.map(p => ({
+      id: p.id,
+      name: p.name,
+      description: p.description
+    }));
+  } catch (err: any) {
+    console.error('❌ Error fetching pipelines in DashboardPage:', err.message);
+  }
 
   return (
     <DashboardContent
