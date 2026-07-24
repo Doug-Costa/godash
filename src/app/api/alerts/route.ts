@@ -350,9 +350,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: 'personId é obrigatório' }, { status: 400 });
       }
 
-      const vendasPipeline = await prisma.pipeline.findUnique({
+      const vendasPipeline = await prisma.pipeline.findFirst({
         where: { name: 'Vendas' }
-      });
+      }) || await prisma.pipeline.findFirst();
       const pipelineId = vendasPipeline?.id || null;
 
       let customer = await prisma.customer.findFirst({
