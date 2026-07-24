@@ -280,11 +280,16 @@ export default function DashboardContent({
   const [filterCampaignId, setFilterCampaignId] = useState('all');
 
   // Load leads based on current filters
-  const fetchLeads = async (forcedViewMode?: 'kanban' | 'list', forcedFila?: 'alerts' | 'cancelados' | 'expirar' | 'abandonados') => {
+  const fetchLeads = async (
+    forcedViewMode?: 'kanban' | 'list', 
+    forcedFila?: 'alerts' | 'cancelados' | 'expirar' | 'abandonados',
+    forcedPipelineId?: string
+  ) => {
     setLoadingLeads(true);
     try {
       const viewMode = forcedViewMode || atendimentoViewMode;
       const fila = forcedFila || atendimentoFila;
+      const pipelineId = forcedPipelineId || activePipelineId;
       const monthParam = (activeTab === 'kanban' && kanbanFilterAllMonths) ? 'all' : filterMonth;
       
       const useLimit = viewMode === 'kanban' ? 1000 : leadsLimit;
@@ -295,7 +300,7 @@ export default function DashboardContent({
       if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
       if (filterStage !== '') url += `&stage=${filterStage}`;
       if (filterAssignee !== 'all') url += `&assigneeId=${filterAssignee}`;
-      if (activePipelineId !== '') url += `&pipelineId=${activePipelineId}`;
+      if (pipelineId !== '') url += `&pipelineId=${pipelineId}`;
       if (activeTab === 'atendimento') {
         if (viewMode === 'list') {
           url += `&atendimentoFila=${fila}`;
@@ -1123,9 +1128,12 @@ export default function DashboardContent({
         const json = await res.json();
         if (json.success && json.data?.pipelineId) {
           setActivePipelineId(json.data.pipelineId);
+          fetchAlerts();
+          fetchLeads('kanban', undefined, json.data.pipelineId);
+        } else {
+          fetchAlerts();
+          fetchLeads('kanban');
         }
-        fetchAlerts();
-        fetchLeads('kanban');
       }
     } catch (err) {
       console.error('Failed to claim orphaned lead:', err);
@@ -1824,10 +1832,14 @@ export default function DashboardContent({
                                       const json = await res.json();
                                       if (json.success && json.data?.pipelineId) {
                                         setActivePipelineId(json.data.pipelineId);
+                                        setAtendimentoViewMode('kanban');
+                                        setActiveTab('atendimento');
+                                        fetchLeads('kanban', undefined, json.data.pipelineId);
+                                      } else {
+                                        setAtendimentoViewMode('kanban');
+                                        setActiveTab('atendimento');
+                                        fetchLeads('kanban');
                                       }
-                                      setAtendimentoViewMode('kanban');
-                                      setActiveTab('atendimento');
-                                      fetchLeads('kanban');
                                     }
                                   } catch (err) {
                                     console.error(err);
@@ -1979,10 +1991,14 @@ export default function DashboardContent({
                                         const json = await res.json();
                                         if (json.success && json.data?.pipelineId) {
                                           setActivePipelineId(json.data.pipelineId);
+                                          setAtendimentoViewMode('kanban');
+                                          setActiveTab('atendimento');
+                                          fetchLeads('kanban', undefined, json.data.pipelineId);
+                                        } else {
+                                          setAtendimentoViewMode('kanban');
+                                          setActiveTab('atendimento');
+                                          fetchLeads('kanban');
                                         }
-                                        setAtendimentoViewMode('kanban');
-                                        setActiveTab('atendimento');
-                                        fetchLeads('kanban');
                                       }
                                     } catch (err) {
                                       console.error(err);
