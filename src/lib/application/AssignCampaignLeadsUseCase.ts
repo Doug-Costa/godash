@@ -26,29 +26,30 @@ export class AssignCampaignLeadsUseCase {
       operatorAssignments[uid] = 0;
     }
 
-    // Parse baseline date to local midnight to avoid timezone shifts
+    // Parse baseline date in UTC explicit to avoid server timezone discrepancies
     let baseDate = new Date();
     if (startDate) {
       const parts = startDate.split('-');
       if (parts.length === 3) {
-        baseDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
+        baseDate = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0, 0));
       }
     } else {
-      baseDate.setHours(0, 0, 0, 0);
+      baseDate = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), baseDate.getUTCDate(), 12, 0, 0, 0));
     }
 
     const now = new Date();
+    const tasksToCreate: any[] = [];
 
     for (let i = 0; i < externalPersonIds.length; i++) {
       const externalPersonId = externalPersonIds[i];
       const assigneeId = userIds[i % operatorCount];
       const countForAgent = operatorAssignments[assigneeId]++;
 
-      // Calcular o joinedCampaignAt com base no limitPerDay e na data base de início
+      // Calcular o joinedCampaignAt com base no limitPerDay e na data base de início em UTC
       const joinedCampaignAt = new Date(baseDate.getTime());
       if (limitPerDay && limitPerDay > 0) {
         const daysDelay = Math.floor(countForAgent / limitPerDay);
-        joinedCampaignAt.setDate(joinedCampaignAt.getDate() + daysDelay);
+        joinedCampaignAt.setUTCDate(joinedCampaignAt.getUTCDate() + daysDelay);
       }
 
       let customer = await prisma.customer.findFirst({
@@ -102,7 +103,7 @@ export class AssignCampaignLeadsUseCase {
         );
       }
 
-      // 4. Pré-gerar alertas de tarefas da jornada se a data agendada for agora ou no passado
+      // 4. Acumular alertas de tarefas da jornada agendadas em UTC
       if (journey.automations && journey.automations.length > 0) {
         for (const automation of journey.automations) {
           const config = automation.actionConfig as any;
@@ -110,26 +111,32 @@ export class AssignCampaignLeadsUseCase {
           const channel = config?.channel || 'WHATSAPP';
 
           const scheduledFor = new Date(joinedCampaignAt.getTime());
-          scheduledFor.setDate(scheduledFor.getDate() + dayOffset);
+          scheduledFor.setUTCDate(scheduledFor.getUTCDate() + dayOffset);
 
-          // Se a data de agendamento já passou ou é hoje, gera o alerta
-          if (scheduledFor <= now) {
-            await prisma.task.create({
-              data: {
-                customerId: customer.id,
-                assignedToId: assigneeId,
-                journeyId: journey.id,
-                automationId: automation.id,
-                scheduledFor,
-                taskType: channel,
-                status: 'PENDING'
-              }
-            });
-          }
+          tasksToCreate.push({
+            customerId: customer.id,
+            assignedToId: assigneeId,
+            journeyId: journey.id,
+            automationId: automation.id,
+            scheduledFor,
+            taskType: channel,
+            status: 'PENDING'
+          });
         }
       }
 
       results.push({ externalPersonId, assigneeId, joinedCampaignAt: joinedCampaignAt });
+    }
+
+    // 5. Inserir tarefas em lotes (batch insert) de 500 registros para otimizar desempenho
+    if (tasksToCreate.length > 0) {
+      const chunkSize = 500;
+      for (let j = 0; j < tasksToCreate.length; j += chunkSize) {
+        const chunk = tasksToCreate.slice(j, j + chunkSize);
+        await prisma.task.createMany({
+          data: chunk
+        });
+      }
     }
 
     return results;

@@ -280,13 +280,15 @@ export default function DashboardContent({
   const [filterCampaignId, setFilterCampaignId] = useState('all');
 
   // Load leads based on current filters
-  const fetchLeads = async () => {
+  const fetchLeads = async (forcedViewMode?: 'kanban' | 'list', forcedFila?: 'alerts' | 'cancelados' | 'expirar' | 'abandonados') => {
     setLoadingLeads(true);
     try {
+      const viewMode = forcedViewMode || atendimentoViewMode;
+      const fila = forcedFila || atendimentoFila;
       const monthParam = (activeTab === 'kanban' && kanbanFilterAllMonths) ? 'all' : filterMonth;
       
-      const useLimit = atendimentoViewMode === 'kanban' ? 1000 : leadsLimit;
-      const usePage = atendimentoViewMode === 'kanban' ? 1 : leadsPage;
+      const useLimit = viewMode === 'kanban' ? 1000 : leadsLimit;
+      const usePage = viewMode === 'kanban' ? 1 : leadsPage;
 
       let url = `/api/leads?month=${monthParam}&page=${usePage}&limit=${useLimit}`;
       if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
@@ -295,8 +297,8 @@ export default function DashboardContent({
       if (filterAssignee !== 'all') url += `&assigneeId=${filterAssignee}`;
       if (activePipelineId !== '') url += `&pipelineId=${activePipelineId}`;
       if (activeTab === 'atendimento') {
-        if (atendimentoViewMode === 'list') {
-          url += `&atendimentoFila=${atendimentoFila}`;
+        if (viewMode === 'list') {
+          url += `&atendimentoFila=${fila}`;
         }
         if (filterCampaignId !== 'all') {
           url += `&campaignId=${filterCampaignId}`;
@@ -685,7 +687,7 @@ export default function DashboardContent({
           lostReason: lossReason, // Mapeamento para o novo campo do SQLite
           note: detailNote.trim() !== '' ? detailNote : undefined,
           scheduledFor,
-          ...(autoAssign && { assigneeId: currentUser.id, stage: 'contato_inicial' })
+          ...(autoAssign && { assigneeId: currentUser.id, stage: 'primeiro_contato' })
         }),
       });
 
@@ -708,7 +710,7 @@ export default function DashboardContent({
         setShowLossReasons(false);
         setShowScheduler(false);
         setScheduledDate('');
-        fetchLeads();
+        fetchLeads(autoAssign ? 'kanban' : undefined);
       }
     } catch (err) {
       console.error('Failed to register action disposition:', err);
@@ -730,7 +732,7 @@ export default function DashboardContent({
           leadId: selectedLead.id,
           journeyId: selectedLead.journeyId || null,
           note: detailNote,
-          ...(autoAssign && { assigneeId: currentUser.id, stage: 'contato_inicial' })
+          ...(autoAssign && { assigneeId: currentUser.id, stage: 'primeiro_contato' })
         }),
       });
 
@@ -748,7 +750,7 @@ export default function DashboardContent({
           }));
         }
         setDetailNote('');
-        fetchLeads();
+        fetchLeads(autoAssign ? 'kanban' : undefined);
       }
     } catch (err) {
       console.error('Failed to save timeline note:', err);
@@ -775,7 +777,7 @@ export default function DashboardContent({
           leadId: selectedLead.id,
           journeyId: selectedLead.journeyId || null,
           [field]: value,
-          ...(isAssigningToMe && { stage: 'contato_inicial' })
+          ...(isAssigningToMe && { stage: 'primeiro_contato' })
         }),
       });
 
@@ -792,7 +794,7 @@ export default function DashboardContent({
             assignee: json.data.assignee,
           }));
         }
-        fetchLeads();
+        fetchLeads(isAssigningToMe ? 'kanban' : undefined);
       }
     } catch (err) {
       console.error(`Failed to update ${field} inside timeline:`, err);
@@ -1670,9 +1672,9 @@ export default function DashboardContent({
               const currentPipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0];
               const stages = (currentPipeline && currentPipeline.stages) ? currentPipeline.stages : [
                 { key: 'novo_cadastro', label: 'Novo Cadastro' },
-                { key: 'contato_inicial', label: 'Contato Inicial' },
-                { key: 'negociacao', label: 'Em Negociação' },
-                { key: 'convertido', label: 'Convertido / Ganho' },
+                { key: 'primeiro_contato', label: 'Contato Inicial' },
+                { key: 'em_negociacao', label: 'Em Negociação' },
+                { key: 'ganho', label: 'Convertido / Ganho' },
                 { key: 'perdido', label: 'Perdido / Descarte' }
               ];
               const STAGE_LABELS: Record<string, string> = {};
@@ -1966,7 +1968,7 @@ export default function DashboardContent({
                                       if (res.ok) {
                                         setAtendimentoViewMode('kanban');
                                         setActiveTab('atendimento');
-                                        fetchLeads();
+                                        fetchLeads('kanban');
                                       }
                                     } catch (err) {
                                       console.error(err);

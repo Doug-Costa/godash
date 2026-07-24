@@ -245,7 +245,7 @@ export async function GET(request: Request) {
             select: { externalPersonId: true }
           });
           
-          const matchingIds = matchingStates.map(s => s.externalPersonId);
+          const matchingIds = Array.from(new Set(matchingStates.map(s => s.externalPersonId)));
           if (matchingIds.length === 0) {
             return NextResponse.json({ success: true, data: [], pagination: { total: 0, page, limit, totalPages: 0 } });
           }
@@ -470,8 +470,29 @@ export async function GET(request: Request) {
     let data: any[] = [];
 
     if (isPostgresQueue) {
-      // Mapeia baseando-se nos registros de Customer do Postgres
-      data = customers.map(c => {
+      // Deduplicar os registros de Customer do Postgres por externalPersonId, priorizando registros com jornada (campanhas)
+      const uniqueCustomersMap = new Map<number, any>();
+      customers.forEach(c => {
+        const extId = c.externalPersonId;
+        const existing = uniqueCustomersMap.get(extId);
+        if (!existing) {
+          uniqueCustomersMap.set(extId, c);
+        } else {
+          const isNewCampaign = c.journeyId !== null;
+          const isExistingCampaign = existing.journeyId !== null;
+          if (isNewCampaign && !isExistingCampaign) {
+            uniqueCustomersMap.set(extId, c);
+          } else if (isNewCampaign && isExistingCampaign) {
+            if (new Date(c.createdAt) > new Date(existing.createdAt)) {
+              uniqueCustomersMap.set(extId, c);
+            }
+          }
+        }
+      });
+      const uniqueCustomers = Array.from(uniqueCustomersMap.values());
+
+      // Mapeia baseando-se nos registros de Customer do Postgres deduplicados
+      data = uniqueCustomers.map(c => {
         const r = peopleMap.get(c.externalPersonId);
         if (!r) return null;
 
