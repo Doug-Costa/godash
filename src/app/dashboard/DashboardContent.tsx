@@ -1120,8 +1120,12 @@ export default function DashboardContent({
         body: JSON.stringify({ action: 'claim', personId })
       });
       if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data?.pipelineId) {
+          setActivePipelineId(json.data.pipelineId);
+        }
         fetchAlerts();
-        fetchLeads();
+        fetchLeads('kanban');
       }
     } catch (err) {
       console.error('Failed to claim orphaned lead:', err);
@@ -1817,7 +1821,13 @@ export default function DashboardContent({
                                       })
                                     });
                                     if (res.ok) {
-                                      fetchLeads();
+                                      const json = await res.json();
+                                      if (json.success && json.data?.pipelineId) {
+                                        setActivePipelineId(json.data.pipelineId);
+                                      }
+                                      setAtendimentoViewMode('kanban');
+                                      setActiveTab('atendimento');
+                                      fetchLeads('kanban');
                                     }
                                   } catch (err) {
                                     console.error(err);
@@ -1966,6 +1976,10 @@ export default function DashboardContent({
                                         })
                                       });
                                       if (res.ok) {
+                                        const json = await res.json();
+                                        if (json.success && json.data?.pipelineId) {
+                                          setActivePipelineId(json.data.pipelineId);
+                                        }
                                         setAtendimentoViewMode('kanban');
                                         setActiveTab('atendimento');
                                         fetchLeads('kanban');
