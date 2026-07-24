@@ -364,7 +364,7 @@ export async function POST(request: Request) {
           where: { id: customer.id },
           data: {
             assigneeId: userId,
-            stage: 'primeiro_contato',
+            stage: 'novo_cadastro',
             frozenUntil: null,
             freezeReason: null,
             lostReason: null,
@@ -377,7 +377,7 @@ export async function POST(request: Request) {
             externalPersonId: Number(personId),
             journeyId: null,
             assigneeId: userId,
-            stage: 'primeiro_contato',
+            stage: 'novo_cadastro',
             ...(pipelineId && { pipelineId })
           }
         });
