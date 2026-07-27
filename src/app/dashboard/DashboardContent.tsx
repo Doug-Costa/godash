@@ -4063,6 +4063,7 @@ export default function DashboardContent({
                 </div>
               )}
               </div>
+              </div>
 
               {/* Right Column: History Timeline & Note Input */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16, borderLeft: '1px solid var(--border)', paddingLeft: 24, minHeight: 0 }}>
