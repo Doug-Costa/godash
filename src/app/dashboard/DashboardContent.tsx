@@ -3472,7 +3472,7 @@ export default function DashboardContent({
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'var(--overlay)',
           backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
         }}>
-          <div className="card" style={{ width: '100%', maxWidth: '700px', background: 'var(--surface)', padding: 32, display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+          <div className="card" style={{ width: '100%', maxWidth: '1100px', background: 'var(--surface)', padding: 24, display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
               <div>
@@ -3509,9 +3509,13 @@ export default function DashboardContent({
               </button>
             </div>
 
-            {/* Quick selectors Row */}
+            {/* Two-column Body */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, flex: 1, minHeight: 0, marginTop: 16 }}>
+              {/* Left Column: Actions & Details */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', paddingRight: 8 }}>
+                {/* Quick selectors Row */}
             <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24,
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 0,
               padding: 16, background: 'var(--surface-raised)', borderRadius: 12
             }}>
               <div>
@@ -3694,7 +3698,7 @@ export default function DashboardContent({
             
             {/* Informações do Perfil (Metadata) */}
             <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24,
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 0,
               padding: 16, background: 'var(--surface-raised)', borderRadius: 12, border: '1px solid var(--border)',
               position: 'relative'
             }}>
@@ -3802,7 +3806,7 @@ export default function DashboardContent({
             {/* RapidFire Communications Hub */}
             <div style={{
               background: 'var(--surface-raised)', border: '1px solid var(--border)',
-              borderRadius: 12, padding: 16, marginBottom: 24
+              borderRadius: 12, padding: 16, marginBottom: 0
             }}>
               <div className="label-sm" style={{ fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)' }}>
                 ⚡ RapidFire Hub (Canais de Alta Velocidade)
@@ -4058,36 +4062,40 @@ export default function DashboardContent({
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Timeline Notes Area */}
-            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 24, paddingRight: 8 }}>
-              <div className="label" style={{ marginBottom: 12 }}>Histórico de Interações (Timeline)</div>
-              <Timeline key={selectedLead.id + '-' + (selectedLead.journeyId || 'none')} events={selectedLead.notes || []} />
-            </div>
-
-            {/* Note Input Box */}
-            <form onSubmit={submitDetailNote}>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <textarea 
-                  value={detailNote} 
-                  onChange={(e) => setDetailNote(e.target.value)}
-                  placeholder="Escreva uma nova anotação opcional (clique nos botões de ação acima para registrar com estágio)..."
-                  style={{
-                    flex: 1, height: 60, padding: '10px 14px', background: 'var(--surface-raised)',
-                    border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', resize: 'none', outline: 'none', fontSize: 13
-                  }}
-                />
-                <button 
-                  type="submit" 
-                  className="btn-action btn-action-purple"
-                  style={{ padding: '0 24px', borderRadius: 8 }}
-                  disabled={!detailNote.trim()}
-                >
-                  Apenas Anotar
-                </button>
               </div>
-            </form>
+
+              {/* Right Column: History Timeline & Note Input */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, borderLeft: '1px solid var(--border)', paddingLeft: 24, minHeight: 0 }}>
+                {/* Timeline Notes Area */}
+                <div style={{ flex: 1, overflowY: 'auto', paddingRight: 8 }}>
+                  <div className="label" style={{ marginBottom: 12 }}>Histórico de Interações (Timeline)</div>
+                  <Timeline key={selectedLead.id + '-' + (selectedLead.journeyId || 'none')} events={selectedLead.notes || []} />
+                </div>
+
+                {/* Note Input Box */}
+                <form onSubmit={submitDetailNote}>
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <textarea 
+                      value={detailNote} 
+                      onChange={(e) => setDetailNote(e.target.value)}
+                      placeholder="Escreva uma nova anotação opcional (clique nos botões de ação acima para registrar com estágio)..."
+                      style={{
+                        flex: 1, height: 60, padding: '10px 14px', background: 'var(--surface-raised)',
+                        border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', resize: 'none', outline: 'none', fontSize: 13
+                      }}
+                    />
+                    <button 
+                      type="submit" 
+                      className="btn-action btn-action-purple"
+                      style={{ padding: '0 24px', borderRadius: 8 }}
+                      disabled={!detailNote.trim()}
+                    >
+                      Apenas Anotar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
         </div>
       )}
