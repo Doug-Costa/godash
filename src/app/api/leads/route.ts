@@ -200,7 +200,10 @@ export async function GET(request: Request) {
 
       // Exclude discarded from general queries
       if (!atendimentoFila) {
-        crmFilter.tag = { not: 'DISCARDED' };
+        crmFilter.OR = [
+          { tag: null },
+          { tag: { not: 'DISCARDED' } }
+        ];
       }
 
       // Filtros específicos da fila
@@ -211,7 +214,10 @@ export async function GET(request: Request) {
             crmFilter.joinedJourneyAt = { lte: endOfMonth! };
           }
         } else if (atendimentoFila === 'alerts') {
-          crmFilter.tag = { not: 'DISCARDED' };
+          crmFilter.OR = [
+            { tag: null },
+            { tag: { not: 'DISCARDED' } }
+          ];
           crmFilter.tasks = {
             some: {
               completedAt: null,

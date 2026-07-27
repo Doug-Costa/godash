@@ -16,6 +16,11 @@ export class AssignCampaignLeadsUseCase {
       throw new Error('Campanha/Jornada não encontrada.');
     }
 
+    const defaultPipeline = journey.pipelineId 
+      ? null 
+      : (await prisma.pipeline.findFirst({ where: { name: 'Vendas' } }) || await prisma.pipeline.findFirst());
+    const targetPipelineId = journey.pipelineId || defaultPipeline?.id || null;
+
     const limitPerDay = journey.limitPerDay;
     const operatorCount = userIds.length;
     const results: { externalPersonId: number; assigneeId: string; joinedCampaignAt: Date }[] = [];
@@ -66,6 +71,7 @@ export class AssignCampaignLeadsUseCase {
             frozenUntil: null,      // Remove qualquer congelamento pré-existente
             freezeReason: null,
             lostReason: null,
+            pipelineId: targetPipelineId || undefined,
           }
         });
       } else {
@@ -76,6 +82,7 @@ export class AssignCampaignLeadsUseCase {
             journeyId: campaignId,
             joinedJourneyAt: joinedCampaignAt,
             stage: 'novo_cadastro',
+            pipelineId: targetPipelineId,
           }
         });
       }

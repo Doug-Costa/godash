@@ -49,7 +49,10 @@ export async function GET(request: Request) {
         assigneeId: isAgent ? userId : undefined,
         journeyId: campaignId && campaignId !== 'all' ? campaignId : { not: null },
         joinedJourneyAt: hasMonthFilter ? { lte: endOfMonth! } : undefined,
-        tag: { not: 'DISCARDED' }
+        OR: [
+          { tag: null },
+          { tag: { not: 'DISCARDED' } }
+        ]
       }
     });
 
@@ -58,7 +61,10 @@ export async function GET(request: Request) {
       where: {
         assigneeId: isAgent ? userId : undefined,
         journeyId: campaignId && campaignId !== 'all' ? campaignId : undefined,
-        tag: { not: 'DISCARDED' },
+        OR: [
+          { tag: null },
+          { tag: { not: 'DISCARDED' } }
+        ],
         tasks: {
           some: {
             completedAt: null,
