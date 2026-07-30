@@ -68,7 +68,7 @@ export default function MonthSelector({ currentMonth, allowAll = true }: MonthSe
         </button>
       )}
 
-      <div style={{ display: 'flex', gap: 4, opacity: isAll ? 0.6 : 1, pointerEvents: isAll ? 'none' : 'auto', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 4, opacity: isAll ? 0.65 : 1, alignItems: 'center' }}>
         <select
           value={year}
           onChange={(e) => handleUpdate(e.target.value, month)}
