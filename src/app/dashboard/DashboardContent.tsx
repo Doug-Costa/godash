@@ -70,7 +70,8 @@ export default function DashboardContent({
   const [atendimentoFila, setAtendimentoFila] = useState<'alerts' | 'cancelados' | 'expirar' | 'abandonados'>('alerts');
   const [filaCounts, setFilaCounts] = useState({ alerts: 0, cancelados: 0, expirar: 0, abandonados: 0 });
   
-  const defaultPipeline = pipelines.find(p => p.name === 'Vendas') || pipelines[0];
+  const visiblePipelines = pipelines.filter(p => isAdmin || p.name !== 'Nutrição');
+  const defaultPipeline = visiblePipelines.find(p => p.name === 'Vendas') || visiblePipelines[0];
   const [activePipelineId, setActivePipelineId] = useState<string>(defaultPipeline?.id || '');
   
   // Leads data state (loaded dynamically for Kanban & Leads Table)
@@ -1653,7 +1654,7 @@ export default function DashboardContent({
         {/* Abas de Funis (Pipelines) - Apenas se no Kanban */}
         {atendimentoViewMode === 'kanban' && (
           <div style={{ display: 'flex', gap: 8, background: 'var(--surface-raised)', padding: 6, borderRadius: 10, width: 'fit-content', border: '1px solid var(--border)' }}>
-            {pipelines.map((pipeline) => (
+            {visiblePipelines.map((pipeline) => (
               <button
                 key={pipeline.id}
                 onClick={() => setActivePipelineId(pipeline.id)}
@@ -1681,7 +1682,7 @@ export default function DashboardContent({
           /* ==================== RENDERING KANBAN ==================== */
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, overflowX: 'auto', minHeight: '60vh' }}>
             {(() => {
-              const currentPipeline = pipelines.find(p => p.id === activePipelineId) || pipelines[0];
+              const currentPipeline = visiblePipelines.find(p => p.id === activePipelineId) || visiblePipelines[0];
               const stages = (currentPipeline && currentPipeline.stages) ? currentPipeline.stages : [
                 { key: 'novo_cadastro', label: 'Novo Cadastro' },
                 { key: 'primeiro_contato', label: 'Contato Inicial' },
@@ -4829,7 +4830,7 @@ export default function DashboardContent({
                           style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
                         >
                           <option value="">-- Padrão (Vendas) --</option>
-                          {pipelines.map(pipe => (
+                          {visiblePipelines.map(pipe => (
                             <option key={pipe.id} value={pipe.id}>{pipe.name}</option>
                           ))}
                         </select>
