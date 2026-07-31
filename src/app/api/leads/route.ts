@@ -376,12 +376,12 @@ export async function GET(request: Request) {
       }
     });
 
-    const interactionsByPersonId = new Map<number, any[]>();
-    const metadataByPersonId = new Map<number, any>();
-    const scheduledForByPersonId = new Map<number, Date | null>();
+    const interactionsByPersonId = new Map<number | string, any[]>();
+    const metadataByPersonId = new Map<number | string, any>();
+    const scheduledForByPersonId = new Map<number | string, Date | null>();
 
     allCustomersForTimeline.forEach(cust => {
-      const extId = cust.externalPersonId;
+      const extId = cust.externalPersonId !== null ? cust.externalPersonId : cust.id;
 
       // 1. Group interactions
       const existingInts = interactionsByPersonId.get(extId) || [];
@@ -477,20 +477,20 @@ export async function GET(request: Request) {
 
     if (isPostgresQueue) {
       // Deduplicar os registros de Customer do Postgres por externalPersonId, priorizando registros com jornada (campanhas)
-      const uniqueCustomersMap = new Map<number, any>();
+      const uniqueCustomersMap = new Map<number | string, any>();
       customers.forEach(c => {
-        const extId = c.externalPersonId;
-        const existing = uniqueCustomersMap.get(extId);
+        const key = c.externalPersonId !== null ? c.externalPersonId : c.id;
+        const existing = uniqueCustomersMap.get(key);
         if (!existing) {
-          uniqueCustomersMap.set(extId, c);
+          uniqueCustomersMap.set(key, c);
         } else {
           const isNewCampaign = c.journeyId !== null;
           const isExistingCampaign = existing.journeyId !== null;
           if (isNewCampaign && !isExistingCampaign) {
-            uniqueCustomersMap.set(extId, c);
+            uniqueCustomersMap.set(key, c);
           } else if (isNewCampaign && isExistingCampaign) {
             if (new Date(c.createdAt) > new Date(existing.createdAt)) {
-              uniqueCustomersMap.set(extId, c);
+              uniqueCustomersMap.set(key, c);
             }
           }
         }

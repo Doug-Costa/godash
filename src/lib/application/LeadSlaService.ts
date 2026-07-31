@@ -53,6 +53,7 @@ export class LeadSlaService {
       CrmEventDispatcher.dispatch({
         eventName: 'LeadRecycledByInactivityEvent',
         externalPersonId: customer.externalPersonId,
+        customerId: customer.id,
         previousAssigneeId,
         previousStage,
         timestamp: new Date(),

@@ -2,10 +2,20 @@ import prisma from '@/lib/prisma';
 import { ICrmRepository, CrmCustomer, CrmInteraction, LossReason, LeadTag } from '@/lib/domain/crm.types';
 
 export class PrismaCrmRepository implements ICrmRepository {
-  private async findOrCreateCustomer(externalPersonId: number, journeyId: string | null = null): Promise<any> {
+  private async findOrCreateCustomer(idOrExtId: string | number | null, journeyId: string | null = null): Promise<any> {
+    if (idOrExtId === null) throw new Error('Identifier cannot be null');
+
+    if (typeof idOrExtId === 'string') {
+      const existing = await prisma.customer.findUnique({
+        where: { id: idOrExtId }
+      });
+      if (!existing) throw new Error(`Customer with CUID ${idOrExtId} not found`);
+      return existing;
+    }
+
     const existing = await prisma.customer.findFirst({
       where: {
-        externalPersonId,
+        externalPersonId: idOrExtId,
         journeyId: journeyId || null
       }
     });
@@ -18,7 +28,7 @@ export class PrismaCrmRepository implements ICrmRepository {
 
     return prisma.customer.create({
       data: {
-        externalPersonId,
+        externalPersonId: idOrExtId,
         journeyId: journeyId || null,
         stage: 'novo_cadastro',
         pipelineId: defaultPipeline?.id || null
@@ -26,13 +36,17 @@ export class PrismaCrmRepository implements ICrmRepository {
     });
   }
 
-  async getCustomer(externalPersonId: number, journeyId?: string | null): Promise<CrmCustomer | null> {
-    const customer = await prisma.customer.findFirst({
-      where: { 
-        externalPersonId,
-        journeyId: journeyId !== undefined ? (journeyId || null) : undefined
-      },
-    });
+  async getCustomer(idOrExtId: string | number | null, journeyId?: string | null): Promise<CrmCustomer | null> {
+    if (idOrExtId === null) return null;
+
+    const customer = typeof idOrExtId === 'string'
+      ? await prisma.customer.findUnique({ where: { id: idOrExtId } })
+      : await prisma.customer.findFirst({
+          where: { 
+            externalPersonId: idOrExtId,
+            journeyId: journeyId !== undefined ? (journeyId || null) : undefined
+          },
+        });
 
     if (!customer) return null;
 
@@ -90,8 +104,8 @@ export class PrismaCrmRepository implements ICrmRepository {
     }));
   }
 
-  async updateStage(externalPersonId: number, newStage: string, journeyId?: string | null): Promise<CrmCustomer> {
-    const customer = await this.findOrCreateCustomer(externalPersonId, journeyId);
+  async updateStage(idOrExtId: string | number | null, newStage: string, journeyId?: string | null): Promise<CrmCustomer> {
+    const customer = await this.findOrCreateCustomer(idOrExtId, journeyId);
     
     const defaultPipeline = !customer.pipelineId 
       ? (await prisma.pipeline.findFirst({ where: { name: 'Vendas' } }) || await prisma.pipeline.findFirst())
@@ -135,8 +149,8 @@ export class PrismaCrmRepository implements ICrmRepository {
     };
   }
 
-  async assignLead(externalPersonId: number, assigneeId: string | null, journeyId?: string | null): Promise<CrmCustomer> {
-    const customer = await this.findOrCreateCustomer(externalPersonId, journeyId);
+  async assignLead(idOrExtId: string | number | null, assigneeId: string | null, journeyId?: string | null): Promise<CrmCustomer> {
+    const customer = await this.findOrCreateCustomer(idOrExtId, journeyId);
 
     const defaultPipeline = !customer.pipelineId 
       ? (await prisma.pipeline.findFirst({ where: { name: 'Vendas' } }) || await prisma.pipeline.findFirst())
@@ -180,8 +194,8 @@ export class PrismaCrmRepository implements ICrmRepository {
     };
   }
 
-  async addInteraction(externalPersonId: number, text: string, authorId: string | null, journeyId?: string | null): Promise<CrmInteraction> {
-    const customer = await this.findOrCreateCustomer(externalPersonId, journeyId);
+  async addInteraction(idOrExtId: string | number | null, text: string, authorId: string | null, journeyId?: string | null): Promise<CrmInteraction> {
+    const customer = await this.findOrCreateCustomer(idOrExtId, journeyId);
 
     await prisma.customer.update({
       where: { id: customer.id },
@@ -210,13 +224,17 @@ export class PrismaCrmRepository implements ICrmRepository {
     };
   }
 
-  async getInteractions(externalPersonId: number, journeyId?: string | null): Promise<CrmInteraction[]> {
+  async getInteractions(idOrExtId: string | number | null, journeyId?: string | null): Promise<CrmInteraction[]> {
+    if (idOrExtId === null) return [];
+
     const interactions = await prisma.interaction.findMany({
       where: {
-        customer: {
-          externalPersonId,
-          journeyId: journeyId !== undefined ? (journeyId || null) : undefined,
-        },
+        customer: typeof idOrExtId === 'string' 
+          ? { id: idOrExtId }
+          : {
+              externalPersonId: idOrExtId,
+              journeyId: journeyId !== undefined ? (journeyId || null) : undefined,
+            },
       },
       orderBy: {
         createdAt: 'desc',
@@ -232,8 +250,8 @@ export class PrismaCrmRepository implements ICrmRepository {
     }));
   }
 
-  async updateCustomer(externalPersonId: number, data: Partial<CrmCustomer>, journeyId?: string | null): Promise<CrmCustomer> {
-    const customer = await this.findOrCreateCustomer(externalPersonId, journeyId);
+  async updateCustomer(idOrExtId: string | number | null, data: Partial<CrmCustomer>, journeyId?: string | null): Promise<CrmCustomer> {
+    const customer = await this.findOrCreateCustomer(idOrExtId, journeyId);
 
     const updated = await prisma.customer.update({
       where: { id: customer.id },

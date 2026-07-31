@@ -2,7 +2,8 @@ import { InteractionType, LossReason, LeadTag } from './crm.types';
 
 export interface LeadInteractionRecordedEvent {
   eventName: 'LeadInteractionRecordedEvent';
-  externalPersonId: number;
+  externalPersonId: number | null;
+  customerId?: string;
   type: InteractionType;
   authorId: string;
   stage: string;
@@ -12,7 +13,8 @@ export interface LeadInteractionRecordedEvent {
 
 export interface LeadRecycledByInactivityEvent {
   eventName: 'LeadRecycledByInactivityEvent';
-  externalPersonId: number;
+  externalPersonId: number | null;
+  customerId?: string;
   previousAssigneeId: string | null;
   previousStage: string;
   timestamp: Date;
@@ -20,14 +22,16 @@ export interface LeadRecycledByInactivityEvent {
 
 export interface LeadTaggedEvent {
   eventName: 'LeadTaggedEvent';
-  externalPersonId: number;
+  externalPersonId: number | null;
+  customerId?: string;
   tag: LeadTag;
   timestamp: Date;
 }
 
 export interface LeadAutomationResumedEvent {
   eventName: 'LeadAutomationResumedEvent';
-  externalPersonId: number;
+  externalPersonId: number | null;
+  customerId?: string;
   authorId: string;
   timestamp: Date;
 }

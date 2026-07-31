@@ -100,11 +100,11 @@ export async function GET() {
       return NextResponse.json({ success: true, data: {} });
     }
 
-    const ids = customers.map((c) => c.externalPersonId);
-    const [peopleRows] = await pool.query(
+    const ids = customers.map((c) => c.externalPersonId).filter((id): id is number => id !== null);
+    const [peopleRows] = ids.length > 0 ? await pool.query(
       'SELECT id, email FROM people WHERE id IN (?)',
       [ids]
-    );
+    ) : [[]];
 
     const emailMap = new Map<number, string>();
     (peopleRows as any[]).forEach((row) => {
@@ -113,7 +113,7 @@ export async function GET() {
 
     const data: Record<string, any> = {};
     customers.forEach((c) => {
-      const email = emailMap.get(c.externalPersonId) || `lead_${c.externalPersonId}@dentalgo.com`;
+      const email = (c.externalPersonId ? emailMap.get(c.externalPersonId) : null) || `lead_${c.id}@dentalgo.com`;
       data[email] = {
         stage: c.stage,
         assigneeId: c.assigneeId,

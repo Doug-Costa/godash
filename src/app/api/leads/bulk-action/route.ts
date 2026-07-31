@@ -112,14 +112,16 @@ export async function POST(request: Request) {
           );
 
           // C. Reset values on generic customer record
-          await prisma.customer.update({
-            where: { id: genericCust.id },
-            data: {
-              assigneeId: null,
-              isInNurturing: false,
-              nurturingJourneyId: null
-            }
-          });
+          if (genericCust) {
+            await prisma.customer.update({
+              where: { id: genericCust.id },
+              data: {
+                assigneeId: null,
+                isInNurturing: false,
+                nurturingJourneyId: null
+              }
+            });
+          }
         } else {
           // D. If they are already generic, just reset their stage and unassign
           await prisma.customer.update({

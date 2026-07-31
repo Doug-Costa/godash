@@ -3683,7 +3683,6 @@ export default function DashboardContent({
             </div>
 
             {modalActiveTab === 'oportunidade' && (
-              {/* Two-column Body */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, flex: 1, minHeight: 0, marginTop: 16 }}>
               {/* Left Column: Actions & Details */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', paddingRight: 8 }}>
@@ -4270,7 +4269,6 @@ export default function DashboardContent({
                   </div>
                 </form>
               </div>
-            </div>
             </div>
             )}
 

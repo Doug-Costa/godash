@@ -19,7 +19,7 @@ export type LeadTag = 'BOOK_CLIENT' | 'ABANDONED_CART' | 'CANCELED_CLIENT';
 
 export interface CrmCustomer {
   id?: string;
-  externalPersonId: number;
+  externalPersonId: number | null;
   stage: string;
   assigneeId?: string | null;
   pipelineId?: string | null;
@@ -48,15 +48,15 @@ export interface CrmInteraction {
 }
 
 export interface ICrmRepository {
-  getCustomer(externalPersonId: number, journeyId?: string | null): Promise<CrmCustomer | null>;
+  getCustomer(idOrExtId: string | number | null, journeyId?: string | null): Promise<CrmCustomer | null>;
   getManyCustomers(externalPersonIds: number[]): Promise<CrmCustomer[]>;
-  updateStage(externalPersonId: number, newStage: string, journeyId?: string | null): Promise<CrmCustomer>;
-  assignLead(externalPersonId: number, assigneeId: string | null, journeyId?: string | null): Promise<CrmCustomer>;
-  addInteraction(externalPersonId: number, text: string, authorId: string | null, journeyId?: string | null): Promise<CrmInteraction>;
-  getInteractions(externalPersonId: number, journeyId?: string | null): Promise<CrmInteraction[]>;
+  updateStage(idOrExtId: string | number | null, newStage: string, journeyId?: string | null): Promise<CrmCustomer>;
+  assignLead(idOrExtId: string | number | null, assigneeId: string | null, journeyId?: string | null): Promise<CrmCustomer>;
+  addInteraction(idOrExtId: string | number | null, text: string, authorId: string | null, journeyId?: string | null): Promise<CrmInteraction>;
+  getInteractions(idOrExtId: string | number | null, journeyId?: string | null): Promise<CrmInteraction[]>;
   
   // DDD actions
-  updateCustomer(externalPersonId: number, data: Partial<CrmCustomer>, journeyId?: string | null): Promise<CrmCustomer>;
+  updateCustomer(idOrExtId: string | number | null, data: Partial<CrmCustomer>, journeyId?: string | null): Promise<CrmCustomer>;
   getCustomersByLossReason(reason: LossReason): Promise<CrmCustomer[]>;
   getCustomersByTag(tag: LeadTag): Promise<CrmCustomer[]>;
   getExpiredSlaCustomers(days: number): Promise<CrmCustomer[]>;

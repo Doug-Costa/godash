@@ -122,10 +122,13 @@ export class JourneyTransitionService {
 
   static async mergeCustomerToGeneric(
     campaignCustomerId: string,
-    externalPersonId: number,
+    externalPersonId: number | null,
     nextStage: string,
     authorId?: string | null
   ) {
+    if (externalPersonId === null) {
+      return null;
+    }
     // 1. Find or create the generic customer (journeyId: null)
     let genericCustomer = await prisma.customer.findFirst({
       where: { externalPersonId, journeyId: null }
