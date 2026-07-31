@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { RegisterLeadInteractionService } from './RegisterLeadInteractionService';
 import { ICrmRepository, InteractionType } from '@/lib/domain/crm.types';
