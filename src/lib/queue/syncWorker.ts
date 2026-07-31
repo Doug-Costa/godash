@@ -2,6 +2,7 @@ import { Worker } from 'bullmq';
 import { redisConnection } from './connection';
 import prisma from '../prisma';
 import pool from '../db';
+import { CustomerCreationService } from '../application/CustomerCreationService';
 
 export const syncWorker = new Worker('CustomerSyncQueue', async (job) => {
   if (job.name === 'sync-customers') {
@@ -126,27 +127,13 @@ export const syncWorker = new Worker('CustomerSyncQueue', async (job) => {
           type: 'ABANDONED_CART',
         };
 
-        let customer = await prisma.customer.findFirst({
-          where: { externalPersonId, journeyId: null }
+        await CustomerCreationService.createOrMerge({
+          externalPersonId,
+          tag: 'ABANDONED_CART',
+          pipelineId: vendasPipelineId,
+          metadata,
+          source: 'SyncWorker (Cart)'
         });
-
-        if (customer) {
-          await prisma.customer.update({
-            where: { id: customer.id },
-            data: { metadata, tag: 'ABANDONED_CART' }
-          });
-        } else {
-          await prisma.customer.create({
-            data: {
-              externalPersonId,
-              journeyId: null,
-              stage: 'novo_cadastro',
-              tag: 'ABANDONED_CART',
-              pipelineId: vendasPipelineId,
-              metadata
-            }
-          });
-        }
         abandonedCount++;
       }
 
@@ -165,27 +152,13 @@ export const syncWorker = new Worker('CustomerSyncQueue', async (job) => {
           type: 'EXPIRING_SUBSCRIPTION',
         };
 
-        let customer = await prisma.customer.findFirst({
-          where: { externalPersonId, journeyId: null }
+        await CustomerCreationService.createOrMerge({
+          externalPersonId,
+          tag: 'CANCELED_CLIENT',
+          pipelineId: vendasPipelineId,
+          metadata,
+          source: 'SyncWorker (Expiring)'
         });
-
-        if (customer) {
-          await prisma.customer.update({
-            where: { id: customer.id },
-            data: { metadata, tag: 'CANCELED_CLIENT' }
-          });
-        } else {
-          await prisma.customer.create({
-            data: {
-              externalPersonId,
-              journeyId: null,
-              stage: 'novo_cadastro',
-              tag: 'CANCELED_CLIENT',
-              pipelineId: vendasPipelineId,
-              metadata
-            }
-          });
-        }
         expiringCount++;
       }
 

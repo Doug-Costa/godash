@@ -64,16 +64,30 @@ export class RegisterLeadInteractionService {
       ? (scheduledFor || null) 
       : (type === 'LOST' || type === 'RECOVERED' ? null : (customer?.scheduledFor || null));
 
+    const isHumanTakeover = !!authorId;
+
     customer = await this.crmRepo.updateCustomer(externalPersonId, {
       stage: nextStage,
       lossReason: type === 'LOST' ? lossReason : null,
       lastInteractionAt: new Date(),
       scheduledFor: finalScheduledFor,
+      humanTakeover: isHumanTakeover ? true : undefined,
     }, journeyId);
 
     const dbCustomer = await prisma.customer.findFirst({
       where: { externalPersonId, journeyId: journeyId || null }
     });
+
+    // Cancel pending automation tasks if human took over
+    if (isHumanTakeover && dbCustomer) {
+      await prisma.task.deleteMany({
+        where: {
+          customerId: dbCustomer.id,
+          status: 'PENDING',
+          taskType: { not: 'RETORNO' } // Mantenha tarefas manuais de retorno, mas remova automações
+        }
+      });
+    }
 
     const isFinalStage = nextStage === 'ganho' || nextStage === 'perdido' || type === 'LOST' || type === 'RECOVERED';
     if (isFinalStage && dbCustomer) {

@@ -35,6 +35,7 @@ export interface CrmCustomer {
   scheduledFor?: Date | null;
   frozenUntil?: Date | null;
   freezeReason?: string | null;
+  humanTakeover?: boolean;
   lostReason?: string | null;
 }
 

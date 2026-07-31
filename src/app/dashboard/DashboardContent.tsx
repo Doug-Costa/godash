@@ -854,6 +854,30 @@ export default function DashboardContent({
     }
   };
 
+  const handleResumeAutomation = async (personId: number, journeyId: string | null) => {
+    if (!confirm('Deseja retomar as automações para este cliente e remover a trava de intervenção humana?')) return;
+
+    try {
+      const res = await fetch('/api/leads/resume-flow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ externalPersonId: personId, journeyId })
+      });
+      if (res.ok) {
+        alert('Automação retomada com sucesso!');
+        fetchLeads();
+        if (selectedLead && selectedLead.id === personId) {
+          setSelectedLead((prev: any) => ({ ...prev, humanTakeover: false }));
+        }
+      } else {
+        alert('Erro ao retomar automação.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao retomar automação.');
+    }
+  };
+
   const handleSaveMetadata = async (inst?: string, spec?: string) => {
     if (!selectedLead) return;
     setIsSavingMeta(true);
@@ -2499,16 +2523,25 @@ export default function DashboardContent({
                 <h3 className="label">🎯 Campanhas Ativas & Regras</h3>
                 <p className="label-sm">Crie campanhas, monte sequências de régua de comunicação e acompanhe a distribuição automática.</p>
               </div>
-              <button 
-                onClick={() => {
-                  setCampaignName('');
-                  setCampaignSteps([{ dayOffset: 1, channel: 'WHATSAPP', messageTemplate: 'Olá {{nome}}, tudo bem?' }]);
-                  setShowCampaignModal(true);
-                }} 
-                className="btn-action btn-action-purple"
-              >
-                ➕ Nova Campanha
-              </button>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <a 
+                  href="/dashboard/flow-manager" 
+                  className="btn-action"
+                  style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', color: 'var(--text-primary)', textDecoration: 'none' }}
+                >
+                  ⚙️ Fluxos de Automação
+                </a>
+                <button 
+                  onClick={() => {
+                    setCampaignName('');
+                    setCampaignSteps([{ dayOffset: 1, channel: 'WHATSAPP', messageTemplate: 'Olá {{nome}}, tudo bem?' }]);
+                    setShowCampaignModal(true);
+                  }} 
+                  className="btn-action btn-action-purple"
+                >
+                  ➕ Nova Campanha
+                </button>
+              </div>
             </div>
 
             {loadingCampaigns ? (
@@ -3572,6 +3605,33 @@ export default function DashboardContent({
                     </span>
                   ) : (
                     <span>📞 Sem telefone</span>
+                  )}
+                  {selectedLead.humanTakeover && (
+                    <>
+                      <span>&bull;</span>
+                      <span style={{ 
+                        background: 'var(--danger-light, #fee2e2)', 
+                        color: 'var(--danger, #dc2626)', 
+                        padding: '2px 6px', 
+                        borderRadius: 4, 
+                        fontWeight: 600, 
+                        fontSize: '0.75rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        🛑 Automação Pausada (Humano)
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleResumeAutomation(selectedLead.id, selectedLead.journeyId); }}
+                          style={{
+                            background: 'none', border: 'none', color: 'var(--danger)', 
+                            textDecoration: 'underline', cursor: 'pointer', fontSize: '0.75rem', padding: 0
+                          }}
+                        >
+                          Retomar
+                        </button>
+                      </span>
+                    </>
                   )}
                 </p>
               </div>

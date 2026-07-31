@@ -559,7 +559,8 @@ export async function GET(request: Request) {
           metadata: metadataByPersonId.get(r.id) || {},
           scheduledFor: scheduledForByPersonId.get(r.id) || c.scheduledFor || null,
           subscriptionStatus: subBadge,
-          isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1'
+          isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1',
+          humanTakeover: c.humanTakeover || false
         };
       }).filter(Boolean);
     } else {
@@ -631,7 +632,8 @@ export async function GET(request: Request) {
           subscriptionStatus: subBadge,
           isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1',
           isInNurturing: state?.isInNurturing || false,
-          leadScore: state?.leadScore || 0
+          leadScore: state?.leadScore || 0,
+          humanTakeover: state?.humanTakeover || false
         };
       });
     }

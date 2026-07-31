@@ -95,6 +95,7 @@ model Customer {
   scheduledFor      DateTime?
   frozenUntil       DateTime?
   freezeReason      String?
+  humanTakeover     Boolean       @default(false)
   lostReason        String?
   leadScore         Int           @default(0)
   isInNurturing     Boolean       @default(false)
@@ -105,7 +106,8 @@ model Customer {
   pipeline     Pipeline?     @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
   journey      Journey?      @relation(fields: [journeyId], references: [id], onDelete: SetNull)
   interactions Interaction[]
-  tasks        Task[]
+  tasks          Task[]
+  flowExecutions FlowExecution[]
 
   @@unique([externalPersonId, journeyId])
 }
@@ -284,4 +286,78 @@ model RecipientLog {
   error      String?
   sentAt     DateTime?
   createdAt  DateTime  @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V2 CRM ARCHITECTURE: Campaigns, Flows, Funnels
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Campaign {
+  id             String    @id @default(cuid())
+  name           String
+  description    String?
+  objective      String
+  campaignNature String    @default("COMMERCIAL") // "COMMERCIAL" | "AUTOMATED"
+  targetCriteria String?   // JSON segment rules
+  financialGoal  Float?
+  status         String    @default("ACTIVE")
+  
+  flowId         String?
+  flow           Flow?     @relation(fields: [flowId], references: [id])
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Flow {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  status      String      @default("ACTIVE")
+  
+  campaigns   Campaign[]
+  steps       FlowStep[]
+  executions  FlowExecution[]
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model FlowStep {
+  id           String    @id @default(cuid())
+  flowId       String
+  flow         Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  
+  type         String    // "MESSAGE", "DELAY", "CONDITION", "ACTION"
+  order        Int
+  
+  // Fields for MESSAGE
+  templateId   String?
+  
+  // Fields for DELAY
+  delayMinutes Int?
+  
+  // Fields for ACTION (e.g. Move to Funnel)
+  targetPipelineId String?
+  targetStage      String?
+  
+  nextStepId   String?
+  
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model FlowExecution {
+  id             String    @id @default(cuid())
+  flowId         String
+  flow           Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  
+  customerId     String
+  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  currentStepId  String?
+  status         String    @default("RUNNING") // "RUNNING", "PAUSED", "COMPLETED", "FAILED"
+  
+  startedAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }

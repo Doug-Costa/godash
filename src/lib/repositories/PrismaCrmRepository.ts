@@ -54,6 +54,7 @@ export class PrismaCrmRepository implements ICrmRepository {
       scheduledFor: customer.scheduledFor,
       frozenUntil: customer.frozenUntil,
       freezeReason: customer.freezeReason,
+      humanTakeover: customer.humanTakeover,
       lostReason: customer.lostReason,
     };
   }
@@ -234,6 +235,7 @@ export class PrismaCrmRepository implements ICrmRepository {
         scheduledFor: data.scheduledFor,
         frozenUntil: data.frozenUntil,
         freezeReason: data.freezeReason,
+        humanTakeover: data.humanTakeover !== undefined ? data.humanTakeover : undefined,
         lostReason: data.lostReason,
       },
     });

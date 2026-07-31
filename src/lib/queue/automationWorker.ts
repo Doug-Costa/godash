@@ -21,6 +21,17 @@ export const automationWorker = new Worker(
       return;
     }
 
+    // Guard: Human Takeover or Frozen Lead
+    if (customer.humanTakeover) {
+      console.log(`[AutomationWorker] Customer ${customerId} is under HUMAN TAKEOVER. Skipping automated message.`);
+      return;
+    }
+    
+    if (customer.frozenUntil && new Date() < customer.frozenUntil) {
+      console.log(`[AutomationWorker] Customer ${customerId} is FROZEN until ${customer.frozenUntil}. Skipping automated message.`);
+      return;
+    }
+
     // Guard: If customer has transitioned to another journey, skip this job!
     if (customer.journeyId !== journeyId) {
       console.log(`[AutomationWorker] Customer ${customerId} journey has changed (Current: ${customer.journeyId}, Job: ${journeyId}). Skipping automation.`);

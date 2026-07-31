@@ -25,8 +25,21 @@ export interface LeadTaggedEvent {
   timestamp: Date;
 }
 
+export interface LeadAutomationResumedEvent {
+  eventName: 'LeadAutomationResumedEvent';
+  externalPersonId: number;
+  authorId: string;
+  timestamp: Date;
+}
+
+export type CrmEvent = 
+  | LeadInteractionRecordedEvent
+  | LeadRecycledByInactivityEvent
+  | LeadTaggedEvent
+  | LeadAutomationResumedEvent;
+
 export class CrmEventDispatcher {
-  static dispatch(event: LeadInteractionRecordedEvent | LeadRecycledByInactivityEvent | LeadTaggedEvent) {
+  static dispatch(event: CrmEvent) {
     console.log(`[Domain Event Dispatcher] Dispatched event: ${event.eventName}`, JSON.stringify(event));
   }
 }
