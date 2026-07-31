@@ -105,6 +105,14 @@ export class PrismaCrmRepository implements ICrmRepository {
       }
     });
 
+    const targetPipelineId = defaultPipeline?.id || customer.pipelineId;
+    if (targetPipelineId) {
+      await prisma.opportunity.updateMany({
+        where: { customerId: customer.id, pipelineId: targetPipelineId },
+        data: { stage: newStage }
+      });
+    }
+
     return {
       id: updated.id,
       externalPersonId: updated.externalPersonId,
@@ -141,6 +149,14 @@ export class PrismaCrmRepository implements ICrmRepository {
         ...(defaultPipeline && { pipelineId: defaultPipeline.id })
       }
     });
+
+    const targetPipelineId = defaultPipeline?.id || customer.pipelineId;
+    if (targetPipelineId) {
+      await prisma.opportunity.updateMany({
+        where: { customerId: customer.id, pipelineId: targetPipelineId },
+        data: { assigneeId }
+      });
+    }
 
     return {
       id: updated.id,
@@ -239,6 +255,24 @@ export class PrismaCrmRepository implements ICrmRepository {
         lostReason: data.lostReason,
       },
     });
+
+    const oppData: any = {};
+    if (data.stage !== undefined) oppData.stage = data.stage;
+    if (data.assigneeId !== undefined) oppData.assigneeId = data.assigneeId;
+    if (data.pipelineId !== undefined) oppData.pipelineId = data.pipelineId;
+    if (data.lossReason !== undefined) oppData.lossReason = data.lossReason;
+    if (data.freezeReason !== undefined) oppData.freezeReason = data.freezeReason;
+    if (data.humanTakeover !== undefined) oppData.humanTakeover = data.humanTakeover;
+    if (data.lostReason !== undefined) oppData.lossReason = data.lostReason;
+    
+    if (data.tag === 'CANCELED_CLIENT') oppData.status = 'LOST';
+    
+    if (Object.keys(oppData).length > 0) {
+      await prisma.opportunity.updateMany({
+        where: { customerId: customer.id },
+        data: oppData
+      });
+    }
 
     return {
       id: updated.id,

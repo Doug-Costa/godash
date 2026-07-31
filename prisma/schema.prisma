@@ -36,6 +36,7 @@ model User {
   assignedCustomers Customer[]
   interactions      Interaction[]
   tasks             Task[]
+  opportunities     Opportunity[]
 }
 
 model Account {
@@ -79,10 +80,11 @@ model VerificationToken {
 
 model Customer {
   id                String        @id @default(cuid())
-  externalPersonId  Int
-  stage             String        @default("novo_cadastro")
+  externalPersonId  Int?          // Optional for leads outside the legacy system
+  source            String        @default("DENTALGO") // e.g., DENTALGO, CSV, MANUAL, LP
+  stage             String        @default("novo_cadastro") // Legacy, to be migrated to Opportunity
   assigneeId        String?
-  pipelineId        String?
+  pipelineId        String?       // Legacy, to be migrated to Opportunity
   journeyId         String?
   joinedJourneyAt   DateTime?
   metadata          Json?         @default("{}") // Armazena Instagram, especialidade, rede social, etc.
@@ -90,24 +92,26 @@ model Customer {
   updatedAt         DateTime      @updatedAt
   lastInteractionAt DateTime?
   interactionCount  Int           @default(0)
-  lossReason        String?
+  lossReason        String?       // Legacy, to be migrated to Opportunity
   tag               String?
   scheduledFor      DateTime?
-  frozenUntil       DateTime?
-  freezeReason      String?
-  humanTakeover     Boolean       @default(false)
-  lostReason        String?
+  frozenUntil       DateTime?     // Legacy, to be migrated to Opportunity
+  freezeReason      String?       // Legacy, to be migrated to Opportunity
+  humanTakeover     Boolean       @default(false) // Legacy, to be migrated to Opportunity
+  lostReason        String?       // Legacy, to be migrated to Opportunity
   leadScore         Int           @default(0)
   isInNurturing     Boolean       @default(false)
   nurturingJourneyId String?
 
   // Relations
-  assignee     User?         @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
-  pipeline     Pipeline?     @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
-  journey      Journey?      @relation(fields: [journeyId], references: [id], onDelete: SetNull)
-  interactions Interaction[]
-  tasks          Task[]
-  flowExecutions FlowExecution[]
+  assignee         User?             @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  pipeline         Pipeline?         @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  journey          Journey?          @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  interactions     Interaction[]
+  tasks            Task[]
+  flowExecutions   FlowExecution[]
+  opportunities    Opportunity[]
+  customerProducts CustomerProduct[]
 
   @@unique([externalPersonId, journeyId])
 }
@@ -164,11 +168,16 @@ model Pipeline {
   id          String     @id @default(cuid())
   name        String     @unique // "Vendas" | "CS" | "Nutrição"
   description String?
+  
+  productId   String?
+  product     Product?   @relation(fields: [productId], references: [id])
+  
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
   // Relations
-  customers   Customer[]
+  customers     Customer[]
+  opportunities Opportunity[]
 }
 
 model Interaction {
@@ -187,6 +196,10 @@ model Interaction {
 
   // Relations
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  opportunityId String?
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  
   author   User?    @relation(fields: [authorId], references: [id], onDelete: Cascade)
 }
 
@@ -210,6 +223,10 @@ model Task {
 
   // Relations
   customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  opportunityId String?
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  
   assignedTo User?       @relation(fields: [assignedToId], references: [id], onDelete: Cascade)
   journey    Journey?    @relation(fields: [journeyId], references: [id], onDelete: SetNull)
   automation Automation? @relation(fields: [automationId], references: [id], onDelete: SetNull)
@@ -301,10 +318,14 @@ model Campaign {
   targetCriteria String?   // JSON segment rules
   financialGoal  Float?
   status         String    @default("ACTIVE")
+  productId      String?
+  product        Product?  @relation(fields: [productId], references: [id])
   
   flowId         String?
   flow           Flow?     @relation(fields: [flowId], references: [id])
   
+  opportunities  Opportunity[]
+
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 }
@@ -355,9 +376,84 @@ model FlowExecution {
   customerId     String
   customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   
+  opportunityId  String?
+  opportunity    Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  
   currentStepId  String?
   status         String    @default("RUNNING") // "RUNNING", "PAUSED", "COMPLETED", "FAILED"
   
   startedAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V4 CRM ARCHITECTURE: Universal CDP (Products & Opportunities)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Product {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  type        String    @default("SOFTWARE") // SOFTWARE, COURSE, CONGRESS, MENTORSHIP
+  price       Float?
+  isActive    Boolean   @default(true)
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  pipelines        Pipeline[]
+  campaigns        Campaign[]
+  opportunities    Opportunity[]
+  customerProducts CustomerProduct[]
+}
+
+model CustomerProduct {
+  id         String    @id @default(cuid())
+  customerId String
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  status     String    @default("ACTIVE") // ACTIVE, CANCELED, EXPIRED, COMPLETED
+  startDate  DateTime?
+  endDate    DateTime?
+  pricePaid  Float?
+  
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model Opportunity {
+  id             String    @id @default(cuid())
+  
+  customerId     String
+  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  pipelineId     String
+  pipeline       Pipeline  @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  
+  stage          String    @default("novo_cadastro")
+  status         String    @default("OPEN") // OPEN, WON, LOST
+  value          Float?
+  
+  assigneeId     String?
+  assignee       User?     @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  
+  productId      String?
+  product        Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  
+  sourceCampaignId String?
+  sourceCampaign   Campaign? @relation(fields: [sourceCampaignId], references: [id], onDelete: SetNull)
+  
+  lossReason     String?
+  humanTakeover  Boolean   @default(false)
+  freezeReason   String?
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  tasks          Task[]
+  interactions   Interaction[]
+  flowExecutions FlowExecution[]
 }

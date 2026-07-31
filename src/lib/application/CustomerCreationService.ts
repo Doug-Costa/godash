@@ -6,6 +6,7 @@ export class CustomerCreationService {
   /**
    * Safely create or merge a customer record.
    * Prevents duplicates by resolving identity first.
+   * If pipelineId is provided, it creates an Opportunity for that pipeline (V4 CDP Architecture).
    */
   static async createOrMerge(data: {
     externalPersonId?: number;
@@ -14,9 +15,11 @@ export class CustomerCreationService {
     tag?: string;
     pipelineId?: string | null;
     metadata: Record<string, any>;
-    source?: string; // e.g. "CSV", "API", "Manual"
+    source?: string; // e.g. "DENTALGO", "CSV", "MANUAL", "LP"
     authorId?: string;
-  }): Promise<Customer> {
+    productId?: string;
+    sourceCampaignId?: string;
+  }) {
     const { 
       externalPersonId, 
       journeyId = null, 
@@ -24,8 +27,10 @@ export class CustomerCreationService {
       tag, 
       pipelineId, 
       metadata,
-      source = 'Sistema',
-      authorId
+      source = 'DENTALGO',
+      authorId,
+      productId,
+      sourceCampaignId
     } = data;
 
     // 1. Resolve Identity
@@ -35,17 +40,15 @@ export class CustomerCreationService {
       email: metadata?.email
     });
 
+    let customerId: string;
+
     if (existingCustomer) {
       // MERGE / ENRICHMENT
-      
-      // Update metadata (merge old and new)
       const mergedMetadata = {
         ...(existingCustomer.metadata as Record<string, any> || {}),
         ...metadata,
       };
 
-      // We ONLY update metadata and interaction count. 
-      // We don't overwrite stage or assignee to not disrupt ongoing sales.
       const updated = await prisma.customer.update({
         where: { id: existingCustomer.id },
         data: {
@@ -53,38 +56,59 @@ export class CustomerCreationService {
           interactionCount: { increment: 1 }
         }
       });
-
-      // Register interaction for the merge
-      await prisma.interaction.create({
+      
+      customerId = updated.id;
+      console.log(`[IdentityResolution] Merged new data into existing customer ${customerId}`);
+    } else {
+      // CREATE NEW CUSTOMER
+      const created = await prisma.customer.create({
         data: {
-          customerId: updated.id,
-          text: `Tentativa de importação/criação via ${source} recebida. Dados mesclados com o cadastro existente.`,
-          authorId: authorId || null,
-          type: 'SYSTEM'
+          externalPersonId,
+          source,
+          journeyId,
+          stage, // Legacy field
+          tag,
+          pipelineId, // Legacy field
+          metadata
         }
       });
-
-      console.log(`[IdentityResolution] Merged new data into existing customer ${updated.id} (Ext ID: ${updated.externalPersonId})`);
-      return updated;
+      
+      customerId = created.id;
+      console.log(`[IdentityResolution] Created NEW customer ${customerId}`);
     }
-
-    // CREATE NEW
-    if (!externalPersonId) {
-      throw new Error('externalPersonId is required for new customers (for backward compatibility).');
-    }
-
-    const created = await prisma.customer.create({
+    
+    // 2. Register Interaction
+    await prisma.interaction.create({
       data: {
-        externalPersonId,
-        journeyId,
-        stage,
-        tag,
-        pipelineId,
-        metadata
+        customerId,
+        text: `Tentativa de importação/criação via ${source} processada.`,
+        authorId: authorId || null,
+        type: 'SYSTEM'
       }
     });
 
-    console.log(`[IdentityResolution] Created NEW customer ${created.id} (Ext ID: ${created.externalPersonId})`);
-    return created;
+    // 3. Create Opportunity (if pipeline is provided)
+    if (pipelineId) {
+      const existingOpp = await prisma.opportunity.findFirst({
+        where: { customerId, pipelineId }
+      });
+
+      if (!existingOpp) {
+        await prisma.opportunity.create({
+          data: {
+            customerId,
+            pipelineId,
+            stage,
+            productId,
+            sourceCampaignId
+          }
+        });
+        console.log(`[Opportunity] Created new Opportunity for customer ${customerId} in pipeline ${pipelineId}`);
+      } else {
+        console.log(`[Opportunity] Customer ${customerId} already has an Opportunity in pipeline ${pipelineId}`);
+      }
+    }
+
+    return await prisma.customer.findUnique({ where: { id: customerId } });
   }
 }

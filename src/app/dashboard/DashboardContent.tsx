@@ -14,6 +14,7 @@ import ThemeToggle from '@/components/ThemeToggle';
 import MonthSelector from '@/components/ui/MonthSelector';
 import Timeline from '@/components/ui/Timeline';
 import AutomatedCampaignAnalytics from '@/components/AutomatedCampaignAnalytics';
+import { NewLeadModal } from '@/components/ui/NewLeadModal';
 
 const formatBRL = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -67,8 +68,10 @@ export default function DashboardContent({
   );
 
   const [atendimentoViewMode, setAtendimentoViewMode] = useState<'kanban' | 'list'>('kanban');
+  const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
   const [atendimentoFila, setAtendimentoFila] = useState<'alerts' | 'cancelados' | 'expirar' | 'abandonados'>('alerts');
   const [filaCounts, setFilaCounts] = useState({ alerts: 0, cancelados: 0, expirar: 0, abandonados: 0 });
+  const [modalActiveTab, setModalActiveTab] = useState<'oportunidade' | 'perfil'>('oportunidade');
   
   const visiblePipelines = pipelines.filter(p => isAdmin || p.name !== 'Nutrição');
   const defaultPipeline = visiblePipelines.find(p => p.name === 'Vendas') || visiblePipelines[0];
@@ -1750,21 +1753,35 @@ export default function DashboardContent({
 
         {/* Abas de Funis (Pipelines) - Apenas se no Kanban */}
         {atendimentoViewMode === 'kanban' && (
-          <div style={{ display: 'flex', gap: 8, background: 'var(--surface-raised)', padding: 6, borderRadius: 10, width: 'fit-content', border: '1px solid var(--border)' }}>
-            {visiblePipelines.map((pipeline) => (
-              <button
-                key={pipeline.id}
-                onClick={() => setActivePipelineId(pipeline.id)}
-                style={{
-                  padding: '6px 16px', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  background: activePipelineId === pipeline.id ? 'var(--accent)' : 'transparent',
-                  color: activePipelineId === pipeline.id ? '#fff' : 'var(--text-secondary)',
-                  transition: 'all 0.2s'
-                }}
-              >
-                ⚡ Funil: {pipeline.name}
-              </button>
-            ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 8, background: 'var(--surface-raised)', padding: 6, borderRadius: 10, width: 'fit-content', border: '1px solid var(--border)' }}>
+              {visiblePipelines.map((pipeline) => (
+                <button
+                  key={pipeline.id}
+                  onClick={() => setActivePipelineId(pipeline.id)}
+                  style={{
+                    padding: '6px 16px', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    background: activePipelineId === pipeline.id ? 'var(--accent)' : 'transparent',
+                    color: activePipelineId === pipeline.id ? '#fff' : 'var(--text-secondary)',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  ⚡ Funil: {pipeline.name}
+                </button>
+              ))}
+            </div>
+            
+            <button 
+              onClick={() => setIsNewLeadModalOpen(true)}
+              style={{
+                padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                background: 'var(--accent)', color: '#fff', display: 'flex', alignItems: 'center', gap: 8,
+                boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)'
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+              Adicionar Lead
+            </button>
           </div>
         )}
 
@@ -3643,8 +3660,31 @@ export default function DashboardContent({
               </button>
             </div>
 
-            {/* Two-column Body */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, flex: 1, minHeight: 0, marginTop: 16 }}>
+            {/* Modal Tabs */}
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: 16 }}>
+              <button
+                onClick={() => setModalActiveTab('oportunidade')}
+                style={{
+                  padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: modalActiveTab === 'oportunidade' ? '2px solid var(--accent)' : '2px solid transparent',
+                  color: modalActiveTab === 'oportunidade' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
+                }}
+              >
+                Oportunidade (Kanban)
+              </button>
+              <button
+                onClick={() => setModalActiveTab('perfil')}
+                style={{
+                  padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: modalActiveTab === 'perfil' ? '2px solid var(--accent)' : '2px solid transparent',
+                  color: modalActiveTab === 'perfil' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
+                }}
+              >
+                Perfil Global do Cliente
+              </button>
+            </div>
+
+            {modalActiveTab === 'oportunidade' && (
+              {/* Two-column Body */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, flex: 1, minHeight: 0, marginTop: 16 }}>
               {/* Left Column: Actions & Details */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', paddingRight: 8 }}>
                 {/* Quick selectors Row */}
@@ -4231,6 +4271,53 @@ export default function DashboardContent({
                 </form>
               </div>
             </div>
+            </div>
+            )}
+
+            {modalActiveTab === 'perfil' && (
+              <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
+                <h4 style={{ color: 'var(--text-primary)', marginBottom: 16 }}>Visão Geral do Cliente</h4>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  {/* Dados Cadastrais */}
+                  <div style={{ background: 'var(--surface-raised)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
+                    <h5 style={{ color: 'var(--text-secondary)', marginBottom: 12, fontSize: 13 }}>DADOS CADASTRAIS</h5>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div><strong style={{ color: 'var(--text-primary)' }}>Nome:</strong> {selectedLead.fullName}</div>
+                      <div><strong style={{ color: 'var(--text-primary)' }}>Email:</strong> {selectedLead.email || 'N/A'}</div>
+                      <div><strong style={{ color: 'var(--text-primary)' }}>Telefone:</strong> {selectedLead.phoneNumber || 'N/A'}</div>
+                      <div><strong style={{ color: 'var(--text-primary)' }}>Origem:</strong> {selectedLead.source || 'ORGÂNICO'}</div>
+                    </div>
+                  </div>
+
+                  {/* Produtos Adquiridos */}
+                  <div style={{ background: 'var(--surface-raised)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
+                    <h5 style={{ color: 'var(--text-secondary)', marginBottom: 12, fontSize: 13 }}>PRODUTOS / PLANOS ATIVOS</h5>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ padding: 12, background: 'rgba(74, 222, 128, 0.1)', border: '1px solid #4ADE80', borderRadius: 8, color: '#4ADE80', fontWeight: 600 }}>
+                        📦 DentalGO - Assinatura Padrão
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 400, marginTop: 4 }}>Ativo desde {new Date().toLocaleDateString('pt-BR')}</div>
+                      </div>
+                      <div style={{ padding: 12, background: 'rgba(96, 165, 250, 0.1)', border: '1px solid #60A5FA', borderRadius: 8, color: '#60A5FA', fontWeight: 600 }}>
+                        🎓 Curso de Gestão de Clínicas
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 400, marginTop: 4 }}>Adquirido em 10/05/2026</div>
+                      </div>
+                      {/* TODO: Implementar busca real de produtos do banco de dados v4 */}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Histórico Global (Future) */}
+                <div style={{ marginTop: 24, background: 'var(--surface-raised)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
+                  <h5 style={{ color: 'var(--text-secondary)', marginBottom: 12, fontSize: 13 }}>HISTÓRICO GLOBAL DE INTERAÇÕES</h5>
+                  <div style={{ padding: 12, fontSize: 13, color: 'var(--text-muted)' }}>
+                    As interações de todos os funis e campanhas deste cliente aparecerão aqui. (Em desenvolvimento)
+                  </div>
+                </div>
+                
+              </div>
+            )}
+
           </div>
         </div>
       )}
@@ -5540,6 +5627,16 @@ export default function DashboardContent({
           </div>
         </div>
       )}
+
+      <NewLeadModal
+        isOpen={isNewLeadModalOpen}
+        onClose={() => setIsNewLeadModalOpen(false)}
+        onLeadAdded={() => {
+          fetchLeads('kanban');
+          fetchKpis(); // Updates counts
+        }}
+        pipelines={pipelines}
+      />
 
     </div>
   );

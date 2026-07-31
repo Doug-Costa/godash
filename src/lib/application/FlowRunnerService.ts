@@ -57,14 +57,17 @@ export class FlowRunnerService {
       where: { id: executionId },
       include: {
         customer: true,
+        opportunity: true,
         flow: { include: { steps: true } }
       }
     });
 
     if (!execution || execution.status !== 'RUNNING') return;
     
-    // Check if customer has human takeover active
-    if (execution.customer.humanTakeover) {
+    // Check if customer or opportunity has human takeover active
+    const isTakeover = execution.opportunity?.humanTakeover || execution.customer.humanTakeover;
+
+    if (isTakeover) {
       console.log(`[FlowRunner] Execution ${executionId} paused due to Human Takeover.`);
       // We keep the status as RUNNING but we don't proceed. 
       // When humanTakeover is disabled, a 'resume' action should call scheduleStepExecution again.
