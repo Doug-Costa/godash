@@ -74,6 +74,16 @@ export default function DashboardContent({
   const defaultPipeline = visiblePipelines.find(p => p.name === 'Vendas') || visiblePipelines[0];
   const [activePipelineId, setActivePipelineId] = useState<string>(defaultPipeline?.id || '');
   
+  // Bulk Actions state (Admin only)
+  const [showBulkActionModal, setShowBulkActionModal] = useState(false);
+  const [bulkPipelineId, setBulkPipelineId] = useState('');
+  const [bulkAssigneeId, setBulkAssigneeId] = useState('all');
+  const [bulkJourneyId, setBulkJourneyId] = useState('all');
+  const [bulkStage, setBulkStage] = useState('all');
+  const [bulkActionType, setBulkActionType] = useState('assign'); // 'assign' | 'return_to_queue'
+  const [bulkTargetAssigneeId, setBulkTargetAssigneeId] = useState('');
+  const [executingBulkAction, setExecutingBulkAction] = useState(false);
+  
   // Leads data state (loaded dynamically for Kanban & Leads Table)
   const [leads, setLeads] = useState<any[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
@@ -1373,6 +1383,44 @@ export default function DashboardContent({
     }
   };
 
+  const handleExecuteBulkAction = async () => {
+    if (!confirm('Deseja realmente executar esta ação em massa nos contatos selecionados? Esta operação é irreversível.')) {
+      return;
+    }
+
+    setExecutingBulkAction(true);
+    try {
+      const res = await fetch('/api/leads/bulk-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: bulkActionType,
+          targetAssigneeId: bulkTargetAssigneeId,
+          filters: {
+            pipelineId: bulkPipelineId,
+            assigneeId: bulkAssigneeId,
+            journeyId: bulkJourneyId,
+            stage: bulkStage
+          }
+        })
+      });
+
+      const json = await res.json();
+      if (json.success) {
+        alert(`Sucesso! Ação executada com êxito. Contatos afetados: ${json.updatedCount}`);
+        setShowBulkActionModal(false);
+        fetchLeads();
+      } else {
+        alert(`Erro ao executar ação em massa: ${json.error || 'Erro desconhecido'}`);
+      }
+    } catch (err: any) {
+      console.error('Error executing bulk action:', err);
+      alert(`Erro de conexão ao executar ação em massa: ${err.message}`);
+    } finally {
+      setExecutingBulkAction(false);
+    }
+  };
+
   // Team Management: Save Agent (Create/Update)
   const handleSaveAgent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1470,6 +1518,31 @@ export default function DashboardContent({
               </h2>
               <p className="label-sm" style={{ marginTop: 2 }}>Gerencie leads, atenda alertas, reverta cancelados e controle as suas oportunidades em uma única fila.</p>
             </div>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkPipelineId(activePipelineId || 'all');
+                  setShowBulkActionModal(true);
+                }}
+                className="btn-action btn-action-outline"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 16px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  borderColor: 'var(--accent)',
+                  color: 'var(--accent)',
+                  background: 'transparent'
+                }}
+              >
+                ⚙️ Ações em Massa (Admin)
+              </button>
+            )}
           </div>
 
           {/* Filas de Atendimento (Row 2) */}
@@ -5246,6 +5319,164 @@ export default function DashboardContent({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================================== */}
+      {/* MODAL 6: Ações em Massa (Admin Only) */}
+      {/* ====================================================================== */}
+      {showBulkActionModal && isAdmin && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'var(--overlay)',
+          backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div className="card" style={{ width: '95%', maxWidth: '600px', background: 'var(--surface)', padding: 24, borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+              <h3 style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>
+                ⚙️ Executar Ações em Massa
+              </h3>
+              <button 
+                onClick={() => setShowBulkActionModal(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 24, cursor: 'pointer', padding: 0 }}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Content / Filters */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <h4 style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', margin: 0 }}>1. Filtrar Contatos</h4>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Funil (Pipeline):</label>
+                  <select 
+                    value={bulkPipelineId} 
+                    onChange={(e) => setBulkPipelineId(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                  >
+                    <option value="all">Todos os Funis</option>
+                    {visiblePipelines.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Estágio (Stage):</label>
+                  <select 
+                    value={bulkStage} 
+                    onChange={(e) => setBulkStage(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                  >
+                    <option value="all">Todos os Estágios</option>
+                    <option value="novo_cadastro">Novo Cadastro (Etapa 1)</option>
+                    <option value="primeiro_contato">Contato Inicial (Etapa 2)</option>
+                    <option value="em_negociacao">Em Negociação (Etapa 3)</option>
+                    <option value="ganho">Convertido / Ganho (Etapa 4)</option>
+                    <option value="perdido">Perdido / Descarte (Etapa 5)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Responsável Atual:</label>
+                  <select 
+                    value={bulkAssigneeId} 
+                    onChange={(e) => setBulkAssigneeId(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                  >
+                    <option value="all">Todos os Operadores</option>
+                    <option value="unassigned">Sem Responsável (Não Atribuído)</option>
+                    {teamList.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Campanha (Jornada):</label>
+                  <select 
+                    value={bulkJourneyId} 
+                    onChange={(e) => setBulkJourneyId(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                  >
+                    <option value="all">Todas as Campanhas</option>
+                    <option value="none">Nenhuma Campanha (Fila Geral)</option>
+                    {campaignsData.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <h4 style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', margin: 0 }}>2. Ação a ser executada</h4>
+                
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Ação:</label>
+                  <select 
+                    value={bulkActionType} 
+                    onChange={(e) => setBulkActionType(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                  >
+                    <option value="assign">Atribuir / Transferir para operador</option>
+                    <option value="return_to_queue">Retornar para a fila original (Remover do Kanban e Desatribuir)</option>
+                  </select>
+                </div>
+
+                {bulkActionType === 'assign' && (
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Novo Operador Responsável:</label>
+                    <select 
+                      value={bulkTargetAssigneeId} 
+                      onChange={(e) => setBulkTargetAssigneeId(e.target.value)}
+                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                    >
+                      <option value="">-- Selecione o Operador --</option>
+                      <option value="unassign">Remover Atribuição (Tornar Sem Responsável)</option>
+                      {teamList.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Warning panel */}
+            <div style={{
+              background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)',
+              borderRadius: 8, padding: 12, color: '#D97706', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4
+            }}>
+              <span style={{ fontWeight: 'bold' }}>⚠️ Atenção e Confirmação:</span>
+              <span>Esta ação modificará permanentemente múltiplos contatos que correspondam exatamente aos filtros selecionados acima. Certifique-se de que os filtros estão corretos antes de prosseguir.</span>
+            </div>
+
+            {/* Footer Buttons */}
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <button 
+                type="button" 
+                onClick={() => setShowBulkActionModal(false)}
+                className="btn-action btn-action-outline"
+                style={{ padding: '8px 16px' }}
+                disabled={executingBulkAction}
+              >
+                Cancelar
+              </button>
+              <button 
+                type="button" 
+                onClick={handleExecuteBulkAction}
+                className="btn-action btn-action-purple"
+                style={{ padding: '8px 16px', background: 'var(--red)', border: '1px solid var(--red)' }}
+                disabled={executingBulkAction || (bulkActionType === 'assign' && !bulkTargetAssigneeId)}
+              >
+                {executingBulkAction ? 'Executando...' : '🔥 Executar Ação em Massa'}
+              </button>
+            </div>
+
           </div>
         </div>
       )}
