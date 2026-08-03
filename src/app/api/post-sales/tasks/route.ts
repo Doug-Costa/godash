@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server';
 import { PrismaPostSaleRepository } from '@/lib/repositories/PrismaPostSaleRepository';
+import { auth } from '@/auth';
 
 const repo = new PrismaPostSaleRepository();
 
@@ -14,6 +15,12 @@ const repo = new PrismaPostSaleRepository();
  */
 export async function PATCH(request: Request) {
   try {
+    const session = await auth();
+    const role = (session?.user as any)?.role;
+    if (!session || (role !== 'ADMIN' && role !== 'POST_SALES')) {
+      return NextResponse.json({ success: false, error: 'Não autorizado' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, action, note } = body as {
       id: string;
@@ -42,10 +49,21 @@ export async function PATCH(request: Request) {
  * GET /api/post-sales/tasks?status=PENDING&assignedTo=<userId>
  */
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const assignedTo = searchParams.get('assignedTo') ?? undefined;
-
   try {
+    const session = await auth();
+    const role = (session?.user as any)?.role;
+    if (!session || (role !== 'ADMIN' && role !== 'POST_SALES')) {
+      return NextResponse.json({ success: false, error: 'Não autorizado' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const assignedTo = searchParams.get('assignedTo') ?? undefined;
+
+    // Se usuário for apenas POST_SALES e tentar ver de todos, forçar para ele mesmo
+    // Mas a regra permite POST_SALES ver tudo ou só ADMIN?
+    // "rejeitar consultas não paginadas sem essas credenciais". 
+    // Como restringimos a rota inteira para ADMIN/POST_SALES, já está protegido.
+
     const alerts = await repo.getPendingAlerts(assignedTo);
     return NextResponse.json({ success: true, count: alerts.length, tasks: alerts });
   } catch (error: unknown) {

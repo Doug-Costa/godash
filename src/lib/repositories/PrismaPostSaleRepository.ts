@@ -50,14 +50,14 @@ function mapTask(t: {
   snapshotPlanName: string | null;
   createdAt: Date;
   customer: { externalPersonId: number };
-  automation: { name: string; actionConfig: any } | null;
+  automation: { id: string; name: string; actionConfig: any } | null;
   assignedTo: { name: string | null } | null;
 }): LeadPostSaleTaskDTO {
   const config = t.automation?.actionConfig as any;
   return {
     id: t.id,
     externalPersonId: t.customer.externalPersonId,
-    sequenceId: t.automation?.name || '', // Keep sequenceId matching the name or ID
+    sequenceId: t.automation?.id || t.automation?.name || '', // Prefer ID, fallback to name
     sequenceName: t.automation?.name || 'Pós-Venda',
     templateMessage: config?.templateMessage || '',
     assignedToId: t.assignedToId,
@@ -74,7 +74,7 @@ function mapTask(t: {
 
 const TASK_INCLUDE = {
   customer: { select: { externalPersonId: true } },
-  automation: { select: { name: true, actionConfig: true } },
+  automation: { select: { id: true, name: true, actionConfig: true } },
   assignedTo: { select: { name: true } },
 } as const;
 
@@ -148,12 +148,15 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
   async createTask(data: CreateTaskInput): Promise<LeadPostSaleTaskDTO> {
     const seq = data.sequenceId ? await prisma.automation.findUnique({
       where: { id: data.sequenceId },
-      select: { journeyId: true }
+      select: { journeyId: true, channel: true, actionConfig: true }
     }) : null;
     const journeyId = seq?.journeyId || null;
+    const channel = seq?.channel || (seq?.actionConfig as any)?.channel || 'POST_SALE';
 
+    // Avoid duplicates by finding latest active customer with externalPersonId
     let customer = await prisma.customer.findFirst({
-      where: { externalPersonId: data.externalPersonId, journeyId }
+      where: { externalPersonId: data.externalPersonId },
+      orderBy: { updatedAt: 'desc' }
     });
 
     if (!customer) {
@@ -176,7 +179,7 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
         snapshotPlanId: data.snapshotPlanId ?? null,
         snapshotPlanName: data.snapshotPlanName ?? null,
         status: 'PENDING',
-        taskType: 'POST_SALE'
+        taskType: channel
       },
       include: TASK_INCLUDE,
     });
@@ -186,44 +189,86 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
   async createManyTasks(data: CreateTaskInput[]): Promise<number> {
     if (data.length === 0) return 0;
     
-    let count = 0;
-    for (const d of data) {
-      const seq = d.sequenceId ? await prisma.automation.findUnique({
-        where: { id: d.sequenceId },
-        select: { journeyId: true }
-      }) : null;
-      const journeyId = seq?.journeyId || null;
+    // 1. Fetch all needed automations in one query
+    const sequenceIds = [...new Set(data.map(d => d.sequenceId).filter(Boolean))];
+    const automations = await prisma.automation.findMany({
+      where: { id: { in: sequenceIds } },
+      select: { id: true, journeyId: true, channel: true, actionConfig: true }
+    });
+    const automationMap = new Map(automations.map(a => [a.id, a]));
 
-      let customer = await prisma.customer.findFirst({
-        where: { externalPersonId: d.externalPersonId, journeyId }
+    // 2. Fetch all existing customers and map them
+    const externalPersonIds = [...new Set(data.map(d => d.externalPersonId))];
+    const existingCustomers = await prisma.customer.findMany({
+      where: { externalPersonId: { in: externalPersonIds } },
+      orderBy: { updatedAt: 'desc' }
+    });
+    
+    const customerMap = new Map<number, string>();
+    for (const c of existingCustomers) {
+      if (c.externalPersonId && !customerMap.has(c.externalPersonId)) {
+        customerMap.set(c.externalPersonId, c.id);
+      }
+    }
+
+    // 3. Create missing customers
+    const missingPersonIds = externalPersonIds.filter(id => !customerMap.has(id));
+    if (missingPersonIds.length > 0) {
+      const missingCustomersData = missingPersonIds.map(missingId => {
+        const row = data.find(d => d.externalPersonId === missingId);
+        const seq = row?.sequenceId ? automationMap.get(row.sequenceId) : null;
+        return {
+          externalPersonId: missingId,
+          journeyId: seq?.journeyId || null,
+          stage: 'novo_cadastro'
+        };
       });
+      
+      await prisma.customer.createMany({
+        data: missingCustomersData,
+        skipDuplicates: true
+      });
+      
+      // Refetch the newly created customers to map their IDs
+      const newCustomers = await prisma.customer.findMany({
+        where: { externalPersonId: { in: missingPersonIds } }
+      });
+      for (const c of newCustomers) {
+        if (c.externalPersonId) {
+          customerMap.set(c.externalPersonId, c.id);
+        }
+      }
+    }
 
-      if (!customer) {
-        customer = await prisma.customer.create({
-          data: {
-            externalPersonId: d.externalPersonId,
-            journeyId,
-            stage: 'novo_cadastro'
-          }
-        });
+    // 4. Prepare and create tasks
+    const tasksToCreate = data.map(d => {
+      const seq = d.sequenceId ? automationMap.get(d.sequenceId) : null;
+      const journeyId = seq?.journeyId || null;
+      const channel = seq?.channel || (seq?.actionConfig as any)?.channel || 'POST_SALE';
+      const customerId = customerMap.get(d.externalPersonId);
+
+      if (!customerId) {
+        throw new Error(`Customer not found for externalPersonId: ${d.externalPersonId}`);
       }
 
-      await prisma.task.create({
-        data: {
-          customerId: customer.id,
-          automationId: d.sequenceId,
-          journeyId: journeyId,
-          assignedToId: d.assignedToId ?? null,
-          scheduledFor: d.scheduledFor,
-          snapshotPlanId: d.snapshotPlanId ?? null,
-          snapshotPlanName: d.snapshotPlanName ?? null,
-          status: 'PENDING',
-          taskType: 'POST_SALE'
-        }
-      });
-      count++;
-    }
-    return count;
+      return {
+        customerId,
+        automationId: d.sequenceId,
+        journeyId: journeyId,
+        assignedToId: d.assignedToId ?? null,
+        scheduledFor: d.scheduledFor,
+        snapshotPlanId: d.snapshotPlanId ?? null,
+        snapshotPlanName: d.snapshotPlanName ?? null,
+        status: 'PENDING',
+        taskType: channel
+      };
+    });
+
+    const result = await prisma.task.createMany({
+      data: tasksToCreate
+    });
+
+    return result.count;
   }
 
   async getTaskById(id: string): Promise<LeadPostSaleTaskDTO | null> {
@@ -261,7 +306,10 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
   async getPendingAlerts(assignedToId?: string): Promise<LeadPostSaleTaskDTO[]> {
     const tasks = await prisma.task.findMany({
       where: {
-        taskType: 'POST_SALE',
+        OR: [
+          { taskType: 'POST_SALE' },
+          { automation: { triggerEvent: 'POST_SALE' } }
+        ],
         status: 'PENDING',
         scheduledFor: { lte: new Date() },
         ...(assignedToId ? { assignedToId } : {}),
@@ -280,7 +328,10 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
   ): Promise<boolean> {
     const count = await prisma.task.count({
       where: {
-        taskType: 'POST_SALE',
+        OR: [
+          { taskType: 'POST_SALE' },
+          { automation: { triggerEvent: 'POST_SALE' } }
+        ],
         customer: { externalPersonId },
         automationId: sequenceId,
         status: 'PENDING',

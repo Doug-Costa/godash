@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { signOut } from 'next-auth/react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ReactFlow, MiniMap, Controls, Background, Panel, MarkerType } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
@@ -61,6 +62,15 @@ export default function DashboardContent({
   pipelines = [],
 }: DashboardContentProps) {
   const isAdmin = currentUser?.role === 'ADMIN';
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const handleMonthChange = (newMonth: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('month', newMonth);
+    params.delete('period');
+    router.push(`/dashboard?${params.toString()}`);
+  };
 
   // State Management
   const [activeTab, setActiveTab] = useState<'financeiro' | 'kanban' | 'leads' | 'team' | 'cancelados' | 'alerts' | 'campanhas' | 'atendimento'>(
@@ -1746,7 +1756,7 @@ export default function DashboardContent({
 
             <div>
               <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Competência:</label>
-              <MonthSelector currentMonth={filterMonth} allowAll={true} />
+              <MonthSelector currentMonth={filterMonth} allowAll={true} onChange={handleMonthChange} />
             </div>
           </div>
         </div>
@@ -2336,7 +2346,7 @@ export default function DashboardContent({
             </h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <span className="label-sm">Competência:</span>
-              <MonthSelector currentMonth={filterMonth} allowAll={false} />
+              <MonthSelector currentMonth={filterMonth} allowAll={false} onChange={handleMonthChange} />
             </div>
           </div>
 
@@ -3090,8 +3100,8 @@ export default function DashboardContent({
                         <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 'normal' }}>{agent.email}</div>
                       </td>
                       <td>
-                        <span className={`badge ${agent.role === 'ADMIN' ? 'badge-cyan' : 'badge-neu'}`} style={{ fontSize: 10, padding: '2px 6px' }}>
-                          {agent.role === 'ADMIN' ? 'Administrador' : 'Agente'}
+                        <span className={`badge ${agent.role === 'ADMIN' ? 'badge-cyan' : agent.role === 'POST_SALES' ? 'badge-purple' : 'badge-neu'}`} style={{ fontSize: 10, padding: '2px 6px' }}>
+                          {agent.role === 'ADMIN' ? 'Administrador' : agent.role === 'POST_SALES' ? 'Pós-Venda' : 'Agente'}
                         </span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
@@ -4403,6 +4413,7 @@ export default function DashboardContent({
                   style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
                 >
                   <option value="AGENT">Agente Comercial (Visualização restrita)</option>
+                  <option value="POST_SALES">Equipe de Pós-Vendas</option>
                   <option value="ADMIN">Administrador (Acesso total)</option>
                 </select>
               </div>

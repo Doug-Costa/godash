@@ -1,22 +1,21 @@
 'use client';
 
-import { useRouter, useSearchParams } from 'next/navigation';
-
 interface MonthSelectorProps {
-  currentMonth: string; // YYYY-MM
+  currentMonth: string; // YYYY-MM or 'all'
   allowAll?: boolean;
+  onChange?: (month: string) => void;
 }
 
-export default function MonthSelector({ currentMonth, allowAll = true }: MonthSelectorProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
+export default function MonthSelector({ currentMonth, allowAll = true, onChange }: MonthSelectorProps) {
   const isAll = allowAll && currentMonth === 'all';
   const defaultMonthStr = new Date().toISOString().slice(0, 7);
-  const activeMonthStr = (currentMonth === 'all') ? defaultMonthStr : currentMonth;
+  const activeMonthStr = isAll ? defaultMonthStr : currentMonth;
   const [year, month] = activeMonthStr.split('-');
   
-  const years = [2026, 2025, 2024, 2023, 2022, 2021];
+  // Dynamic years: Current year and previous 4 years
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
+  
   const months = [
     { v: '01', l: 'Janeiro' },
     { v: '02', l: 'Fevereiro' },
@@ -33,17 +32,11 @@ export default function MonthSelector({ currentMonth, allowAll = true }: MonthSe
   ];
 
   const handleUpdate = (newYear: string, newMonth: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('month', `${newYear}-${newMonth}`);
-    params.delete('period'); // Remove period if month is selected
-    router.push(`/dashboard?${params.toString()}`);
+    if (onChange) onChange(`${newYear}-${newMonth}`);
   };
 
   const handleClearFilter = () => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('month', 'all');
-    params.delete('period');
-    router.push(`/dashboard?${params.toString()}`);
+    if (onChange) onChange('all');
   };
 
   return (
@@ -72,6 +65,7 @@ export default function MonthSelector({ currentMonth, allowAll = true }: MonthSe
         <select
           value={year}
           onChange={(e) => handleUpdate(e.target.value, month)}
+          disabled={isAll}
           style={{
             background: 'var(--surface)',
             border: '1px solid var(--border)',
@@ -80,7 +74,7 @@ export default function MonthSelector({ currentMonth, allowAll = true }: MonthSe
             padding: '6px 10px',
             fontSize: 12,
             fontWeight: 600,
-            cursor: 'pointer',
+            cursor: isAll ? 'not-allowed' : 'pointer',
             outline: 'none'
           }}
         >
@@ -90,6 +84,7 @@ export default function MonthSelector({ currentMonth, allowAll = true }: MonthSe
         <select
           value={month}
           onChange={(e) => handleUpdate(year, e.target.value)}
+          disabled={isAll}
           style={{
             background: 'var(--surface)',
             border: '1px solid var(--border)',
@@ -98,7 +93,7 @@ export default function MonthSelector({ currentMonth, allowAll = true }: MonthSe
             padding: '6px 10px',
             fontSize: 12,
             fontWeight: 600,
-            cursor: 'pointer',
+            cursor: isAll ? 'not-allowed' : 'pointer',
             outline: 'none'
           }}
         >

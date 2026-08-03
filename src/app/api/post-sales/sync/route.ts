@@ -17,6 +17,8 @@ import pool from '@/lib/db';
 import { PrismaPostSaleRepository } from '@/lib/repositories/PrismaPostSaleRepository';
 import { Q_NEW_SUBSCRIPTIONS_IN_RANGE } from '@/lib/queries';
 import type { CreateTaskInput } from '@/lib/domain/post-sale.types';
+import { auth } from '@/auth';
+import prisma from '@/lib/prisma';
 
 const repo = new PrismaPostSaleRepository();
 
@@ -33,10 +35,24 @@ interface NewSubscriptionRow {
 }
 
 export async function POST(request: Request) {
-  // ── Autenticação básica via CRON_SECRET ou header interno ──────────────────
+  // ── Autenticação via CRON_SECRET ou Sessão NextAuth ──────────────────
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  
+  let isAuthorized = false;
+
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+    isAuthorized = true;
+  } else {
+    // Fallback: check session for manual triggers
+    const session = await auth();
+    const role = (session?.user as any)?.role;
+    if (session && (role === 'ADMIN' || role === 'POST_SALES')) {
+      isAuthorized = true;
+    }
+  }
+
+  if (!isAuthorized) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -44,24 +60,10 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const targetDate: string = body.date || new Date().toISOString().slice(0, 10);
 
-    // Janela de sincronização: início e fim do dia alvo
     const dayStart = `${targetDate} 00:00:00`;
     const dayEnd   = `${targetDate} 23:59:59`;
 
-    // 1. Busca novas assinaturas pagas do dia no Banco 1
-    const [rows] = await pool.query(Q_NEW_SUBSCRIPTIONS_IN_RANGE, [dayStart, dayEnd]);
-    const newSubs = rows as NewSubscriptionRow[];
-
-    if (newSubs.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: `Nenhuma nova assinatura em ${targetDate}.`,
-        tasksCreated: 0,
-        subscriptionsProcessed: 0,
-      });
-    }
-
-    // 2. Carrega sequências ativas do Banco 2
+    // 1. Carrega sequências ativas do Banco 2
     const sequences = await repo.listSequences(true);
 
     if (sequences.length === 0) {
@@ -69,56 +71,128 @@ export async function POST(request: Request) {
         success: true,
         message: 'Nenhuma PostSaleSequence ativa configurada.',
         tasksCreated: 0,
+        subscriptionsProcessed: 0,
+      });
+    }
+
+    // 2. Import queries
+    const { 
+      Q_NEW_SUBSCRIPTIONS_IN_RANGE, 
+      Q_BOOK_ONLY_LEADS, 
+      Q_PROMO_LEADS, 
+      Q_COURTESY_LEADS 
+    } = await import('@/lib/queries');
+
+    // 3. Executa queries em paralelo
+    const [
+      [newSubsRows],
+      [bookOnlyRows],
+      [promoRows],
+      [courtesyRows]
+    ] = await Promise.all([
+      pool.query(Q_NEW_SUBSCRIPTIONS_IN_RANGE, [dayStart, dayEnd]),
+      pool.query(Q_BOOK_ONLY_LEADS),
+      pool.query(Q_PROMO_LEADS),
+      pool.query(Q_COURTESY_LEADS),
+    ]);
+
+    const newSubs = newSubsRows as any[];
+    const bookOnly = bookOnlyRows as any[];
+    const promo = promoRows as any[];
+    const courtesy = courtesyRows as any[];
+
+    // 4. Mapear leads para as sequências
+    const pendingAssignments: Array<{ personId: number; seq: any; startAt: Date; planId?: number; planTitle?: string }> = [];
+
+    // 4a. Paid/All (novas assinaturas)
+    for (const sub of newSubs) {
+      for (const seq of sequences.filter(s => s.targetSegment === 'all' || s.targetSegment === 'paid')) {
+        pendingAssignments.push({ personId: sub.personId, seq, startAt: new Date(sub.startAt), planId: sub.planId, planTitle: sub.planTitle });
+      }
+    }
+    
+    // 4b. Book Only
+    for (const sub of bookOnly) {
+      for (const seq of sequences.filter(s => s.targetSegment === 'book_only')) {
+        pendingAssignments.push({ personId: sub.personId, seq, startAt: new Date(sub.registeredAt) });
+      }
+    }
+
+    // 4c. Promo
+    for (const sub of promo) {
+      for (const seq of sequences.filter(s => s.targetSegment === 'promo')) {
+        pendingAssignments.push({ personId: sub.personId, seq, startAt: new Date(sub.trialStartAt || sub.registeredAt), planTitle: sub.planTitle });
+      }
+    }
+
+    // 4d. Courtesy
+    for (const sub of courtesy) {
+      for (const seq of sequences.filter(s => s.targetSegment === 'courtesy')) {
+        pendingAssignments.push({ personId: sub.personId, seq, startAt: new Date(sub.subscriptionStart), planId: sub.planId, planTitle: sub.planTitle });
+      }
+    }
+
+    if (pendingAssignments.length === 0) {
+      return NextResponse.json({
+        success: true,
+        message: 'Nenhum lead qualificado para as sequências ativas hoje.',
+        tasksCreated: 0,
         subscriptionsProcessed: newSubs.length,
       });
     }
 
-    // 3. Para cada assinatura × cada sequência, verifica e cria a task
+    // 5. Bulk Check de duplicidade (Performance O(1))
+    const uniquePersonIds = [...new Set(pendingAssignments.map(a => a.personId))];
+    const uniqueSequenceIds = [...new Set(pendingAssignments.map(a => a.seq.id))];
+
+    const existingTasks = await prisma.task.findMany({
+      where: {
+        customer: { externalPersonId: { in: uniquePersonIds } },
+        automationId: { in: uniqueSequenceIds },
+        OR: [
+          { taskType: 'POST_SALE' },
+          { automation: { triggerEvent: 'POST_SALE' } }
+        ]
+      },
+      select: { automationId: true, customer: { select: { externalPersonId: true } } }
+    });
+
+    const existingTaskSet = new Set(
+      existingTasks.map(t => `${t.customer.externalPersonId}_${t.automationId}`)
+    );
+
+    // 6. Preparar Tasks
     const tasksToCreate: CreateTaskInput[] = [];
-    const skipped: number[] = [];
+    let skipped = 0;
 
-    for (const sub of newSubs) {
-      for (const seq of sequences) {
-        // Verifica segmento alvo
-        if (seq.targetSegment !== 'all' && seq.targetSegment !== 'paid') {
-          continue; // Sequências 'book_only', 'promo', etc. são tratadas separadamente
-        }
-
-        // Checa duplicidade
-        const alreadyExists = await repo.taskExistsForPersonAndSequence(
-          sub.personId,
-          seq.id
-        );
-        if (alreadyExists) {
-          skipped.push(sub.personId);
-          continue;
-        }
-
-        // Calcula data agendada: startAt + triggerDays
-        const startAt = new Date(sub.startAt);
-        const scheduledFor = new Date(startAt);
-        scheduledFor.setDate(scheduledFor.getDate() + seq.triggerDays);
-
-        tasksToCreate.push({
-          externalPersonId: sub.personId,
-          sequenceId: seq.id,
-          scheduledFor,
-          snapshotPlanId: sub.planId,
-          snapshotPlanName: sub.planTitle,
-        });
+    for (const assign of pendingAssignments) {
+      if (existingTaskSet.has(`${assign.personId}_${assign.seq.id}`)) {
+        skipped++;
+        continue;
       }
+
+      const scheduledFor = new Date(assign.startAt);
+      scheduledFor.setDate(scheduledFor.getDate() + assign.seq.triggerDays);
+
+      tasksToCreate.push({
+        externalPersonId: assign.personId,
+        sequenceId: assign.seq.id,
+        scheduledFor,
+        snapshotPlanId: assign.planId,
+        snapshotPlanName: assign.planTitle,
+      });
     }
 
-    // 4. Cria tasks em lote
+    // 7. Cria tasks em lote
     const created = await repo.createManyTasks(tasksToCreate);
 
     return NextResponse.json({
       success: true,
       date: targetDate,
-      subscriptionsProcessed: newSubs.length,
+      subscriptionsProcessed: newSubs.length + bookOnly.length + promo.length + courtesy.length,
       sequencesApplied: sequences.length,
       tasksCreated: created,
-      tasksSkipped: skipped.length,
+      tasksSkipped: skipped,
     });
 
   } catch (error: unknown) {
