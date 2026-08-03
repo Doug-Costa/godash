@@ -264,13 +264,6 @@ export default function DashboardContent({
 
   const [templatesList, setTemplatesList] = useState<any[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
-  const [tplId, setTplId] = useState('');
-  const [tplName, setTplName] = useState('');
-  const [tplDesc, setTplDesc] = useState('');
-  const [tplType, setTplType] = useState('EMAIL'); // EMAIL | WHATSAPP
-  const [tplLang, setTplLang] = useState('PT'); // PT | EN | ES
-  const [tplSubject, setTplSubject] = useState('');
-  const [tplContent, setTplContent] = useState('');
 
   // Estados do React Flow para a régua
   const [nodes, setNodes] = useState<any[]>([]);
@@ -1066,51 +1059,7 @@ export default function DashboardContent({
     }
   };
 
-  const handleSaveTemplate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch('/api/settings/templates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: tplId || undefined,
-          name: tplName,
-          description: tplDesc,
-          type: tplType,
-          language: tplLang,
-          subject: tplType === 'EMAIL' ? tplSubject : undefined,
-          content: tplContent
-        })
-      });
-      if (res.ok) {
-        setTplId('');
-        setTplName('');
-        setTplDesc('');
-        setTplType('EMAIL');
-        setTplLang('PT');
-        setTplSubject('');
-        setTplContent('');
-        fetchTemplatesList();
-      } else {
-        const json = await res.json();
-        alert(json.error || 'Erro ao salvar template.');
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
-  const handleDeleteTemplate = async (id: string) => {
-    if (!confirm('Deseja excluir este template?')) return;
-    try {
-      const res = await fetch(`/api/settings/templates?id=${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchTemplatesList();
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   const handleSaveSettings = async () => {
     setSavingSettings(true);
@@ -3136,8 +3085,8 @@ export default function DashboardContent({
           </div>
         </div>
 
-        {/* Gerenciamento de Servidores SMTP e Biblioteca de Templates (DentalGO CRM 360) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 24 }} className="animate-fadeUp">
+        {/* Gerenciamento de Servidores SMTP (DentalGO CRM 360) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', maxWidth: 600, gap: 24, marginTop: 24 }} className="animate-fadeUp">
           {/* Card SMTP */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
@@ -3324,179 +3273,6 @@ export default function DashboardContent({
                             </button>
                             <button
                               onClick={() => handleDeleteSmtp(config.id)}
-                              style={{ padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--red)', fontSize: 10, cursor: 'pointer' }}
-                            >
-                              Excluir
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-
-          {/* Card Templates */}
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div>
-              <div className="label" style={{ marginBottom: 4 }}>📝 Biblioteca de Templates de Mensagens</div>
-              <div className="label-sm">Gerencie os modelos de mensagens usados pelas automações (Email e WhatsApp).</div>
-            </div>
-
-            <form onSubmit={handleSaveTemplate} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface-raised)', padding: 16, borderRadius: 8, border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase' }}>
-                {tplId ? '✏️ Editar Template' : '➕ Novo Template'}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
-                <div>
-                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Nome do Template:</label>
-                  <input
-                    type="text"
-                    required
-                    value={tplName}
-                    onChange={(e) => setTplName(e.target.value)}
-                    placeholder="Ex: Boas-vindas Premium"
-                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                  />
-                </div>
-                <div>
-                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Tipo:</label>
-                  <select
-                    value={tplType}
-                    onChange={(e) => setTplType(e.target.value)}
-                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                  >
-                    <option value="EMAIL">📧 E-mail</option>
-                    <option value="WHATSAPP">💬 WhatsApp</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Idioma:</label>
-                  <select
-                    value={tplLang}
-                    onChange={(e) => setTplLang(e.target.value)}
-                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                  >
-                    <option value="PT">PT</option>
-                    <option value="EN">EN</option>
-                    <option value="ES">ES</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Descrição (Opcional):</label>
-                <input
-                  type="text"
-                  value={tplDesc}
-                  onChange={(e) => setTplDesc(e.target.value)}
-                  placeholder="Ex: Enviado após assinar o plano premium."
-                  style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                />
-              </div>
-
-              {tplType === 'EMAIL' && (
-                <div className="animate-fadeUp">
-                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Assunto do E-mail:</label>
-                  <input
-                    type="text"
-                    required={tplType === 'EMAIL'}
-                    value={tplSubject}
-                    onChange={(e) => setTplSubject(e.target.value)}
-                    placeholder="Ex: Seja muito bem-vindo ao DentalGO!"
-                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Conteúdo (Corpo da Mensagem):</label>
-                <textarea
-                  required
-                  value={tplContent}
-                  onChange={(e) => setTplContent(e.target.value)}
-                  placeholder={tplType === 'EMAIL' ? "Olá {{customer.fullName}},\n\nSeja bem-vindo!" : "Olá {{customer.fullName}}, vimos que..."}
-                  style={{ width: '100%', height: 70, padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, resize: 'none', outline: 'none' }}
-                />
-                <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>Variáveis suportadas: {"{{customer.fullName}}"}, {"{{customer.city}}"}, {"{{customer.plan}}"}</span>
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
-                {tplId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTplId('');
-                      setTplName('');
-                      setTplDesc('');
-                      setTplType('EMAIL');
-                      setTplLang('PT');
-                      setTplSubject('');
-                      setTplContent('');
-                    }}
-                    className="btn-action btn-action-outline"
-                    style={{ fontSize: 11, padding: '6px 12px' }}
-                  >
-                    Cancelar
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  className="btn-action btn-action-purple"
-                  style={{ fontSize: 11, padding: '6px 16px' }}
-                >
-                  💾 {tplId ? 'Atualizar' : 'Salvar Template'}
-                </button>
-              </div>
-            </form>
-
-            <div className="table-container" style={{ overflowY: 'auto', maxHeight: '35vh', marginTop: 10 }}>
-              {loadingTemplates ? (
-                <div className="skeleton" style={{ height: 60, width: '100%' }}></div>
-              ) : templatesList.length === 0 ? (
-                <div className="label-sm" style={{ padding: 20, textAlign: 'center' }}>Nenhum template cadastrado.</div>
-              ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Nome</th>
-                      <th>Tipo / Idioma</th>
-                      <th style={{ textAlign: 'center' }}>Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {templatesList.map((tpl) => (
-                      <tr key={tpl.id}>
-                        <td style={{ fontWeight: 600 }}>
-                          <div>{tpl.name}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{tpl.description || 'Sem descrição.'}</div>
-                        </td>
-                        <td style={{ fontSize: 11 }}>
-                          <span className={`badge ${tpl.type === 'EMAIL' ? 'badge-cyan' : 'badge-purple'}`} style={{ fontSize: 9, marginRight: 6 }}>
-                            {tpl.type === 'EMAIL' ? '📧 Email' : '💬 WhatsApp'}
-                          </span>
-                          <span className="badge badge-neu" style={{ fontSize: 9 }}>{tpl.language}</span>
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                            <button
-                              onClick={() => {
-                                setTplId(tpl.id);
-                                setTplName(tpl.name);
-                                setTplDesc(tpl.description || '');
-                                setTplType(tpl.type);
-                                setTplLang(tpl.language);
-                                setTplSubject(tpl.subject || '');
-                                setTplContent(tpl.content);
-                              }}
-                              style={{ padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 10, cursor: 'pointer' }}
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => handleDeleteTemplate(tpl.id)}
                               style={{ padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--red)', fontSize: 10, cursor: 'pointer' }}
                             >
                               Excluir

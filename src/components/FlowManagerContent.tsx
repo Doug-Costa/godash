@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ReactFlow, MiniMap, Controls, Background, Panel, MarkerType } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import ThemeToggle from '@/components/ThemeToggle';
+import TemplateLibraryModal from '@/components/ui/TemplateLibraryModal';
 
 interface FlowManagerContentProps {
   currentUser: {
@@ -41,6 +42,9 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
   const [edges, setEdges] = useState<any[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
+  // Template Modal
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+
   // Fetch initial data
   const fetchData = async () => {
     setLoading(true);
@@ -63,7 +67,7 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
       const tplRes = await fetch('/api/settings/templates');
       if (tplRes.ok) {
         const tplData = await tplRes.json();
-        setTemplatesList(tplData.templates || []);
+        setTemplatesList(tplData.data || []);
       }
 
       // Fetch Journeys/Flows
@@ -273,6 +277,13 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <button
+            onClick={() => setShowTemplateModal(true)}
+            className="btn-action"
+            style={{ padding: '8px 16px', fontSize: 13, background: 'var(--surface-raised)', color: 'var(--text-primary)' }}
+          >
+            📚 Biblioteca de Templates
+          </button>
           <ThemeToggle />
           <button 
             onClick={() => window.location.href = '/dashboard'}
@@ -673,6 +684,15 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
           </div>
         </div>
       )}
+      {/* Modals */}
+      <TemplateLibraryModal
+        isOpen={showTemplateModal}
+        onClose={() => setShowTemplateModal(false)}
+        onTemplateCreated={() => {
+          // Re-fetch templates list when a new template is created
+          fetch('/api/settings/templates').then(r => r.json()).then(d => setTemplatesList(d.data || []));
+        }}
+      />
     </div>
   );
 }
