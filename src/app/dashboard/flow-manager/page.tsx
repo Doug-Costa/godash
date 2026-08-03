@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
 import FlowManagerContent from '@/components/FlowManagerContent';
+import prisma from '@/lib/prisma';
 
 export default async function FlowManagerPage() {
   // 1. Resolve a sessão no servidor
@@ -25,7 +26,22 @@ export default async function FlowManagerPage() {
     redirect('/dashboard');
   }
 
+  // 4. Buscar pipelines
+  let pipelines: any[] = [];
+  try {
+    const rawPipelines = await prisma.pipeline.findMany({
+      orderBy: { createdAt: 'asc' }
+    });
+    pipelines = rawPipelines.map(p => ({
+      id: p.id,
+      name: p.name,
+      description: p.description
+    }));
+  } catch (err: any) {
+    console.error('Error fetching pipelines:', err.message);
+  }
+
   return (
-    <FlowManagerContent currentUser={currentUser} />
+    <FlowManagerContent currentUser={currentUser} initialPipelines={pipelines} />
   );
 }

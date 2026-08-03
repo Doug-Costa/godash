@@ -13,9 +13,10 @@ interface FlowManagerContentProps {
     email: string;
     role: string;
   } | null;
+  initialPipelines?: any[];
 }
 
-export default function FlowManagerContent({ currentUser }: FlowManagerContentProps) {
+export default function FlowManagerContent({ currentUser, initialPipelines = [] }: FlowManagerContentProps) {
   const isAdmin = currentUser?.role === 'ADMIN';
 
   // Tabs: 'marketing' | 'commercial' | 'cs' | 'nurturing'
@@ -23,7 +24,7 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
 
   // Flows list
   const [flows, setFlows] = useState<any[]>([]);
-  const [pipelines, setPipelines] = useState<any[]>([]);
+  const [pipelines, setPipelines] = useState<any[]>(initialPipelines);
   const [smtpConfigs, setSmtpConfigs] = useState<any[]>([]);
   const [templatesList, setTemplatesList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,12 +50,7 @@ export default function FlowManagerContent({ currentUser }: FlowManagerContentPr
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch pipelines
-      const pipeRes = await fetch('/api/settings');
-      if (pipeRes.ok) {
-        const pipeData = await pipeRes.json();
-        setPipelines(pipeData.pipelines || []);
-      }
+      // Pipelines are now passed as props and initialized in state
 
       // Fetch SMTPs
       const smtpRes = await fetch('/api/settings/smtp');
