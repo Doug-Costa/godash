@@ -28,6 +28,10 @@ export async function GET() {
       targetCriteria: j.targetCriteria,
       limitPerDay: j.limitPerDay,
       flowGraph: j.flowGraph,
+      pipelineId: j.pipelineId,
+      smtpConfigId: j.smtpConfigId,
+      onWinJourneyId: j.onWinJourneyId,
+      onLoseJourneyId: j.onLoseJourneyId,
       createdAt: j.createdAt,
       updatedAt: j.updatedAt,
       _count: { leads: j._count.customers },
@@ -37,7 +41,9 @@ export async function GET() {
           id: a.id,
           dayOffset: config?.dayOffset || 0,
           channel: config?.channel || 'WHATSAPP',
-          messageTemplate: config?.messageTemplate || ''
+          messageTemplate: config?.messageTemplate || '',
+          templateId: a.templateId || null,
+          provider: a.provider || 'EVOLUTION'
         };
       }).sort((a, b) => a.dayOffset - b.dayOffset)
     }));
