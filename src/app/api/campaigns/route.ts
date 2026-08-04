@@ -32,6 +32,13 @@ export async function GET() {
       smtpConfigId: j.smtpConfigId,
       onWinJourneyId: j.onWinJourneyId,
       onLoseJourneyId: j.onLoseJourneyId,
+      sendingMode: j.sendingMode || 'IMMEDIATE',
+      minDelay: j.minDelay ?? 1000,
+      maxDelay: j.maxDelay ?? 5000,
+      totalEmails: j.totalEmails || 0,
+      sentEmails: j.sentEmails || 0,
+      failedEmails: j.failedEmails || 0,
+      openedEmails: j.openedEmails || 0,
       createdAt: j.createdAt,
       updatedAt: j.updatedAt,
       _count: { leads: j._count.customers },
@@ -349,7 +356,7 @@ export async function POST(request: Request) {
 
     // 4. Ação de Salvar Fluxo Estático (sem Leads)
     if (action === 'save-flow') {
-      const { name, pipelineId, flowSteps, flowGraph, smtpConfigId, onWinJourneyId, onLoseJourneyId } = body;
+      const { name, pipelineId, flowSteps, flowGraph, smtpConfigId, onWinJourneyId, onLoseJourneyId, sendingMode, minDelay, maxDelay } = body;
       if (!name) {
         return NextResponse.json({ success: false, error: 'Nome do fluxo é obrigatório.' }, { status: 400 });
       }
@@ -364,6 +371,9 @@ export async function POST(request: Request) {
           smtpConfigId: smtpConfigId || null,
           onWinJourneyId: onWinJourneyId || null,
           onLoseJourneyId: onLoseJourneyId || null,
+          sendingMode: sendingMode || 'IMMEDIATE',
+          minDelay: minDelay !== undefined ? Number(minDelay) : 1000,
+          maxDelay: maxDelay !== undefined ? Number(maxDelay) : 5000,
           flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : null,
           automations: flowSteps && Array.isArray(flowSteps) ? {
             create: flowSteps.map((step: any, index: number) => ({
@@ -416,6 +426,9 @@ export async function POST(request: Request) {
           pipelineId: body.pipelineId !== undefined ? (body.pipelineId || null) : undefined,
           onWinJourneyId: body.onWinJourneyId !== undefined ? (body.onWinJourneyId || null) : undefined,
           onLoseJourneyId: body.onLoseJourneyId !== undefined ? (body.onLoseJourneyId || null) : undefined,
+          sendingMode: body.sendingMode !== undefined ? body.sendingMode : undefined,
+          minDelay: body.minDelay !== undefined ? Number(body.minDelay) : undefined,
+          maxDelay: body.maxDelay !== undefined ? Number(body.maxDelay) : undefined,
           flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : undefined,
           automations: flowSteps && Array.isArray(flowSteps) ? {
             create: flowSteps.map((step: any, index: number) => ({

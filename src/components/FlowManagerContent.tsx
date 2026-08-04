@@ -5,6 +5,7 @@ import { ReactFlow, MiniMap, Controls, Background, Panel, MarkerType } from '@xy
 import '@xyflow/react/dist/style.css';
 import ThemeToggle from '@/components/ThemeToggle';
 import TemplateLibraryModal from '@/components/ui/TemplateLibraryModal';
+import CampaignMonitorDashboard from '@/components/ui/CampaignMonitorDashboard';
 
 interface FlowManagerContentProps {
   currentUser: {
@@ -43,8 +44,14 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
   const [edges, setEdges] = useState<any[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
-  // Template Modal
+  // Template & Dashboard Modals
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [currentView, setCurrentView] = useState<'flows' | 'dashboard'>('flows');
+
+  // Cadence settings for Flow creation
+  const [flowSendingMode, setFlowSendingMode] = useState<'IMMEDIATE' | 'FIXED' | 'RANDOM'>('RANDOM');
+  const [flowMinDelay, setFlowMinDelay] = useState<number>(1000);
+  const [flowMaxDelay, setFlowMaxDelay] = useState<number>(5000);
 
   // Fetch initial data
   const fetchData = async () => {
@@ -179,6 +186,9 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
     setFlowSmtpConfigId('');
     setFlowOnWinJourneyId('');
     setFlowOnLoseJourneyId('');
+    setFlowSendingMode('RANDOM');
+    setFlowMinDelay(1000);
+    setFlowMaxDelay(5000);
     initVisualFlowCanvas();
     setShowFlowModal(true);
   };
@@ -191,6 +201,9 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
     setFlowSmtpConfigId(flow.smtpConfigId || '');
     setFlowOnWinJourneyId(flow.onWinJourneyId || '');
     setFlowOnLoseJourneyId(flow.onLoseJourneyId || '');
+    setFlowSendingMode(flow.sendingMode || 'RANDOM');
+    setFlowMinDelay(flow.minDelay ?? 1000);
+    setFlowMaxDelay(flow.maxDelay ?? 5000);
     initVisualFlowCanvas(flow);
     setShowFlowModal(true);
   };
@@ -236,6 +249,9 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
         smtpConfigId: flowSmtpConfigId || null,
         onWinJourneyId: flowOnWinJourneyId || null,
         onLoseJourneyId: flowOnLoseJourneyId || null,
+        sendingMode: flowSendingMode,
+        minDelay: flowMinDelay,
+        maxDelay: flowMaxDelay,
         flowSteps,
         flowGraph: JSON.stringify({ nodes, edges })
       };
@@ -275,10 +291,17 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <button
             onClick={() => setShowTemplateModal(true)}
-            className="btn-action"
-            style={{ padding: '8px 16px', fontSize: 13, background: 'var(--surface-raised)', color: 'var(--text-primary)' }}
+            className="btn-action btn-action-outline"
+            style={{ padding: '8px 16px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}
           >
             📚 Biblioteca de Templates
+          </button>
+          <button
+            onClick={() => setCurrentView(currentView === 'flows' ? 'dashboard' : 'flows')}
+            className={`btn-action ${currentView === 'dashboard' ? 'btn-action-purple' : 'btn-action-outline'}`}
+            style={{ padding: '8px 16px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            📊 {currentView === 'dashboard' ? 'Ver Reguas / Fluxos' : 'Dashboard de Disparos'}
           </button>
           <ThemeToggle />
           <button 
@@ -291,6 +314,10 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
         </div>
       </div>
 
+      {currentView === 'dashboard' ? (
+        <CampaignMonitorDashboard onBackToJourneys={() => setCurrentView('flows')} />
+      ) : (
+        <>
       {/* Tabs list */}
       <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border)', paddingBottom: 1 }}>
         <button
@@ -392,6 +419,8 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Visual Canvas Canvas Flow Creator Modal */}
       {showFlowModal && (
@@ -453,6 +482,51 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              {/* 1. Controle de Cadência (Evitar Blacklist) */}
+              <div style={{ background: 'var(--surface-raised)', padding: 14, borderRadius: 8, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>🕒 1. Controle de Cadência (Evitar Blacklist)</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Modo de Envio:</label>
+                    <select
+                      value={flowSendingMode}
+                      onChange={e => setFlowSendingMode(e.target.value as any)}
+                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, outline: 'none' }}
+                    >
+                      <option value="RANDOM">Cadência Aleatória (Delay variável)</option>
+                      <option value="FIXED">Cadência Fixa (Delay constante)</option>
+                      <option value="IMMEDIATE">Envio Imediato (Sem delay)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Delay Mínimo (ms):</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={flowMinDelay}
+                      onChange={e => setFlowMinDelay(Number(e.target.value) || 0)}
+                      disabled={flowSendingMode === 'IMMEDIATE'}
+                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, outline: 'none' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Delay Máximo (ms):</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={flowMaxDelay}
+                      onChange={e => setFlowMaxDelay(Number(e.target.value) || 0)}
+                      disabled={flowSendingMode !== 'RANDOM'}
+                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, outline: 'none' }}
+                    />
+                  </div>
                 </div>
               </div>
 
