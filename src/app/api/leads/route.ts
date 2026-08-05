@@ -372,6 +372,11 @@ export async function GET(request: Request) {
           include: {
             assignedTo: { select: { name: true } }
           }
+        },
+        customerProducts: {
+          include: {
+            product: true
+          }
         }
       }
     });
@@ -379,6 +384,7 @@ export async function GET(request: Request) {
     const interactionsByPersonId = new Map<number | string, any[]>();
     const metadataByPersonId = new Map<number | string, any>();
     const scheduledForByPersonId = new Map<number | string, Date | null>();
+    const customerProductsByPersonId = new Map<number | string, any[]>();
 
     allCustomersForTimeline.forEach(cust => {
       const extId = cust.externalPersonId !== null ? cust.externalPersonId : cust.id;
@@ -442,6 +448,28 @@ export async function GET(request: Request) {
       if (cust.scheduledFor) {
         scheduledForByPersonId.set(extId, cust.scheduledFor);
       }
+
+      // 6. Consolidate customerProducts (prevent duplicates of the same CustomerProduct)
+      const existingProds = customerProductsByPersonId.get(extId) || [];
+      const mappedProds = (cust.customerProducts || []).map((cp: any) => ({
+        id: cp.id,
+        productId: cp.productId,
+        name: cp.product?.name,
+        type: cp.product?.type,
+        category: cp.product?.category,
+        status: cp.status,
+        pricePaid: cp.pricePaid,
+        startDate: cp.startDate ? cp.startDate.toISOString() : null,
+        endDate: cp.endDate ? cp.endDate.toISOString() : null,
+      }));
+
+      const mergedProds = [...existingProds];
+      mappedProds.forEach(mp => {
+        if (!mergedProds.some(p => p.id === mp.id)) {
+          mergedProds.push(mp);
+        }
+      });
+      customerProductsByPersonId.set(extId, mergedProds);
     });
 
     // Sort interactions by date descending for each personId
@@ -560,7 +588,8 @@ export async function GET(request: Request) {
           scheduledFor: scheduledForByPersonId.get(r.id) || c.scheduledFor || null,
           subscriptionStatus: subBadge,
           isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1',
-          humanTakeover: c.humanTakeover || false
+          humanTakeover: c.humanTakeover || false,
+          customerProducts: customerProductsByPersonId.get(r.id) || []
         };
       }).filter(Boolean);
     } else {
@@ -633,7 +662,8 @@ export async function GET(request: Request) {
           isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1',
           isInNurturing: state?.isInNurturing || false,
           leadScore: state?.leadScore || 0,
-          humanTakeover: state?.humanTakeover || false
+          humanTakeover: state?.humanTakeover || false,
+          customerProducts: customerProductsByPersonId.get(r.id) || []
         };
       });
     }

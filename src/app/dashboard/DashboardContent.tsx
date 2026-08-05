@@ -76,6 +76,7 @@ export default function DashboardContent({
   const [activeTab, setActiveTab] = useState<'financeiro' | 'kanban' | 'leads' | 'team' | 'cancelados' | 'alerts' | 'campanhas' | 'atendimento'>(
     isAdmin ? 'financeiro' : 'atendimento'
   );
+  const [subTabFinanceiro, setSubTabFinanceiro] = useState<'product' | 'comercial'>('product');
 
   const [atendimentoViewMode, setAtendimentoViewMode] = useState<'kanban' | 'list'>('kanban');
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
@@ -2261,6 +2262,20 @@ export default function DashboardContent({
               🔄 Central de Jornadas
             </button>
           )}
+
+          {isAdmin && (
+            <button 
+              onClick={() => window.location.href = '/dashboard/marketing/forms'}
+              style={{
+                padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              📋 Formulários de Captura
+            </button>
+          )}
         </nav>
 
         {/* User profile & Logout */}
@@ -2299,162 +2314,203 @@ export default function DashboardContent({
             </div>
           </div>
 
-          {/* KPI Cards */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-            gap: 16, marginBottom: 24,
-          }}>
-            <KpiCard 
-              title="Fator de Competência (Fidedigno)" 
-              value={kpis ? formatBRL(Number(kpis.mrrFidedigno)) : '—'} 
-              accent="green" delay={0} 
-              subtitle="Pagamentos Reais (Últimos 45 dias)"
-            />
-            <KpiCard 
-              title="Fator de Competência (Baixa Fidelidade)" 
-              value={kpis ? formatBRL(Number(kpis.mrrEstimado)) : '—'} 
-              accent="yellow" delay={80} 
-              subtitle="Valor Estimado (Inclui 535 'Fantasmas')"
-            />
-            <KpiCard 
-              title="Vendas Avulsas (Mês)" 
-              value={kpis ? formatBRL(Number(kpis.looseSales)) : '—'} 
-              accent="cyan" delay={160} 
-              subtitle="Dinheiro Novo em Caixa"
-            />
-            <KpiCard 
-              title="Base Core Ativa (Fidelidade)" 
-              value={kpis ? Number(kpis.activeCoreCount).toLocaleString('pt-BR') : '—'} 
-              accent="purple" delay={240} 
-              subtitle="Usuários Pagantes Reais"
-            />
+          {/* Sub-abas de BI */}
+          <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 24 }}>
+            <button
+              onClick={() => setSubTabFinanceiro('product')}
+              style={{
+                padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                background: subTabFinanceiro === 'product' ? 'var(--accent-glow)' : 'transparent',
+                color: subTabFinanceiro === 'product' ? 'var(--accent)' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              📊 Saúde do Produto (DentalGO)
+            </button>
+            <button
+              onClick={() => setSubTabFinanceiro('comercial')}
+              style={{
+                padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                background: subTabFinanceiro === 'comercial' ? 'var(--accent-glow)' : 'transparent',
+                color: subTabFinanceiro === 'comercial' ? 'var(--accent)' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              💰 Performance Comercial (RevOps)
+            </button>
           </div>
 
-          {/* Charts Row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
-            <GrowthTrendChart 
-              data={(revenue?.revenueByPeriod || []) as any[]} 
-              month={filterMonth}
-            />
-            <PlanDistributionChart
-              data={(users?.usersByPlan as any[]) || []}
-              payingUsers={Number(kpis?.activeCoreCount) || 0}
-              courtesyUsers={Number(kpis?.categories?.cortesia) || 0}
-            />
-          </div>
+          {subTabFinanceiro === 'product' ? (
+            <>
+              {/* KPI Cards */}
+              <div style={{
+                display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                gap: 16, marginBottom: 24,
+              }}>
+                <KpiCard 
+                  title="Fator de Competência (Fidedigno)" 
+                  value={kpis ? formatBRL(Number(kpis.mrrFidedigno)) : '—'} 
+                  accent="green" delay={0} 
+                  subtitle="Pagamentos Reais (Últimos 45 dias)"
+                />
+                <KpiCard 
+                  title="Fator de Competência (Baixa Fidelidade)" 
+                  value={kpis ? formatBRL(Number(kpis.mrrEstimado)) : '—'} 
+                  accent="yellow" delay={80} 
+                  subtitle="Valor Estimado (Inclui 535 'Fantasmas')"
+                />
+                <KpiCard 
+                  title="Vendas Avulsas (Mês)" 
+                  value={kpis ? formatBRL(Number(kpis.looseSales)) : '—'} 
+                  accent="cyan" delay={160} 
+                  subtitle="Dinheiro Novo em Caixa"
+                />
+                <KpiCard 
+                  title="Base Core Ativa (Fidelidade)" 
+                  value={kpis ? Number(kpis.activeCoreCount).toLocaleString('pt-BR') : '—'} 
+                  accent="purple" delay={240} 
+                  subtitle="Usuários Pagantes Reais"
+                />
+              </div>
 
-          {/* Churn & Top Plans */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: 16, marginBottom: 24 }}>
-            <ChurnChart data={(churn?.churn as any[]) ?? []} />
-            
-            {/* Top plans table */}
-            <div className="card">
-              {(() => {
-                const filteredPlans = ((users?.usersByPlan || []) as any[]).filter(p => {
-                  if (plansFilter === 'pagos') return p.price > 100;
-                  if (plansFilter === 'cortesia') return p.price <= 100;
-                  return true;
-                });
-                const totalFiltered = filteredPlans.length;
-                const plansLimit = 10;
-                const plansTotalPages = Math.ceil(totalFiltered / plansLimit);
-                const paginatedPlans = filteredPlans.slice((plansPage - 1) * plansLimit, plansPage * plansLimit);
+              {/* Charts Row */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
+                <GrowthTrendChart 
+                  data={(revenue?.revenueByPeriod || []) as any[]} 
+                  month={filterMonth}
+                />
+                <PlanDistributionChart
+                  data={(users?.usersByPlan as any[]) || []}
+                  payingUsers={Number(kpis?.activeCoreCount) || 0}
+                  courtesyUsers={Number(kpis?.categories?.cortesia) || 0}
+                />
+              </div>
 
-                return (
-                  <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-                      <div className="label">Quantidade de Assinantes por Plano</div>
-                      <select
-                        value={plansFilter}
-                        onChange={(e) => {
-                          setPlansFilter(e.target.value);
-                          setPlansPage(1);
-                        }}
-                        style={{
-                          background: 'var(--surface-raised)',
-                          border: '1px solid var(--border)',
-                          color: 'var(--text-primary)',
-                          borderRadius: 8,
-                          padding: '6px 12px',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          outline: 'none'
-                        }}
-                      >
-                        <option value="all">🌐 Geral (Todos)</option>
-                        <option value="pagos">💵 Planos Pagos</option>
-                        <option value="cortesia">🎁 Planos Cortesia</option>
-                      </select>
-                    </div>
+              {/* Churn & Top Plans */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: 16, marginBottom: 24 }}>
+                <ChurnChart data={(churn?.churn as any[]) ?? []} />
+                
+                {/* Top plans table */}
+                <div className="card">
+                  {(() => {
+                    const filteredPlans = ((users?.usersByPlan || []) as any[]).filter(p => {
+                      if (plansFilter === 'pagos') return p.price > 100;
+                      if (plansFilter === 'cortesia') return p.price <= 100;
+                      return true;
+                    });
+                    const totalFiltered = filteredPlans.length;
+                    const plansLimit = 10;
+                    const plansTotalPages = Math.ceil(totalFiltered / plansLimit);
+                    const paginatedPlans = filteredPlans.slice((plansPage - 1) * plansLimit, plansPage * plansLimit);
 
-                    <div className="table-container">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Nome do Plano</th>
-                            <th>Valor (Mensalidade)</th>
-                            <th>Intervalo</th>
-                            <th style={{ textAlign: 'right' }}>Assinantes Ativos</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {paginatedPlans.length === 0 ? (
-                            <tr>
-                              <td colSpan={4} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
-                                Nenhum plano encontrado correspondente ao filtro.
-                              </td>
-                            </tr>
-                          ) : (
-                            paginatedPlans.map((p, i) => (
-                              <tr key={i}>
-                                <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.planTitle}</td>
-                                <td>{formatBRL(p.price)}</td>
-                                <td><span className="badge badge-neu">{p.intervalType}</span></td>
-                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>{p.subscriberCount}</td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Pagination */}
-                    {plansTotalPages > 1 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                          Página {plansPage} de {plansTotalPages} ({totalFiltered} planos)
-                        </span>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button
-                            disabled={plansPage === 1}
-                            onClick={() => setPlansPage(prev => Math.max(1, prev - 1))}
-                            className="btn-action btn-action-outline"
-                            style={{ padding: '6px 12px', fontSize: 12, opacity: plansPage === 1 ? 0.5 : 1, cursor: plansPage === 1 ? 'not-allowed' : 'pointer' }}
+                    return (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+                          <div className="label">Quantidade de Assinantes por Plano</div>
+                          <select
+                            value={plansFilter}
+                            onChange={(e) => {
+                              setPlansFilter(e.target.value);
+                              setPlansPage(1);
+                            }}
+                            style={{
+                              background: 'var(--surface-raised)',
+                              border: '1px solid var(--border)',
+                              color: 'var(--text-primary)',
+                              borderRadius: 8,
+                              padding: '6px 12px',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              outline: 'none'
+                            }}
                           >
-                            ◀️ Anterior
-                          </button>
-                          <button
-                            disabled={plansPage === plansTotalPages}
-                            onClick={() => setPlansPage(prev => Math.min(plansTotalPages, prev + 1))}
-                            className="btn-action btn-action-outline"
-                            style={{ padding: '6px 12px', fontSize: 12, opacity: plansPage === plansTotalPages ? 0.5 : 1, cursor: plansPage === plansTotalPages ? 'not-allowed' : 'pointer' }}
-                          >
-                            Próxima ▶️
-                          </button>
+                            <option value="all">🌐 Geral (Todos)</option>
+                            <option value="pagos">💵 Planos Pagos</option>
+                            <option value="cortesia">🎁 Planos Cortesia</option>
+                          </select>
                         </div>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
 
-          {/* Cohort Table */}
-          <div style={{ marginBottom: 24 }}>
-            <CohortTable data={(churn?.cohort as any[]) ?? []} />
-          </div>
+                        <div className="table-container">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Nome do Plano</th>
+                                <th>Valor (Mensalidade)</th>
+                                <th>Intervalo</th>
+                                <th style={{ textAlign: 'right' }}>Assinantes Ativos</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {paginatedPlans.length === 0 ? (
+                                <tr>
+                                  <td colSpan={4} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                                    Nenhum plano encontrado correspondente ao filtro.
+                                  </td>
+                                </tr>
+                              ) : (
+                                paginatedPlans.map((p, i) => (
+                                  <tr key={i}>
+                                    <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.planTitle}</td>
+                                    <td>{formatBRL(p.price)}</td>
+                                    <td><span className="badge badge-neu">{p.intervalType}</span></td>
+                                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>{p.subscriberCount}</td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Pagination */}
+                        {plansTotalPages > 1 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                              Página {plansPage} de {plansTotalPages} ({totalFiltered} planos)
+                            </span>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button
+                                disabled={plansPage === 1}
+                                onClick={() => setPlansPage(prev => Math.max(1, prev - 1))}
+                                className="btn-action btn-action-outline"
+                                style={{ padding: '6px 12px', fontSize: 12, opacity: plansPage === 1 ? 0.5 : 1, cursor: plansPage === 1 ? 'not-allowed' : 'pointer' }}
+                              >
+                                ◀️ Anterior
+                              </button>
+                              <button
+                                disabled={plansPage === plansTotalPages}
+                                onClick={() => setPlansPage(prev => Math.min(plansTotalPages, prev + 1))}
+                                className="btn-action btn-action-outline"
+                                style={{ padding: '6px 12px', fontSize: 12, opacity: plansPage === plansTotalPages ? 0.5 : 1, cursor: plansPage === plansTotalPages ? 'not-allowed' : 'pointer' }}
+                              >
+                                Próxima ▶️
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Cohort Table */}
+              <div style={{ marginBottom: 24 }}>
+                <CohortTable data={(churn?.cohort as any[]) ?? []} />
+              </div>
+            </>
+          ) : (
+            <div className="card animate-fadeUp" style={{ padding: '48px 32px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border)', background: 'var(--surface-raised)', borderRadius: 16, marginBottom: 24 }}>
+              <div style={{ fontSize: 40, marginBottom: 16 }}>💰</div>
+              <h3 style={{ color: 'var(--text-primary)', marginBottom: 8, fontSize: 18 }}>Saúde Comercial (RevOps)</h3>
+              <p style={{ maxWidth: 500, margin: '0 auto 24px', fontSize: 13, color: 'var(--text-secondary)' }}>
+                Este painel exibirá o pipeline de vendas unificado, taxas de conversão de oportunidades, LTV acumulado real (Curva ABC) e performance dos vendedores baseado no PostgreSQL.
+              </p>
+              <div style={{ display: 'inline-block', padding: '8px 16px', borderRadius: 20, background: 'rgba(96, 165, 250, 0.1)', border: '1px solid #60A5FA', color: '#60A5FA', fontSize: 12, fontWeight: 600 }}>
+                🚧 Módulo em Desenvolvimento
+              </div>
+            </div>
+          )}
 
           {/* Admin CSV Export Panel */}
           <div className="card animate-fadeUp" style={{ 
@@ -4078,15 +4134,43 @@ export default function DashboardContent({
                   <div style={{ background: 'var(--surface-raised)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
                     <h5 style={{ color: 'var(--text-secondary)', marginBottom: 12, fontSize: 13 }}>PRODUTOS / PLANOS ATIVOS</h5>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <div style={{ padding: 12, background: 'rgba(74, 222, 128, 0.1)', border: '1px solid #4ADE80', borderRadius: 8, color: '#4ADE80', fontWeight: 600 }}>
-                        📦 DentalGO - Assinatura Padrão
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 400, marginTop: 4 }}>Ativo desde {new Date().toLocaleDateString('pt-BR')}</div>
-                      </div>
-                      <div style={{ padding: 12, background: 'rgba(96, 165, 250, 0.1)', border: '1px solid #60A5FA', borderRadius: 8, color: '#60A5FA', fontWeight: 600 }}>
-                        🎓 Curso de Gestão de Clínicas
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 400, marginTop: 4 }}>Adquirido em 10/05/2026</div>
-                      </div>
-                      {/* TODO: Implementar busca real de produtos do banco de dados v4 */}
+                      {(!selectedLead.customerProducts || selectedLead.customerProducts.length === 0) ? (
+                        <div style={{ padding: 12, background: 'rgba(255, 255, 255, 0.02)', border: '1px dashed var(--border)', borderRadius: 8, color: 'var(--text-muted)', fontSize: 12, textAlign: 'center' }}>
+                          Nenhum produto ou serviço ativo registrado
+                        </div>
+                      ) : (
+                        selectedLead.customerProducts.map((cp: any) => {
+                          const isService = cp.category === 'SERVICE';
+                          const themeColor = isService ? '#60A5FA' : '#4ADE80';
+                          const bgAlpha = isService ? 'rgba(96, 165, 250, 0.1)' : 'rgba(74, 222, 128, 0.1)';
+                          
+                          return (
+                            <div 
+                              key={cp.id}
+                              style={{ 
+                                padding: 12, 
+                                background: bgAlpha, 
+                                border: `1px solid ${themeColor}`, 
+                                borderRadius: 8, 
+                                color: themeColor, 
+                                fontWeight: 600,
+                                fontSize: 13
+                              }}
+                            >
+                              {isService ? '🎓' : '📦'} {cp.name || 'Produto sem nome'} 
+                              {cp.pricePaid !== undefined && cp.pricePaid !== null && (
+                                <span style={{ fontSize: 11, fontWeight: 400, marginLeft: 6, opacity: 0.8 }}>
+                                  ({(cp.pricePaid).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})
+                                </span>
+                              )}
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 400, marginTop: 4 }}>
+                                {isService ? 'Contratado em' : 'Ativo desde'} {cp.startDate ? new Date(cp.startDate).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR')}
+                                {cp.status && <span style={{ marginLeft: 6, textTransform: 'uppercase', fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text-muted)' }}>{cp.status}</span>}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 </div>

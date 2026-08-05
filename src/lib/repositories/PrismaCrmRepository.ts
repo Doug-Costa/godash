@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { ICrmRepository, CrmCustomer, CrmInteraction, LossReason, LeadTag } from '@/lib/domain/crm.types';
+import { CustomerRevenueService } from '@/lib/application/CustomerRevenueService';
 
 export class PrismaCrmRepository implements ICrmRepository {
   private async findOrCreateCustomer(idOrExtId: string | number | null, journeyId: string | null = null): Promise<any> {
@@ -121,10 +122,22 @@ export class PrismaCrmRepository implements ICrmRepository {
 
     const targetPipelineId = defaultPipeline?.id || customer.pipelineId;
     if (targetPipelineId) {
+      const oppStatus = newStage === 'ganho' ? 'WON' : newStage === 'perdido' ? 'LOST' : undefined;
       await prisma.opportunity.updateMany({
         where: { customerId: customer.id, pipelineId: targetPipelineId },
-        data: { stage: newStage }
+        data: { 
+          stage: newStage,
+          ...(oppStatus && { status: oppStatus })
+        }
       });
+
+      if (newStage === 'ganho') {
+        try {
+          await CustomerRevenueService.recalculateLTV(customer.id);
+        } catch (err) {
+          console.error('[PrismaCrmRepository] Error recalculating LTV on stage move:', err);
+        }
+      }
     }
 
     return {
@@ -284,12 +297,22 @@ export class PrismaCrmRepository implements ICrmRepository {
     if (data.lostReason !== undefined) oppData.lossReason = data.lostReason;
     
     if (data.tag === 'CANCELED_CLIENT') oppData.status = 'LOST';
+    if (data.stage === 'ganho') oppData.status = 'WON';
+    if (data.stage === 'perdido') oppData.status = 'LOST';
     
     if (Object.keys(oppData).length > 0) {
       await prisma.opportunity.updateMany({
         where: { customerId: customer.id },
         data: oppData
       });
+
+      if (oppData.status === 'WON') {
+        try {
+          await CustomerRevenueService.recalculateLTV(customer.id);
+        } catch (err) {
+          console.error('[PrismaCrmRepository] Error recalculating LTV on customer update:', err);
+        }
+      }
     }
 
     return {

@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { Customer } from '@prisma/client';
 import { IdentityResolutionService } from './IdentityResolutionService';
+import { CustomerRevenueService } from './CustomerRevenueService';
 
 export class CustomerCreationService {
   /**
@@ -19,6 +20,7 @@ export class CustomerCreationService {
     authorId?: string;
     productId?: string;
     sourceCampaignId?: string;
+    pricePaid?: number;
   }) {
     const { 
       externalPersonId, 
@@ -30,7 +32,8 @@ export class CustomerCreationService {
       source = 'DENTALGO',
       authorId,
       productId,
-      sourceCampaignId
+      sourceCampaignId,
+      pricePaid
     } = data;
 
     // 1. Resolve Identity
@@ -77,7 +80,26 @@ export class CustomerCreationService {
       console.log(`[IdentityResolution] Created NEW customer ${customerId}`);
     }
     
-    // 2. Register Interaction
+    // 2. Register Purchase (CustomerProduct & LTV)
+    if (productId) {
+      try {
+        const product = await prisma.product.findUnique({
+          where: { id: productId }
+        });
+        if (product) {
+          const finalPricePaid = pricePaid ?? product.basePrice ?? product.price ?? 0;
+          await CustomerRevenueService.registerPurchase({
+            customerId,
+            productId,
+            pricePaid: finalPricePaid
+          });
+        }
+      } catch (err) {
+        console.error('[CustomerCreationService] Error registering customer product purchase:', err);
+      }
+    }
+    
+    // 3. Register Interaction
     await prisma.interaction.create({
       data: {
         customerId,
@@ -87,7 +109,7 @@ export class CustomerCreationService {
       }
     });
 
-    // 3. Create Opportunity (if pipeline is provided)
+    // 4. Create Opportunity (if pipeline is provided)
     if (pipelineId) {
       const existingOpp = await prisma.opportunity.findFirst({
         where: { customerId, pipelineId }

@@ -82,6 +82,9 @@ model Customer {
   id                String        @id @default(cuid())
   externalPersonId  Int?          // Optional for leads outside the legacy system
   source            String        @default("DENTALGO") // e.g., DENTALGO, CSV, MANUAL, LP
+  acquisitionChannel String?      // e.g., ORGANIC_SEARCH, INSTAGRAM_ADS, INDICAÇÃO, EVENTO_PRESENCIAL
+  leadSource        String?       // General marketing macro source
+  totalLifetimeValue Float        @default(0.0)
   stage             String        @default("novo_cadastro") // Legacy, to be migrated to Opportunity
   assigneeId        String?
   pipelineId        String?       // Legacy, to be migrated to Opportunity
@@ -178,6 +181,7 @@ model Pipeline {
   // Relations
   customers     Customer[]
   opportunities Opportunity[]
+  forms         Form[]
 }
 
 model Interaction {
@@ -325,6 +329,7 @@ model Campaign {
   flow           Flow?     @relation(fields: [flowId], references: [id])
   
   opportunities  Opportunity[]
+  forms          Form[]
 
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -394,7 +399,8 @@ model Product {
   id          String    @id @default(cuid())
   name        String
   description String?
-  type        String    @default("SOFTWARE") // SOFTWARE, COURSE, CONGRESS, MENTORSHIP
+  category    String    @default("PRODUCT")  // PRODUCT (Produtos Físicos/Digitais) | SERVICE (Serviços/Mentorias)
+  basePrice   Float?    // Base catalog price
   price       Float?
   isActive    Boolean   @default(true)
   
@@ -446,6 +452,20 @@ model Opportunity {
   sourceCampaignId String?
   sourceCampaign   Campaign? @relation(fields: [sourceCampaignId], references: [id], onDelete: SetNull)
   
+  // Matriz de Canais - Canal de Venda (Onde ocorreu a venda física)
+  saleChannel      String?   // Ex: SELF_SERVICE_WEBSITE, INSIDE_SALES, TELEMARKETING, PARTNER, EVENT
+  
+  // UTM Rastreamento Inbound
+  utmSource        String?
+  utmMedium        String?
+  utmCampaign      String?
+  utmTerm          String?
+  utmContent       String?
+  
+  // Marketing Campaign Spend relation
+  marketingCampaignId String?
+  marketingCampaign   MarketingCampaign? @relation(fields: [marketingCampaignId], references: [id], onDelete: SetNull)
+  
   lossReason     String?
   humanTakeover  Boolean   @default(false)
   freezeReason   String?
@@ -456,4 +476,57 @@ model Opportunity {
   tasks          Task[]
   interactions   Interaction[]
   flowExecutions FlowExecution[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V5 REV-OPS & MARKETING HUB ENTITIES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model MarketingCampaign {
+  id            String        @id @default(cuid())
+  name          String
+  platform      String        // Ex: META, GOOGLE
+  totalSpend    Float         @default(0.0)
+  active        Boolean       @default(true)
+  
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  opportunities Opportunity[]
+}
+
+model Form {
+  id             String      @id @default(cuid())
+  name           String
+  redirectUrl    String?
+  successMessage String?
+  styleConfig    Json        @default("{}") // Cores, bordas, tipografia, transparência
+  
+  pipelineId     String
+  pipeline       Pipeline    @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  stageId        String?     // Estágio inicial padrão
+  
+  campaignId     String?
+  campaign       Campaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  
+  fields         FormField[]
+  
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+model FormField {
+  id         String    @id @default(cuid())
+  formId     String
+  form       Form      @relation(fields: [formId], references: [id], onDelete: Cascade)
+  
+  name       String    // Ex: "name", "email", "whatsapp", "city"
+  label      String    // Ex: "Seu Nome Completo"
+  type       String    // Ex: "text", "email", "select", "checkbox"
+  options    Json      @default("[]") // Lista de opções configuráveis para múltiplos campos
+  required   Boolean   @default(false)
+  order      Int       @default(0)
+  
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 }
