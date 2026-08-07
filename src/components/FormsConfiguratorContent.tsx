@@ -39,6 +39,9 @@ interface Form {
     buttonColor?: string;
     buttonHoverColor?: string;
     buttonTextColor?: string;
+    inputBgColor?: string;
+    buttonOpacity?: number;
+    dropShadow?: string;
   };
   pipelineId: string;
   stageId: string | null;
@@ -75,6 +78,9 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
   const [opacity, setOpacity] = useState(100);
   const [btnColor, setBtnColor] = useState('#a78bfa');
   const [btnTextColor, setBtnTextColor] = useState('#ffffff');
+  const [inputBgColor, setInputBgColor] = useState('#2a2a35');
+  const [buttonOpacity, setButtonOpacity] = useState(100);
+  const [dropShadow, setDropShadow] = useState<string>('none');
 
   // Copy code feedback
   const [copied, setCopied] = useState(false);
@@ -115,7 +121,10 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
         fontFamily: 'Inter',
         opacity: 100,
         buttonColor: '#a78bfa',
-        buttonTextColor: '#ffffff'
+        buttonTextColor: '#ffffff',
+        inputBgColor: '#2a2a35',
+        buttonOpacity: 100,
+        dropShadow: 'none'
       },
       pipelineId: pipelines[0]?.id || '',
       stageId: 'novo_cadastro',
@@ -138,6 +147,9 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
     setOpacity(100);
     setBtnColor('#a78bfa');
     setBtnTextColor('#ffffff');
+    setInputBgColor('#2a2a35');
+    setButtonOpacity(100);
+    setDropShadow('none');
 
     setActiveForm(newForm);
     setShowEditor(true);
@@ -157,6 +169,9 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
     setOpacity(cfg.opacity !== undefined ? cfg.opacity : 100);
     setBtnColor(cfg.buttonColor || '#a78bfa');
     setBtnTextColor(cfg.buttonTextColor || '#ffffff');
+    setInputBgColor(cfg.inputBgColor || '#2a2a35');
+    setButtonOpacity(cfg.buttonOpacity !== undefined ? cfg.buttonOpacity : 100);
+    setDropShadow(cfg.dropShadow || 'none');
 
     setShowEditor(true);
   };
@@ -196,7 +211,10 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
           fontFamily,
           opacity,
           buttonColor: btnColor,
-          buttonTextColor: btnTextColor
+          buttonTextColor: btnTextColor,
+          inputBgColor,
+          buttonOpacity,
+          dropShadow
         }
       };
 
@@ -266,6 +284,14 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
     });
   };
 
+  const SHADOW_MAP: Record<string, string> = {
+    none: 'none',
+    sm: '0 2px 4px rgba(0, 0, 0, 0.15)',
+    md: '0 8px 16px rgba(0, 0, 0, 0.25)',
+    lg: '0 16px 32px rgba(0, 0, 0, 0.35)',
+    neon: `0 0 20px ${btnColor}60`
+  };
+
   // Generate copyable element code snippet
   const generateSnippet = () => {
     if (!activeForm || !activeForm.id) return 'Salve o formulário para gerar o código de incorporação.';
@@ -273,10 +299,11 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
     const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
     
     // Styling attributes
-    const containerStyle = `background-color: ${bgColor}; color: ${textColor}; padding: 24px; border: ${borderWidth}px solid ${borderColor}; border-radius: ${borderRadius}px; font-family: ${fontFamily}, sans-serif; opacity: ${opacity / 100}; max-width: 450px; margin: 0 auto; box-sizing: border-box;`;
-    const inputStyle = `width: 100%; padding: 10px 12px; margin-top: 6px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; background-color: rgba(255, 255, 255, 0.05); color: ${textColor}; outline: none; box-sizing: border-box; font-size: 14px;`;
+    const shadowStyle = SHADOW_MAP[dropShadow] || 'none';
+    const containerStyle = `background-color: ${bgColor}; color: ${textColor}; padding: 24px; border: ${borderWidth}px solid ${borderColor}; border-radius: ${borderRadius}px; font-family: ${fontFamily}, sans-serif; opacity: ${opacity / 100}; max-width: 450px; margin: 0 auto; box-sizing: border-box; box-shadow: ${shadowStyle};`;
+    const inputStyle = `width: 100%; padding: 10px 12px; margin-top: 6px; border: 1px solid ${borderColor}; border-radius: 6px; background-color: ${inputBgColor}; color: ${textColor}; outline: none; box-sizing: border-box; font-size: 14px;`;
     const labelStyle = `font-size: 12px; font-weight: 600; color: ${textColor}; opacity: 0.85; margin-bottom: 4px; display: block;`;
-    const buttonStyle = `width: 100%; padding: 12px; margin-top: 8px; border: none; border-radius: 6px; background-color: ${btnColor}; color: ${btnTextColor}; font-size: 14px; font-weight: 700; cursor: pointer; transition: background-color 0.2s;`;
+    const buttonStyle = `width: 100%; padding: 12px; margin-top: 8px; border: none; border-radius: 6px; background-color: ${btnColor}; color: ${btnTextColor}; font-size: 14px; font-weight: 700; cursor: pointer; transition: background-color 0.2s; opacity: ${buttonOpacity / 100};`;
 
     const fieldsHtml = activeForm.fields.map(f => {
       const requiredAttr = f.required ? 'required' : '';
@@ -629,13 +656,84 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                     />
                   </div>
                   <div>
-                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Cor do Texto</label>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Cor do Texto (Letra/Label)</label>
                     <input 
                       type="color" 
                       value={textColor} 
                       onChange={(e) => setTextColor(e.target.value)}
                       style={{ width: '100%', height: 36, border: 'none', borderRadius: 6, cursor: 'pointer' }}
                     />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Cor do Fundo dos Inputs</label>
+                    <input 
+                      type="color" 
+                      value={inputBgColor} 
+                      onChange={(e) => setInputBgColor(e.target.value)}
+                      style={{ width: '100%', height: 36, border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Cor da Borda</label>
+                    <input 
+                      type="color" 
+                      value={borderColor} 
+                      onChange={(e) => setBorderColor(e.target.value)}
+                      style={{ width: '100%', height: 36, border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Cor do Botão de Envio</label>
+                    <input 
+                      type="color" 
+                      value={btnColor} 
+                      onChange={(e) => setBtnColor(e.target.value)}
+                      style={{ width: '100%', height: 36, border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Cor do Texto do Botão</label>
+                    <input 
+                      type="color" 
+                      value={btnTextColor} 
+                      onChange={(e) => setBtnTextColor(e.target.value)}
+                      style={{ width: '100%', height: 36, border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Sombra Projetada (Shadow)</label>
+                    <select
+                      value={dropShadow}
+                      onChange={(e) => setDropShadow(e.target.value)}
+                      style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none' }}
+                    >
+                      <option value="none">Nenhuma</option>
+                      <option value="sm">Suave (Pequena)</option>
+                      <option value="md">Média</option>
+                      <option value="lg">Chativa (Grande)</option>
+                      <option value="neon">Neon Glow (Brilho)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Tipografia (Fonte)</label>
+                    <select
+                      value={fontFamily}
+                      onChange={(e) => setFontFamily(e.target.value)}
+                      style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none' }}
+                    >
+                      <option value="Inter">Inter</option>
+                      <option value="Roboto">Roboto</option>
+                      <option value="Outfit">Outfit</option>
+                    </select>
                   </div>
                 </div>
 
@@ -662,36 +760,23 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
-                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Cor do Botão de Envio</label>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Transparência Geral ({opacity}%)</label>
                     <input 
-                      type="color" 
-                      value={btnColor} 
-                      onChange={(e) => setBtnColor(e.target.value)}
-                      style={{ width: '100%', height: 36, border: 'none', borderRadius: 6, cursor: 'pointer' }}
+                      type="range" min="10" max="100" 
+                      value={opacity} 
+                      onChange={(e) => setOpacity(Number(e.target.value))}
+                      style={{ width: '100%' }}
                     />
                   </div>
                   <div>
-                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Tipografia (Fonte)</label>
-                    <select
-                      value={fontFamily}
-                      onChange={(e) => setFontFamily(e.target.value)}
-                      style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
-                    >
-                      <option value="Inter">Inter</option>
-                      <option value="Roboto">Roboto</option>
-                      <option value="Outfit">Outfit</option>
-                    </select>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Transparência do Botão ({buttonOpacity}%)</label>
+                    <input 
+                      type="range" min="10" max="100" 
+                      value={buttonOpacity} 
+                      onChange={(e) => setButtonOpacity(Number(e.target.value))}
+                      style={{ width: '100%' }}
+                    />
                   </div>
-                </div>
-
-                <div>
-                  <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Transparência Geral ({opacity}%)</label>
-                  <input 
-                    type="range" min="10" max="100" 
-                    value={opacity} 
-                    onChange={(e) => setOpacity(Number(e.target.value))}
-                    style={{ width: '100%' }}
-                  />
                 </div>
               </div>
 
@@ -726,7 +811,7 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                   opacity: opacity / 100,
                   maxWidth: 400,
                   margin: '0 auto',
-                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)'
+                  boxShadow: SHADOW_MAP[dropShadow] || 'none'
                 }}>
                   <form onSubmit={(e) => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     {(activeForm?.fields || []).map((f, i) => (
@@ -738,7 +823,7 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                         )}
                         
                         {f.type === 'select' ? (
-                          <select style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: textColor }}>
+                          <select style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: `1px solid ${borderColor}`, background: inputBgColor, color: textColor }}>
                             <option value="">Selecione...</option>
                           </select>
                         ) : f.type === 'checkbox' ? (
@@ -751,7 +836,7 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                             type={f.type} 
                             placeholder={`Digite seu ${f.label.toLowerCase()}...`}
                             disabled
-                            style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: textColor }}
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: `1px solid ${borderColor}`, background: inputBgColor, color: textColor }}
                           />
                         )}
                       </div>
@@ -761,7 +846,7 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                       style={{ 
                         width: '100%', padding: 12, border: 'none', borderRadius: 6,
                         backgroundColor: btnColor, color: btnTextColor, fontWeight: 700,
-                        fontSize: 14
+                        fontSize: 14, opacity: buttonOpacity / 100
                       }}
                     >
                       Enviar Formulário
