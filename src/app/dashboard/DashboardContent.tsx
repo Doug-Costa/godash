@@ -16,6 +16,7 @@ import MonthSelector from '@/components/ui/MonthSelector';
 import Timeline from '@/components/ui/Timeline';
 import AutomatedCampaignAnalytics from '@/components/AutomatedCampaignAnalytics';
 import { NewLeadModal } from '@/components/ui/NewLeadModal';
+import ProductFormModal from '@/components/ProductFormModal';
 
 const formatBRL = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -180,6 +181,8 @@ export default function DashboardContent({
   const [editingAgent, setEditingAgent] = useState<any | null>(null);
   const [agentForm, setAgentForm] = useState({ name: '', email: '', password: '', role: 'AGENT', isActive: true, skills: [] as string[] });
   const [agentError, setAgentError] = useState<string | null>(null);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [productsList, setProductsList] = useState<any[]>(products);
 
   // Administration Settings states
   const [settingsForm, setSettingsForm] = useState({
@@ -1480,6 +1483,31 @@ export default function DashboardContent({
       }
     } catch (err) {
       console.error('Failed to toggle agent status:', err);
+    }
+  };
+
+  const handleSaveProduct = async (productData: any) => {
+    try {
+      const res = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(productData),
+      });
+
+      const json = await res.json();
+      if (res.ok && json.success) {
+        // Refresh product list
+        const listRes = await fetch('/api/products');
+        if (listRes.ok) {
+          const listJson = await listRes.json();
+          setProductsList(listJson.data || []);
+        }
+      } else {
+        alert(`Erro ao cadastrar produto: ${json.error || 'Erro desconhecido'}`);
+      }
+    } catch (err) {
+      console.error('Failed to save product:', err);
+      alert('Erro de rede ao salvar o produto.');
     }
   };
 
@@ -3162,8 +3190,8 @@ export default function DashboardContent({
           </div>
         </div>
 
-        {/* Gerenciamento de Servidores SMTP (DentalGO CRM 360) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', maxWidth: 600, gap: 24, marginTop: 24 }} className="animate-fadeUp">
+        {/* Gerenciamento de Servidores SMTP e Catálogo de Produtos (DentalGO CRM 360) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', maxWidth: '1200px', gap: 24, marginTop: 24 }} className="animate-fadeUp">
           {/* Card SMTP */}
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
@@ -3361,6 +3389,61 @@ export default function DashboardContent({
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+
+          {/* Card Catálogo de Produtos */}
+          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div className="label" style={{ marginBottom: 4 }}>📦 Catálogo de Produtos (RevOps)</div>
+                <div className="label-sm">Gerencie o catálogo de produtos e preços integrados.</div>
+              </div>
+              <button 
+                onClick={() => setShowProductModal(true)} 
+                className="btn-action btn-action-purple" 
+                style={{ padding: '6px 12px', fontSize: 12 }}
+              >
+                ➕ Novo Produto
+              </button>
+            </div>
+
+            <div className="table-container" style={{ overflowY: 'auto', maxHeight: '35vh' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Produto</th>
+                    <th>Categoria</th>
+                    <th style={{ textAlign: 'right' }}>Preço Base</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productsList.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                        Nenhum produto cadastrado no catálogo.
+                      </td>
+                    </tr>
+                  ) : (
+                    productsList.map((prod) => (
+                      <tr key={prod.id}>
+                        <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          <div>{prod.name}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{prod.subType?.replace('_', ' ')}</div>
+                        </td>
+                        <td>
+                          <span className="badge badge-neu" style={{ fontSize: 10, padding: '2px 6px' }}>
+                            {prod.category}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)', fontSize: 12 }}>
+                          {prod.basePrice ? formatBRL(prod.basePrice * 100) : 'R$ 0,00'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -4210,6 +4293,15 @@ export default function DashboardContent({
           </div>
         </div>
       )}
+
+      {/* ====================================================================== */}
+      {/* MODAL: Cadastro de Produto (RevOps) */}
+      {/* ====================================================================== */}
+      <ProductFormModal
+        isOpen={showProductModal}
+        onClose={() => setShowProductModal(false)}
+        onSave={handleSaveProduct}
+      />
 
       {/* ====================================================================== */}
       {/* MODAL 3: Cadastro / Edição de Colaborador */}

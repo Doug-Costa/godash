@@ -120,7 +120,10 @@ export default async function DashboardPage({
     products = rawProducts.map(p => ({
       id: p.id,
       name: p.name,
-      description: p.description
+      description: p.description,
+      category: p.category,
+      subType: p.subType,
+      basePrice: p.basePrice
     }));
   } catch (err: any) {
     console.error('❌ Error fetching products in DashboardPage:', err.message);
