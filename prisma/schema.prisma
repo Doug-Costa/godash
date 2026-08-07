@@ -27,6 +27,7 @@ model User {
   /// Roles: "ADMIN" | "AGENT" | "POST_SALES"
   role          String    @default("AGENT")
   isActive      Boolean   @default(true)
+  skills        String[]
 
   // NextAuth relations
   accounts      Account[]
@@ -133,6 +134,13 @@ model Journey {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  // Routing fields
+  routingMode       String         @default("ROUND_ROBIN")
+  useAccountManager Boolean        @default(false)
+  strictSkillMatch  Boolean        @default(false)
+  productId         String?
+  product           Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+
   // Mailer Integration
   smtpConfigId             String?
   smtpConfig               SmtpConfig?    @relation(fields: [smtpConfigId], references: [id], onDelete: SetNull)
@@ -177,6 +185,10 @@ model Pipeline {
   
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+
+  routingMode       String    @default("ROUND_ROBIN")
+  useAccountManager Boolean   @default(false)
+  strictSkillMatch  Boolean   @default(false)
 
   // Relations
   customers     Customer[]
@@ -331,6 +343,10 @@ model Campaign {
   opportunities  Opportunity[]
   forms          Form[]
 
+  routingMode       String    @default("ROUND_ROBIN")
+  useAccountManager Boolean   @default(false)
+  strictSkillMatch  Boolean   @default(false)
+
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 }
@@ -399,7 +415,8 @@ model Product {
   id          String    @id @default(cuid())
   name        String
   description String?
-  category    String    @default("PRODUCT")  // PRODUCT (Produtos Físicos/Digitais) | SERVICE (Serviços/Mentorias)
+  category    ProductCategory @default(CURSO)
+  subType     ProductSubType  @default(ONLINE)
   basePrice   Float?    // Base catalog price
   price       Float?
   isActive    Boolean   @default(true)
@@ -409,8 +426,10 @@ model Product {
 
   pipelines        Pipeline[]
   campaigns        Campaign[]
+  journeys         Journey[]
   opportunities    Opportunity[]
   customerProducts CustomerProduct[]
+  forms            Form[]
 }
 
 model CustomerProduct {
@@ -425,6 +444,7 @@ model CustomerProduct {
   startDate  DateTime?
   endDate    DateTime?
   pricePaid  Float?
+  saleChannel SaleChannel?
   
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -453,7 +473,8 @@ model Opportunity {
   sourceCampaign   Campaign? @relation(fields: [sourceCampaignId], references: [id], onDelete: SetNull)
   
   // Matriz de Canais - Canal de Venda (Onde ocorreu a venda física)
-  saleChannel      String?   // Ex: SELF_SERVICE_WEBSITE, INSIDE_SALES, TELEMARKETING, PARTNER, EVENT
+  saleChannel      SaleChannel?
+  pricePaid        Float?
   
   // UTM Rastreamento Inbound
   utmSource        String?
@@ -469,6 +490,7 @@ model Opportunity {
   lossReason     String?
   humanTakeover  Boolean   @default(false)
   freezeReason   String?
+  metadata       Json?     @default("{}")
   
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -509,6 +531,9 @@ model Form {
   campaignId     String?
   campaign       Campaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   
+  productId      String?
+  product        Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  
   fields         FormField[]
   
   createdAt      DateTime    @default(now())
@@ -529,4 +554,31 @@ model FormField {
   
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+}
+
+enum ProductCategory {
+  CURSO
+  CONGRESSO
+  SAAS
+  LIVRO
+  INSTITUCIONAL
+}
+
+enum ProductSubType {
+  IMERSAO
+  APERFEICOAMENTO
+  ESPECIALIZACAO
+  EXCELENCIA
+  PARCERIA
+  PRESENCIAL
+  ONLINE
+  LIVRO_FISICO
+  LIVRO_DIGITAL
+}
+
+enum SaleChannel {
+  SITE
+  EVENTO_PRESENCIAL
+  TELEVENDAS
+  INBOUND_FORM
 }

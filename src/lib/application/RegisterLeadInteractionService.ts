@@ -89,6 +89,37 @@ export class RegisterLeadInteractionService {
       });
     }
 
+    if (dbCustomer && (type as string) !== 'SYSTEM' && (type as string) !== 'POST_SALE' && (type as string) !== 'CS_FOLLOW_UP') {
+      const activeCsOpp = await prisma.opportunity.findFirst({
+        where: {
+          customerId: dbCustomer.id,
+          status: 'OPEN',
+          pipeline: {
+            name: { in: ['CS', 'CS/Pós-Vendas', 'Pós-Vendas', 'Pós-Venda'] }
+          }
+        }
+      });
+
+      if (activeCsOpp) {
+        console.log(`[RevOps Cross-Sell] Interação comercial de agente registrada para o cliente ${dbCustomer.id} que possui CS ativo. Forçando humanTakeover e sinalizando conflito.`);
+        await prisma.customer.update({
+          where: { id: dbCustomer.id },
+          data: { humanTakeover: true }
+        });
+
+        const currentMeta = (activeCsOpp.metadata as Record<string, any>) || {};
+        await prisma.opportunity.update({
+          where: { id: activeCsOpp.id },
+          data: {
+            metadata: {
+              ...currentMeta,
+              hasParallelNegotiation: true
+            }
+          }
+        });
+      }
+    }
+
     const isFinalStage = nextStage === 'ganho' || nextStage === 'perdido' || type === 'LOST' || type === 'RECOVERED';
     if (isFinalStage && dbCustomer) {
       const finalJourneyId = journeyId || dbCustomer.journeyId || null;

@@ -483,6 +483,31 @@ export async function GET(request: Request) {
       include: { assignee: { select: { id: true, name: true } } }
     });
     const assigneeByPersonId = new Map();
+
+    // Fetch all customer states to check for parallel negotiations (active Vendas + CS)
+    const allCustomersForParallelCheck = await prisma.customer.findMany({
+      where: {
+        externalPersonId: { in: personIds },
+        tag: { not: 'DISCARDED' }
+      },
+      select: {
+        externalPersonId: true,
+        pipeline: {
+          select: { name: true }
+        }
+      }
+    });
+
+    const pipelinesByPersonId = new Map<number, Set<string>>();
+    allCustomersForParallelCheck.forEach(c => {
+      if (c.externalPersonId === null) return;
+      if (!pipelinesByPersonId.has(c.externalPersonId)) {
+        pipelinesByPersonId.set(c.externalPersonId, new Set<string>());
+      }
+      if (c.pipeline?.name) {
+        pipelinesByPersonId.get(c.externalPersonId)!.add(c.pipeline.name);
+      }
+    });
     // First, set assignees from campaign records (journeyId is not null)
     allStatesForAssignee.forEach(s => {
       if (s.journeyId !== null && s.assignee) {
@@ -589,7 +614,11 @@ export async function GET(request: Request) {
           subscriptionStatus: subBadge,
           isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1',
           humanTakeover: c.humanTakeover || false,
-          customerProducts: customerProductsByPersonId.get(r.id) || []
+          customerProducts: customerProductsByPersonId.get(r.id) || [],
+          hasParallelNegotiation: (() => {
+            const pipeNames = pipelinesByPersonId.get(r.id);
+            return pipeNames ? (pipeNames.has('Vendas') && pipeNames.has('CS')) : false;
+          })()
         };
       }).filter(Boolean);
     } else {
@@ -663,7 +692,11 @@ export async function GET(request: Request) {
           isInNurturing: state?.isInNurturing || false,
           leadScore: state?.leadScore || 0,
           humanTakeover: state?.humanTakeover || false,
-          customerProducts: customerProductsByPersonId.get(r.id) || []
+          customerProducts: customerProductsByPersonId.get(r.id) || [],
+          hasParallelNegotiation: (() => {
+            const pipeNames = pipelinesByPersonId.get(r.id);
+            return pipeNames ? (pipeNames.has('Vendas') && pipeNames.has('CS')) : false;
+          })()
         };
       });
     }

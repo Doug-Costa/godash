@@ -47,6 +47,7 @@ interface DashboardContentProps {
   currentUser: { id: string; name: string; email: string; role: string } | null;
   agents: Array<{ id: string; name: string; email: string; role: string; isActive: boolean }>;
   pipelines?: Array<{ id: string; name: string; description: string | null; stages?: any[] }>;
+  products?: Array<{ id: string; name: string; description: string | null }>;
 }
 
 export default function DashboardContent({
@@ -60,6 +61,7 @@ export default function DashboardContent({
   currentUser,
   agents,
   pipelines = [],
+  products = [],
 }: DashboardContentProps) {
   const isAdmin = currentUser?.role === 'ADMIN';
   const router = useRouter();
@@ -176,7 +178,7 @@ export default function DashboardContent({
   const [teamList, setTeamList] = useState(agents);
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState<any | null>(null);
-  const [agentForm, setAgentForm] = useState({ name: '', email: '', password: '', role: 'AGENT', isActive: true });
+  const [agentForm, setAgentForm] = useState({ name: '', email: '', password: '', role: 'AGENT', isActive: true, skills: [] as string[] });
   const [agentError, setAgentError] = useState<string | null>(null);
 
   // Administration Settings states
@@ -248,6 +250,10 @@ export default function DashboardContent({
   const [campaignOnWinJourneyId, setCampaignOnWinJourneyId] = useState('');
   const [campaignOnLoseJourneyId, setCampaignOnLoseJourneyId] = useState('');
   const [campaignPipelineId, setCampaignPipelineId] = useState('');
+  const [campaignRoutingMode, setCampaignRoutingMode] = useState<'ROUND_ROBIN' | 'POOL'>('ROUND_ROBIN');
+  const [campaignUseAccountManager, setCampaignUseAccountManager] = useState<boolean>(false);
+  const [campaignStrictSkillMatch, setCampaignStrictSkillMatch] = useState<boolean>(false);
+  const [campaignProductId, setCampaignProductId] = useState<string>('');
   const [campaignWarmupTemplateId, setCampaignWarmupTemplateId] = useState('');
 
   // Estados para SMTP e Templates (DentalGO CRM 360)
@@ -1277,7 +1283,11 @@ export default function DashboardContent({
           onLoseJourneyId: campaignOnLoseJourneyId || null,
           campaignNature,
           flowSteps,
-          flowGraph: JSON.stringify({ nodes, edges })
+          flowGraph: JSON.stringify({ nodes, edges }),
+          routingMode: campaignRoutingMode,
+          useAccountManager: campaignUseAccountManager,
+          strictSkillMatch: campaignStrictSkillMatch,
+          productId: campaignProductId || null
         })
       });
 
@@ -1304,6 +1314,10 @@ export default function DashboardContent({
         setCampaignWarmupTemplateId('');
         setExcludeNurturing(true);
         setCampaignNature('COMMERCIAL');
+        setCampaignRoutingMode('ROUND_ROBIN');
+        setCampaignUseAccountManager(false);
+        setCampaignStrictSkillMatch(false);
+        setCampaignProductId('');
         setNodes([]);
         setEdges([]);
         setSelectedNodeId(null);
@@ -1471,14 +1485,14 @@ export default function DashboardContent({
 
   const openAddAgent = () => {
     setEditingAgent(null);
-    setAgentForm({ name: '', email: '', password: '', role: 'AGENT', isActive: true });
+    setAgentForm({ name: '', email: '', password: '', role: 'AGENT', isActive: true, skills: [] });
     setAgentError(null);
     setShowTeamModal(true);
   };
 
   const openEditAgent = (agent: any) => {
     setEditingAgent(agent);
-    setAgentForm({ name: agent.name, email: agent.email, password: '', role: agent.role, isActive: agent.isActive });
+    setAgentForm({ name: agent.name, email: agent.email, password: '', role: agent.role, isActive: agent.isActive, skills: agent.skills || [] });
     setAgentError(null);
     setShowTeamModal(true);
   };
@@ -1812,15 +1826,22 @@ export default function DashboardContent({
                             onDragStart={(e) => handleDragStart(e, lead.id, lead.journeyId)}
                             onClick={() => openTimeline(lead)}
                             style={{
-                              background: 'var(--surface-raised)', border: '1px solid var(--border)',
+                              background: 'var(--surface-raised)',
+                              border: lead.hasParallelNegotiation ? '1px solid var(--red)' : '1px solid var(--border)',
                               borderRadius: 8, padding: 12, cursor: 'grab',
-                              boxShadow: '0 2px 4px rgba(0,0,0,0.1)', transition: 'transform 0.2s'
+                              boxShadow: lead.hasParallelNegotiation ? '0 0 8px rgba(239, 68, 68, 0.4)' : '0 2px 4px rgba(0,0,0,0.1)',
+                              transition: 'transform 0.2s'
                             }}
                             onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
                             onMouseLeave={(e) => e.currentTarget.style.transform = 'none'}
                           >
                             <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <span>{lead.fullName}</span>
+                              {lead.hasParallelNegotiation && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2, fontWeight: 'bold' }}>
+                                  ⚠️ Conflito
+                                </span>
+                              )}
                               {lead.tag === 'CANCELED_CLIENT' && (
                                 <span className="badge badge-down" style={{ fontSize: 9, padding: '2px 6px' }}>
                                   🚫 Cancelado
@@ -4278,6 +4299,48 @@ export default function DashboardContent({
                 </select>
               </div>
 
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <input 
+                  type="checkbox"
+                  id="agent-active-checkbox"
+                  checked={agentForm.isActive}
+                  onChange={(e) => setAgentForm({ ...agentForm, isActive: e.target.checked })}
+                  style={{ width: 16, height: 16, cursor: 'pointer' }}
+                />
+                <label htmlFor="agent-active-checkbox" style={{ fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer' }}>
+                  Usuário Ativo (Pode receber e gerenciar leads)
+                </label>
+              </div>
+
+              <div>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Especialidades / Skills (Produtos):</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--surface-raised)', padding: 12, borderRadius: 8, border: '1px solid var(--border)', maxHeight: '120px', overflowY: 'auto' }}>
+                  {products.length === 0 ? (
+                    <span className="label-sm" style={{ color: 'var(--text-muted)' }}>Nenhum produto cadastrado.</span>
+                  ) : (
+                    products.map(prod => {
+                      const hasSkill = agentForm.skills && agentForm.skills.includes(prod.id);
+                      return (
+                        <label key={prod.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-primary)', cursor: 'pointer' }}>
+                          <input 
+                            type="checkbox"
+                            checked={hasSkill}
+                            onChange={() => {
+                              const newSkills = hasSkill
+                                ? agentForm.skills.filter(id => id !== prod.id)
+                                : [...(agentForm.skills || []), prod.id];
+                              setAgentForm({ ...agentForm, skills: newSkills });
+                            }}
+                            style={{ width: 14, height: 14, cursor: 'pointer' }}
+                          />
+                          <span>{prod.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
               <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 12 }}>
                 <button 
                   type="button" 
@@ -4906,6 +4969,60 @@ export default function DashboardContent({
                         <option key={t.id} value={t.id}>[{t.type}] {t.name} (v{t.version})</option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Configuração de Roteamento Inteligente (RevOps) */}
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                    <h4 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 8 }}>⚙️ Roteamento Dinâmico (RevOps)</h4>
+                    <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                      Configure como os leads comerciais ou de pós-venda serão direcionados.
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 12 }}>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Modo de Distribuição:</label>
+                        <select
+                          value={campaignRoutingMode}
+                          onChange={(e) => setCampaignRoutingMode(e.target.value as any)}
+                          style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                        >
+                          <option value="ROUND_ROBIN">Rodízio Automático (Round-Robin)</option>
+                          <option value="POOL">Fila de Espera (POOL / Pegada Manual)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Produto da Campanha:</label>
+                        <select
+                          value={campaignProductId}
+                          onChange={(e) => setCampaignProductId(e.target.value)}
+                          style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                        >
+                          <option value="">-- Nenhum --</option>
+                          {products.map(prod => (
+                            <option key={prod.id} value={prod.id}>{prod.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 20, marginTop: 8 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)' }}>
+                        <input 
+                          type="checkbox"
+                          checked={campaignUseAccountManager}
+                          onChange={(e) => setCampaignUseAccountManager(e.target.checked)}
+                          style={{ width: 16, height: 16, cursor: 'pointer' }}
+                        />
+                        <span>Priorizar Account Manager (Histórico)</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)' }}>
+                        <input 
+                          type="checkbox"
+                          checked={campaignStrictSkillMatch}
+                          onChange={(e) => setCampaignStrictSkillMatch(e.target.checked)}
+                          style={{ width: 16, height: 16, cursor: 'pointer' }}
+                        />
+                        <span>Exigir Especialista (Skills Match)</span>
+                      </label>
+                    </div>
                   </div>
 
                   <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>

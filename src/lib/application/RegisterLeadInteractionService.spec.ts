@@ -15,6 +15,12 @@ vi.mock('@/lib/prisma', () => ({
     task: {
       deleteMany: vi.fn(),
       create: vi.fn(),
+    },
+    opportunity: {
+      findFirst: vi.fn(),
+    },
+    pipeline: {
+      findMany: vi.fn(),
     }
   }
 }));
@@ -97,6 +103,8 @@ describe('RegisterLeadInteractionService - Human Takeover Logic', () => {
       journeyId: 'journey-1',
       humanTakeover: false
     });
+    (prisma.opportunity.findFirst as any).mockResolvedValue(null);
+    (prisma.pipeline.findMany as any).mockResolvedValue([]);
   });
 
   it('should enable humanTakeover and cancel pending automation tasks when a human contacts the lead', async () => {

@@ -12,6 +12,7 @@ export async function GET() {
         email: true,
         role: true,
         isActive: true,
+        skills: true,
       },
     });
 
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, email, password, role } = body;
+    const { name, email, password, role, skills } = body;
 
     if (!name || !email || !password || !role) {
       return NextResponse.json(
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
         password: hashedPassword,
         role,
         isActive: true,
+        skills: skills && Array.isArray(skills) ? skills : [],
       },
       select: {
         id: true,
@@ -75,6 +77,7 @@ export async function POST(request: Request) {
         email: true,
         role: true,
         isActive: true,
+        skills: true,
       },
     });
 
@@ -104,7 +107,7 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json();
-    const { id, name, email, role, password, isActive } = body;
+    const { id, name, email, role, password, isActive, skills } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -129,6 +132,7 @@ export async function PUT(request: Request) {
     if (email) updateData.email = email;
     if (role) updateData.role = role;
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (skills !== undefined && Array.isArray(skills)) updateData.skills = skills;
     
     if (password && password.trim() !== '') {
       updateData.password = await bcrypt.hash(password, 10);
@@ -143,6 +147,7 @@ export async function PUT(request: Request) {
         email: true,
         role: true,
         isActive: true,
+        skills: true,
       },
     });
 

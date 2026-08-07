@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { CustomerCreationService } from '@/lib/application/CustomerCreationService';
+import { SaleChannel } from '@prisma/client';
 
 // Helper function to return headers supporting CORS
 function corsResponse(data: any, status = 200) {
@@ -51,6 +52,7 @@ export async function POST(request: Request) {
     // 1. Fetch Form settings
     const formConfig = await prisma.form.findUnique({
       where: { id: formId },
+      include: { product: true }
     });
 
     if (!formConfig) {
@@ -70,6 +72,9 @@ export async function POST(request: Request) {
       stage: formConfig.stageId || 'novo_cadastro',
       source: `Form Capture: ${formConfig.name}`,
       metadata,
+      productId: formConfig.productId || undefined,
+      pricePaid: formConfig.product?.price || formConfig.product?.basePrice || undefined,
+      saleChannel: SaleChannel.INBOUND_FORM
     });
 
     if (!customer) {
@@ -91,6 +96,10 @@ export async function POST(request: Request) {
           utmTerm: utm_term || undefined,
           utmContent: utm_content || undefined,
           sourceCampaignId: formConfig.campaignId || undefined,
+          productId: formConfig.productId || undefined,
+          pricePaid: formConfig.product?.price || formConfig.product?.basePrice || undefined,
+          value: formConfig.product?.price || formConfig.product?.basePrice || undefined,
+          saleChannel: SaleChannel.INBOUND_FORM
         }
       });
       console.log(`[Capture API] Updated Opportunity ${activeOpp.id} with UTM tracking metadata`);

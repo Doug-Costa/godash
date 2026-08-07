@@ -1,11 +1,8 @@
 import prisma from '../prisma';
+import { RoutingEngineService } from '../services/RoutingEngineService';
 
 export class AssignCampaignLeadsUseCase {
   async execute(externalPersonIds: number[], campaignId: string, userIds: string[], startDate?: string) {
-    if (userIds.length === 0) {
-      throw new Error('Pelo menos um operador deve ser selecionado para a distribuição da campanha.');
-    }
-
     // 1. Buscar a jornada (incluindo as automações/passos do fluxo para pré-geração de alertas)
     const journey = await prisma.journey.findUnique({
       where: { id: campaignId },
@@ -16,14 +13,19 @@ export class AssignCampaignLeadsUseCase {
       throw new Error('Campanha/Jornada não encontrada.');
     }
 
+    if (journey.routingMode !== 'POOL' && userIds.length === 0) {
+      throw new Error('Pelo menos um operador deve ser selecionado para a distribuição da campanha.');
+    }
+
     const defaultPipeline = journey.pipelineId 
       ? null 
       : (await prisma.pipeline.findFirst({ where: { name: 'Vendas' } }) || await prisma.pipeline.findFirst());
     const targetPipelineId = journey.pipelineId || defaultPipeline?.id || null;
 
     const limitPerDay = journey.limitPerDay;
-    const operatorCount = userIds.length;
-    const results: { externalPersonId: number; assigneeId: string; joinedCampaignAt: Date }[] = [];
+    const results: { externalPersonId: number; assigneeId: string | null; joinedCampaignAt: Date }[] = [];
+
+    const routingEngine = new RoutingEngineService();
 
     // Contador de atribuições por operador para aplicar o limitador diário
     const operatorAssignments: Record<string, number> = {};
@@ -47,8 +49,31 @@ export class AssignCampaignLeadsUseCase {
 
     for (let i = 0; i < externalPersonIds.length; i++) {
       const externalPersonId = externalPersonIds[i];
-      const assigneeId = userIds[i % operatorCount];
-      const countForAgent = operatorAssignments[assigneeId]++;
+      
+      // Obter assigneeId usando o motor de roteamento inteligente
+      const assigneeId = await routingEngine.determineAssignee(
+        externalPersonId,
+        {
+          routingMode: journey.routingMode,
+          useAccountManager: journey.useAccountManager,
+          strictSkillMatch: journey.strictSkillMatch,
+          productId: journey.productId
+        },
+        'AGENT',
+        i,
+        userIds
+      );
+
+      let countForAgent = 0;
+      if (assigneeId) {
+        if (operatorAssignments[assigneeId] === undefined) {
+          operatorAssignments[assigneeId] = 0;
+        }
+        countForAgent = operatorAssignments[assigneeId]++;
+      } else {
+        // Se for POOL (ou nulo), escalonamos usando o loop index geral
+        countForAgent = i;
+      }
 
       // Calcular o joinedCampaignAt com base no limitPerDay e na data base de início em UTC
       const joinedCampaignAt = new Date(baseDate.getTime());

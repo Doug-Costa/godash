@@ -110,6 +110,22 @@ export default async function DashboardPage({
     console.error('❌ Error fetching pipelines in DashboardPage:', err.message);
   }
 
+  // 5. Fetch products from Database
+  let products: any[] = [];
+  try {
+    const rawProducts = await prisma.product.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' }
+    });
+    products = rawProducts.map(p => ({
+      id: p.id,
+      name: p.name,
+      description: p.description
+    }));
+  } catch (err: any) {
+    console.error('❌ Error fetching products in DashboardPage:', err.message);
+  }
+
   return (
     <DashboardContent
       kpis={kpis}
@@ -122,6 +138,7 @@ export default async function DashboardPage({
       currentUser={currentUser}
       agents={agents}
       pipelines={pipelines}
+      products={products}
     />
   );
 }

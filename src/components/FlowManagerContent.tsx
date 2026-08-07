@@ -15,9 +15,10 @@ interface FlowManagerContentProps {
     role: string;
   } | null;
   initialPipelines?: any[];
+  initialProducts?: any[];
 }
 
-export default function FlowManagerContent({ currentUser, initialPipelines = [] }: FlowManagerContentProps) {
+export default function FlowManagerContent({ currentUser, initialPipelines = [], initialProducts = [] }: FlowManagerContentProps) {
   const isAdmin = currentUser?.role === 'ADMIN';
 
   // Tabs: 'marketing' | 'commercial' | 'cs' | 'nurturing'
@@ -38,6 +39,12 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
   const [flowSmtpConfigId, setFlowSmtpConfigId] = useState('');
   const [flowOnWinJourneyId, setFlowOnWinJourneyId] = useState('');
   const [flowOnLoseJourneyId, setFlowOnLoseJourneyId] = useState('');
+
+  // Routing fields
+  const [flowRoutingMode, setFlowRoutingMode] = useState<'ROUND_ROBIN' | 'POOL'>('ROUND_ROBIN');
+  const [flowUseAccountManager, setFlowUseAccountManager] = useState<boolean>(false);
+  const [flowStrictSkillMatch, setFlowStrictSkillMatch] = useState<boolean>(false);
+  const [flowProductId, setFlowProductId] = useState<string>('');
 
   // React Flow states
   const [nodes, setNodes] = useState<any[]>([]);
@@ -189,6 +196,10 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
     setFlowSendingMode('RANDOM');
     setFlowMinDelay(1000);
     setFlowMaxDelay(5000);
+    setFlowRoutingMode('ROUND_ROBIN');
+    setFlowUseAccountManager(false);
+    setFlowStrictSkillMatch(false);
+    setFlowProductId('');
     initVisualFlowCanvas();
     setShowFlowModal(true);
   };
@@ -204,6 +215,10 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
     setFlowSendingMode(flow.sendingMode || 'RANDOM');
     setFlowMinDelay(flow.minDelay ?? 1000);
     setFlowMaxDelay(flow.maxDelay ?? 5000);
+    setFlowRoutingMode(flow.routingMode || 'ROUND_ROBIN');
+    setFlowUseAccountManager(flow.useAccountManager === true);
+    setFlowStrictSkillMatch(flow.strictSkillMatch === true);
+    setFlowProductId(flow.productId || '');
     initVisualFlowCanvas(flow);
     setShowFlowModal(true);
   };
@@ -253,7 +268,11 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
         minDelay: flowMinDelay,
         maxDelay: flowMaxDelay,
         flowSteps,
-        flowGraph: JSON.stringify({ nodes, edges })
+        flowGraph: JSON.stringify({ nodes, edges }),
+        routingMode: flowRoutingMode,
+        useAccountManager: flowUseAccountManager,
+        strictSkillMatch: flowStrictSkillMatch,
+        productId: flowProductId || null
       };
 
       const res = await fetch('/api/campaigns', {
@@ -526,6 +545,57 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [] 
                       disabled={flowSendingMode !== 'RANDOM'}
                       style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, outline: 'none' }}
                     />
+                  </div>
+                </div>
+              </div>
+
+              {/* RevOps Intelligent Routing Configuration */}
+              <div style={{ background: 'var(--surface-raised)', padding: 14, borderRadius: 8, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>⚙️ Configuração de Roteamento Inteligente e Especialistas (RevOps)</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Modo de Distribuição:</label>
+                    <select
+                      value={flowRoutingMode}
+                      onChange={e => setFlowRoutingMode(e.target.value as any)}
+                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, outline: 'none' }}
+                    >
+                      <option value="ROUND_ROBIN">Rodízio Automático (Round-Robin)</option>
+                      <option value="POOL">Fila de Espera (POOL / Pegada Manual)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Produto da Jornada:</label>
+                    <select
+                      value={flowProductId}
+                      onChange={e => setFlowProductId(e.target.value)}
+                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, outline: 'none' }}
+                    >
+                      <option value="">-- Nenhum --</option>
+                      {initialProducts?.map((p: any) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, paddingBottom: 6 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-primary)' }}>
+                      <input
+                        type="checkbox"
+                        checked={flowUseAccountManager}
+                        onChange={e => setFlowUseAccountManager(e.target.checked)}
+                      />
+                      <span>Priorizar Histórico</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-primary)' }}>
+                      <input
+                        type="checkbox"
+                        checked={flowStrictSkillMatch}
+                        onChange={e => setFlowStrictSkillMatch(e.target.checked)}
+                      />
+                      <span>Apenas Especialistas</span>
+                    </label>
                   </div>
                 </div>
               </div>

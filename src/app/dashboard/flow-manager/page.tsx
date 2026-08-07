@@ -41,7 +41,23 @@ export default async function FlowManagerPage() {
     console.error('Error fetching pipelines:', err.message);
   }
 
+  // 5. Buscar produtos
+  let products: any[] = [];
+  try {
+    const rawProducts = await prisma.product.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' }
+    });
+    products = rawProducts.map(p => ({
+      id: p.id,
+      name: p.name,
+      description: p.description
+    }));
+  } catch (err: any) {
+    console.error('Error fetching products:', err.message);
+  }
+
   return (
-    <FlowManagerContent currentUser={currentUser} initialPipelines={pipelines} />
+    <FlowManagerContent currentUser={currentUser} initialPipelines={pipelines} initialProducts={products} />
   );
 }

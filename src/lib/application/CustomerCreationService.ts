@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import { Customer } from '@prisma/client';
+import { Customer, SaleChannel } from '@prisma/client';
 import { IdentityResolutionService } from './IdentityResolutionService';
 import { CustomerRevenueService } from './CustomerRevenueService';
 
@@ -21,6 +21,7 @@ export class CustomerCreationService {
     productId?: string;
     sourceCampaignId?: string;
     pricePaid?: number;
+    saleChannel?: SaleChannel;
   }) {
     const { 
       externalPersonId, 
@@ -33,7 +34,8 @@ export class CustomerCreationService {
       authorId,
       productId,
       sourceCampaignId,
-      pricePaid
+      pricePaid,
+      saleChannel
     } = data;
 
     // 1. Resolve Identity
@@ -122,10 +124,50 @@ export class CustomerCreationService {
             pipelineId,
             stage,
             productId,
-            sourceCampaignId
+            sourceCampaignId,
+            pricePaid,
+            value: pricePaid,
+            saleChannel
           }
         });
         console.log(`[Opportunity] Created new Opportunity for customer ${customerId} in pipeline ${pipelineId}`);
+
+        // RevOps Cross-Sell Conflict Detection:
+        // Se a oportunidade que estamos criando for no pipeline Vendas/Comercial,
+        // verificamos se o cliente já possui um atendimento ativo de pós-venda (CS).
+        const targetPipeline = await prisma.pipeline.findUnique({ where: { id: pipelineId } });
+        const isVendas = targetPipeline?.name === 'Vendas' || targetPipeline?.name?.toLowerCase().includes('venda') || targetPipeline?.name?.toLowerCase().includes('comercial');
+
+        if (isVendas) {
+          const activeCsOpp = await prisma.opportunity.findFirst({
+            where: {
+              customerId,
+              status: 'OPEN',
+              pipeline: {
+                name: { in: ['CS', 'CS/Pós-Vendas', 'Pós-Vendas', 'Pós-Venda'] }
+              }
+            }
+          });
+
+          if (activeCsOpp) {
+            console.log(`[RevOps Cross-Sell] Conflito detectado: Lead ${customerId} com negociação ativa em CS. Ativando humanTakeover e sinalizando oportunidade.`);
+            await prisma.customer.update({
+              where: { id: customerId },
+              data: { humanTakeover: true }
+            });
+
+            const currentMeta = (activeCsOpp.metadata as Record<string, any>) || {};
+            await prisma.opportunity.update({
+              where: { id: activeCsOpp.id },
+              data: {
+                metadata: {
+                  ...currentMeta,
+                  hasParallelNegotiation: true
+                }
+              }
+            });
+          }
+        }
       } else {
         console.log(`[Opportunity] Customer ${customerId} already has an Opportunity in pipeline ${pipelineId}`);
       }

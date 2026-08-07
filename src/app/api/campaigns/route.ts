@@ -39,6 +39,10 @@ export async function GET() {
       sentEmails: j.sentEmails || 0,
       failedEmails: j.failedEmails || 0,
       openedEmails: j.openedEmails || 0,
+      routingMode: j.routingMode,
+      useAccountManager: j.useAccountManager,
+      strictSkillMatch: j.strictSkillMatch,
+      productId: j.productId,
       createdAt: j.createdAt,
       updatedAt: j.updatedAt,
       _count: { leads: j._count.customers },
@@ -223,6 +227,10 @@ export async function POST(request: Request) {
           onWinJourneyId: body.onWinJourneyId || null,
           onLoseJourneyId: body.onLoseJourneyId || null,
           flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : null,
+          routingMode: body.routingMode || 'ROUND_ROBIN',
+          useAccountManager: body.useAccountManager === true,
+          strictSkillMatch: body.strictSkillMatch === true,
+          productId: body.productId || null,
           automations: flowSteps && Array.isArray(flowSteps) ? {
             create: flowSteps.map((step: any, index: number) => ({
               name: `Passo ${index + 1} - ${step.channel}`,
@@ -375,6 +383,10 @@ export async function POST(request: Request) {
           minDelay: minDelay !== undefined ? Number(minDelay) : 1000,
           maxDelay: maxDelay !== undefined ? Number(maxDelay) : 5000,
           flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : null,
+          routingMode: body.routingMode || 'ROUND_ROBIN',
+          useAccountManager: body.useAccountManager === true,
+          strictSkillMatch: body.strictSkillMatch === true,
+          productId: body.productId || null,
           automations: flowSteps && Array.isArray(flowSteps) ? {
             create: flowSteps.map((step: any, index: number) => ({
               name: `Passo ${index + 1} - ${step.channel}`,
@@ -430,6 +442,10 @@ export async function POST(request: Request) {
           minDelay: body.minDelay !== undefined ? Number(body.minDelay) : undefined,
           maxDelay: body.maxDelay !== undefined ? Number(body.maxDelay) : undefined,
           flowGraph: flowGraph ? (typeof flowGraph === 'string' ? flowGraph : JSON.stringify(flowGraph)) : undefined,
+          routingMode: body.routingMode !== undefined ? body.routingMode : undefined,
+          useAccountManager: body.useAccountManager !== undefined ? (body.useAccountManager === true) : undefined,
+          strictSkillMatch: body.strictSkillMatch !== undefined ? (body.strictSkillMatch === true) : undefined,
+          productId: body.productId !== undefined ? (body.productId || null) : undefined,
           automations: flowSteps && Array.isArray(flowSteps) ? {
             create: flowSteps.map((step: any, index: number) => ({
               name: `Passo ${index + 1} - ${step.channel}`,
