@@ -78,11 +78,19 @@ async function getMatchingPersonIdsFromSubscriptions(rule: any) {
       FROM people p
       LEFT JOIN subscriptions s ON s.personId = p.id
       WHERE p.admin = 0
-      AND (s.id IS NULL OR s.status = 'pending' OR NOT EXISTS (
-        SELECT 1 FROM subscriptions s2 WHERE s2.personId = p.id AND s2.status IN ('active', 'expired', 'canceled')
-      ))
     `;
     const params: any[] = [];
+
+    if (planId && planId !== 'all' && planId !== 'no_plan') {
+      query += ` AND (s.planId = ? OR s.planId IS NULL) AND (s.status = 'pending' OR NOT EXISTS (
+        SELECT 1 FROM subscriptions s2 WHERE s2.personId = p.id AND s2.planId = ? AND s2.status IN ('active', 'expired', 'canceled')
+      ))`;
+      params.push(planId, planId);
+    } else {
+      query += ` AND (s.id IS NULL OR s.status = 'pending' OR NOT EXISTS (
+        SELECT 1 FROM subscriptions s2 WHERE s2.personId = p.id AND s2.status IN ('active', 'expired', 'canceled')
+      ))`;
+    }
 
     if (startDate) {
       query += ` AND p.createdAt >= ?`;
