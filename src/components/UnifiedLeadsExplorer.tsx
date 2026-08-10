@@ -536,6 +536,8 @@ export default function UnifiedLeadsExplorer({
                   />
                 </th>
                 <th style={{ padding: '14px 16px' }}>Cliente / Lead</th>
+                <th style={{ padding: '14px 16px' }}>E-mail</th>
+                <th style={{ padding: '14px 16px' }}>Telefone / WhatsApp</th>
                 <th style={{ padding: '14px 16px' }}>Origem</th>
                 <th style={{ padding: '14px 16px' }}>Plano DentalGO</th>
                 <th style={{ padding: '14px 16px' }}>Status Assinatura</th>
@@ -547,6 +549,11 @@ export default function UnifiedLeadsExplorer({
             <tbody>
               {leads.map((lead) => {
                 const isChecked = selectedLeadIds.includes(lead.id);
+                const rawDigits = lead.phone ? lead.phone.replace(/\D/g, '') : '';
+                const waLink = rawDigits.length >= 10 
+                  ? (rawDigits.startsWith('55') ? `https://wa.me/${rawDigits}` : `https://wa.me/55${rawDigits}`) 
+                  : null;
+
                 return (
                   <tr
                     key={lead.id}
@@ -565,12 +572,53 @@ export default function UnifiedLeadsExplorer({
                       />
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {lead.name}
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent-glow)', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700 }}>
+                          {(lead.name || 'L').charAt(0).toUpperCase()}
+                        </span>
+                        {lead.name || 'Lead Sem Nome'}
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        {lead.email} {lead.phone ? `• ${lead.phone}` : ''}
-                      </div>
+                    </td>
+                    <td style={{ padding: '14px 16px', color: 'var(--text-primary)', fontSize: '0.85rem' }}>
+                      {lead.email ? (
+                        <a href={`mailto:${lead.email}`} style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>
+                          📧 {lead.email}
+                        </a>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '14px 16px', fontSize: '0.85rem' }}>
+                      {lead.phone ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>📱 {lead.phone}</span>
+                          {waLink && (
+                            <a
+                              href={waLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Abrir no WhatsApp"
+                              style={{
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                background: 'rgba(34, 197, 94, 0.15)',
+                                color: '#22c55e',
+                                textDecoration: 'none',
+                                fontWeight: 600,
+                                fontSize: '0.75rem',
+                                border: '1px solid rgba(34, 197, 94, 0.3)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                              💬 WhatsApp
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)' }}>—</span>
+                      )}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       <span style={{ fontSize: '0.8rem', padding: '3px 8px', borderRadius: '6px', background: 'var(--surface-raised)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
