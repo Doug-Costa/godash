@@ -133,6 +133,17 @@ export async function GET(request: Request) {
       }
     }
 
+    // If specific plan or subscription status is selected for DentalGO, restrict Prisma Customers to matching externalPersonIds
+    if ((planId !== 'all' || subscriptionStatus !== 'all') && (source === 'all' || source === 'DENTALGO')) {
+      const validPersonIds = Array.from(mysqlLeadMap.keys());
+      if (validPersonIds.length > 0) {
+        prismaWhere.externalPersonId = { in: validPersonIds };
+      } else {
+        // If MySQL returned 0 matching person IDs for this plan/status filter, Prisma should also return 0 DentalGO leads
+        prismaWhere.id = 'impossible_no_match_id';
+      }
+    }
+
     if (journeyId !== 'all') {
       if (journeyId === 'none') prismaWhere.journeyId = null;
       else prismaWhere.journeyId = journeyId;
@@ -166,6 +177,41 @@ export async function GET(request: Request) {
       orderBy: { createdAt: 'desc' },
       take: 2000
     });
+
+    // Enrich missing contact details from MySQL people table for externalPersonIds in Prisma
+    const missingExtIds = (prismaCustomers as any[])
+      .filter(c => c.externalPersonId && !mysqlLeadMap.has(c.externalPersonId))
+      .map(c => c.externalPersonId);
+
+    if (missingExtIds.length > 0) {
+      try {
+        const idsStr = missingExtIds.join(',');
+        const [extraPeople]: any = await pool.query(`
+          SELECT 
+            p.id,
+            COALESCE(NULLIF(p.fullName, ''), NULLIF(p.name, ''), p.email, CONCAT('Dr. Lead #', p.id)) AS fullName,
+            p.email,
+            p.phoneNumber AS phone,
+            p.createdAt
+          FROM people p
+          WHERE p.id IN (${idsStr})
+        `);
+        for (const r of extraPeople) {
+          mysqlLeadMap.set(r.id, {
+            externalPersonId: r.id,
+            name: r.fullName,
+            email: r.email || '',
+            phone: r.phone || '',
+            source: 'DentalGO Sinc DB',
+            planTitle: 'Sem Plano / Pendente',
+            subscriptionStatus: 'no_plan',
+            createdAt: r.createdAt
+          });
+        }
+      } catch (err) {
+        console.warn('[Explorer API] Extra people enrichment failed:', err);
+      }
+    }
 
     // 3. Merge MySQL and Prisma leads
     const combinedLeadsMap = new Map<string, any>();
@@ -204,10 +250,10 @@ export async function GET(request: Request) {
       combinedLeadsMap.set(key, {
         id: c.id,
         externalPersonId: c.externalPersonId || existing.externalPersonId || null,
-        name: c.name || existing.name || (c.email ? c.email.split('@')[0] : null) || `Lead #${c.externalPersonId || c.id}`,
-        email: c.email || existing.email || '',
-        phone: c.phone || c.phoneNumber || existing.phone || '',
-        source: c.source || existing.source || 'Form Capture / CDP',
+        name: existing.name || c.name || (c.email ? c.email.split('@')[0] : null) || `Lead #${c.externalPersonId || c.id}`,
+        email: existing.email || c.email || '',
+        phone: existing.phone || c.phone || c.phoneNumber || '',
+        source: existing.source || c.source || 'Form Capture / CDP',
         planTitle: existing.planTitle || planFromPrisma || 'Sem Plano / Pendente',
         subscriptionStatus: existing.subscriptionStatus || statusFromPrisma || 'no_plan',
         courses: Array.from(new Set([...(existing.courses || []), ...courses])),
