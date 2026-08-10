@@ -72,6 +72,20 @@ async function getMatchingPersonIdsFromSubscriptions(rule: any) {
   const startDate = rule.startDate;
   const endDate = rule.endDate;
 
+  if (planId === 'no_plan' || status === 'no_plan') {
+    const query = `
+      SELECT DISTINCT p.id as personId
+      FROM people p
+      LEFT JOIN subscriptions s ON s.personId = p.id
+      WHERE p.admin = 0
+      AND (s.id IS NULL OR s.status = 'pending' OR NOT EXISTS (
+        SELECT 1 FROM subscriptions s2 WHERE s2.personId = p.id AND s2.status IN ('active', 'expired', 'canceled')
+      ))
+    `;
+    const [rows] = await pool.query(query);
+    return (rows as any[]).map((r) => Number(r.personId)).filter((id) => !isNaN(id));
+  }
+
   let query = `
     SELECT DISTINCT s.personId
     FROM subscriptions s
@@ -134,23 +148,33 @@ async function buildPrismaWhereFromRules(rules: any[], relation: 'AND' | 'OR', e
 
     if (isDentalGo) {
       const personIds = await getMatchingPersonIdsFromSubscriptions(rule);
-      const cpCondition: any = {};
-      if (planId && planId !== 'all') cpCondition.productId = planId;
-      if (status && status !== 'all') cpCondition.status = status.toUpperCase();
-      if (startDate || endDate) {
-        const dateCond: any = {};
-        if (startDate) dateCond.gte = new Date(startDate);
-        if (endDate) dateCond.lte = new Date(`${endDate}T23:59:59.999Z`);
-        cpCondition.startDate = dateCond;
+
+      if (planId === 'no_plan' || status === 'no_plan') {
+        cond = {
+          OR: [
+            { externalPersonId: { in: personIds } },
+            { source: 'DENTALGO', customerProducts: { none: {} } }
+          ]
+        };
+      } else {
+        const cpCondition: any = {};
+        if (planId && planId !== 'all') cpCondition.productId = planId;
+        if (status && status !== 'all') cpCondition.status = status.toUpperCase();
+        if (startDate || endDate) {
+          const dateCond: any = {};
+          if (startDate) dateCond.gte = new Date(startDate);
+          if (endDate) dateCond.lte = new Date(`${endDate}T23:59:59.999Z`);
+          cpCondition.startDate = dateCond;
+        }
+        
+        const subConditions: any[] = [];
+        if (personIds.length > 0) {
+          subConditions.push({ externalPersonId: { in: personIds } });
+        }
+        subConditions.push({ customerProducts: { some: cpCondition } });
+        
+        cond = { OR: subConditions };
       }
-      
-      const subConditions: any[] = [];
-      if (personIds.length > 0) {
-        subConditions.push({ externalPersonId: { in: personIds } });
-      }
-      subConditions.push({ customerProducts: { some: cpCondition } });
-      
-      cond = { OR: subConditions };
     } else if (dimension === 'lead_source') {
       const isForm = value !== 'CSV' && value !== 'DENTALGO';
       const sourceCond: any = {};

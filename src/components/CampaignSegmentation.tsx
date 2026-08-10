@@ -385,7 +385,7 @@ export default function CampaignSegmentation({
                       {/* Top Row: Dimension Selection, Operator/Source type and Remove action */}
                       <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                         {/* Dimension Select */}
-                        <div style={{ flex: 1.2 }}>
+                        <div style={{ flex: 1 }}>
                           <select
                             value={rule.dimension}
                             onChange={(e) =>
@@ -413,8 +413,8 @@ export default function CampaignSegmentation({
                         </div>
 
                         {/* Sub-Filters / Operator */}
-                        <div style={{ flex: 1.8, display: 'flex', gap: 8 }}>
-                          {rule.dimension === 'lead_source' ? (
+                        <div style={{ flex: 2.2, display: 'flex', gap: 8 }}>
+                          {rule.dimension === 'lead_source' && rule.value !== 'DENTALGO' ? (
                             <select
                               value={rule.value.startsWith('Form Capture:') ? 'FORM' : rule.value}
                               onChange={(e) =>
@@ -437,6 +437,31 @@ export default function CampaignSegmentation({
                             </select>
                           ) : isDentalGo ? (
                             <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                              {/* Source Select if dimension is lead_source */}
+                              {rule.dimension === 'lead_source' && (
+                                <select
+                                  value={rule.value}
+                                  onChange={(e) =>
+                                    handleUpdateRule(rule.id, { value: e.target.value })
+                                  }
+                                  style={{
+                                    width: '35%',
+                                    padding: '8px 8px',
+                                    background: 'var(--surface)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: 6,
+                                    color: 'var(--text-primary)',
+                                    fontSize: 11,
+                                    outline: 'none',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  <option value="CSV">📥 Importação CSV</option>
+                                  <option value="DENTALGO">🌐 DentalGO Sinc DB</option>
+                                  <option value="FORM">📝 Formulários Site</option>
+                                </select>
+                              )}
+
                               {/* DentalGO Plans Selection */}
                               <select
                                 value={rule.planId || 'all'}
@@ -444,7 +469,7 @@ export default function CampaignSegmentation({
                                   handleUpdateRule(rule.id, { planId: e.target.value })
                                 }
                                 style={{
-                                  width: '60%',
+                                  width: rule.dimension === 'lead_source' ? '40%' : '60%',
                                   padding: '8px 10px',
                                   background: 'var(--surface)',
                                   border: '1px solid var(--border)',
@@ -455,6 +480,7 @@ export default function CampaignSegmentation({
                                 }}
                               >
                                 <option value="all">🌐 Todos os Planos</option>
+                                <option value="no_plan">🛒 Sem Plano (Carrinho Abandonado)</option>
                                 {loadingPlans ? (
                                   <option disabled>Carregando planos...</option>
                                 ) : (
@@ -465,6 +491,7 @@ export default function CampaignSegmentation({
                                   ))
                                 )}
                               </select>
+                              
                               {/* Subscription Status select */}
                               <select
                                 value={rule.status || 'all'}
@@ -472,7 +499,7 @@ export default function CampaignSegmentation({
                                   handleUpdateRule(rule.id, { status: e.target.value })
                                 }
                                 style={{
-                                  width: '40%',
+                                  width: rule.dimension === 'lead_source' ? '25%' : '40%',
                                   padding: '8px 10px',
                                   background: 'var(--surface)',
                                   border: '1px solid var(--border)',
@@ -486,6 +513,7 @@ export default function CampaignSegmentation({
                                 <option value="active">🟢 Ativo</option>
                                 <option value="expired">🟡 Expirado</option>
                                 <option value="canceled">🔴 Cancelado</option>
+                                <option value="no_plan">🛒 Sem Plano / Pendente</option>
                               </select>
                             </div>
                           ) : (
@@ -615,7 +643,7 @@ export default function CampaignSegmentation({
                         </div>
                       )}
 
-                      {/* DentalGO Subscription Sub-Filters (Plano, Status, Datas) */}
+                      {/* DentalGO Subscription Sub-Filters (Assinatura De, Assinatura Até) */}
                       {isDentalGo && (
                         <div style={{ display: 'flex', gap: 12, paddingLeft: 4 }}>
                           {/* Start Date */}
