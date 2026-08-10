@@ -110,14 +110,15 @@ export default function CampaignSegmentation({
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 w-full animate-fadeUp">
+    <div style={{ display: 'flex', flexDirection: 'row', gap: 24, width: '100%', alignItems: 'flex-start' }}>
+      
       {/* Left side: Rules Query Builder */}
-      <div className="flex-1 flex flex-col gap-5">
+      <div style={{ flex: 1.6, display: 'flex', flexDirection: 'column', gap: 16 }}>
         
         {/* Campaign Info Inputs */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-2">
-            <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wider">
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+          <div>
+            <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>
               Nome da Campanha:
             </label>
             <input
@@ -126,11 +127,20 @@ export default function CampaignSegmentation({
               value={campaignName}
               onChange={(e) => onChangeName(e.target.value)}
               placeholder="Ex: Campanha Resgate Congresso DentalPress"
-              className="w-full px-4 py-2.5 bg-[var(--surface-raised)] border border-[var(--border)] rounded-xl text-[var(--text-primary)] focus:border-[var(--accent)] outline-none transition-all text-sm"
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                background: 'var(--surface-raised)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                color: 'var(--text-primary)',
+                outline: 'none',
+                fontSize: 13,
+              }}
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5 uppercase tracking-wider">
+            <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>
               Data de Início:
             </label>
             <input
@@ -138,29 +148,61 @@ export default function CampaignSegmentation({
               required
               value={campaignStartDate}
               onChange={(e) => onChangeStartDate(e.target.value)}
-              className="w-full px-4 py-2.5 bg-[var(--surface-raised)] border border-[var(--border)] rounded-xl text-[var(--text-primary)] focus:border-[var(--accent)] outline-none transition-all text-sm"
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                background: 'var(--surface-raised)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                color: 'var(--text-primary)',
+                outline: 'none',
+                fontSize: 13,
+              }}
             />
           </div>
         </div>
 
         {/* Query Builder Container */}
-        <div className="bg-[var(--surface-raised)] border border-[var(--border)] rounded-2xl p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-[var(--border)]">
+        <div style={{
+          background: 'var(--surface-raised)',
+          border: '1px solid var(--border)',
+          borderRadius: 12,
+          padding: 20,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            borderBottom: '1px solid var(--border)',
+            paddingBottom: 12,
+          }}>
             <div>
-              <h4 className="text-sm font-extrabold text-[var(--text-primary)]">
+              <h4 style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)', margin: 0 }}>
                 Segmentação de Leads (Filtros Lógicos)
               </h4>
-              <p className="text-xs text-[var(--text-secondary)] mt-0.5">
-                Defina as regras dinâmicas que os leads devem cumprir para entrar nesta campanha.
+              <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4, margin: 0 }}>
+                Defina as regras dinâmicas que os leads devem cumprir para entrar na campanha.
               </p>
             </div>
             {rules.length > 1 && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-[var(--text-secondary)] font-medium">Combinar regras por:</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Combinar por:</span>
                 <button
                   type="button"
                   onClick={handleToggleRelation}
-                  className="px-3 py-1 text-xs font-bold rounded-lg bg-[var(--accent)] text-white shadow hover:scale-105 transition-all"
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    borderRadius: 6,
+                    background: 'var(--accent)',
+                    color: '#fff',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
                 >
                   {rulesRelation === 'AND' ? 'TODAS (E)' : 'QUALQUER (OU)'}
                 </button>
@@ -170,44 +212,81 @@ export default function CampaignSegmentation({
 
           {/* Rules List */}
           {rules.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 px-4 border border-dashed border-[var(--border)] rounded-xl bg-black/5 dark:bg-white/[0.02]">
-              <span className="text-3xl mb-2">🔍</span>
-              <p className="text-sm font-medium text-[var(--text-secondary)] text-center">
-                Nenhuma regra de segmentação adicionada.
-              </p>
-              <p className="text-xs text-[var(--text-faint)] text-center mt-1">
-                Adicione regras para refinar e filtrar a base de leads da campanha.
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '32px 16px',
+              border: '1px dashed var(--border)',
+              borderRadius: 8,
+              background: 'rgba(0,0,0,0.02)',
+              textAlign: 'center',
+            }}>
+              <span style={{ fontSize: 32, marginBottom: 8 }}>🔍</span>
+              <h5 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px 0' }}>
+                Nenhuma regra de segmentação adicionada
+              </h5>
+              <p style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '0 0 16px 0', maxWidth: 280 }}>
+                Adicione regras para filtrar a base de clientes da campanha.
               </p>
               <button
                 type="button"
                 onClick={handleAddRule}
-                className="mt-4 px-4 py-2 bg-[var(--accent)] text-white font-semibold text-xs rounded-xl shadow-md hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5"
+                style={{
+                  padding: '8px 16px',
+                  background: 'var(--accent)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
               >
-                <span>+</span> Adicionar Primeira Regra
+                + Adicionar Primeira Regra
               </button>
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {rules.map((rule, index) => (
                 <React.Fragment key={rule.id}>
-                  {/* Connector line between rules */}
+                  {/* Connector badge */}
                   {index > 0 && (
-                    <div className="flex justify-center -my-1">
+                    <div style={{ display: 'flex', justifyContent: 'center', margin: '-4px 0' }}>
                       <button
                         type="button"
                         onClick={handleToggleRelation}
-                        className="px-2.5 py-0.5 text-[10px] font-bold rounded-full border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--accent)] shadow-sm hover:bg-[var(--accent)] hover:text-white transition-all z-10"
+                        style={{
+                          padding: '2px 8px',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          borderRadius: 10,
+                          border: '1px solid var(--border)',
+                          background: 'var(--surface-raised)',
+                          color: 'var(--accent)',
+                          cursor: 'pointer',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                        }}
                       >
                         {rulesRelation === 'AND' ? 'E' : 'OU'}
                       </button>
                     </div>
                   )}
 
-                  {/* Rule Row Card */}
-                  <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 p-3 bg-black/[0.02] dark:bg-white/[0.01] border border-[var(--border)] rounded-xl hover:border-[var(--accent-light)] transition-all group relative">
-                    
+                  {/* Rule Row */}
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '10px 12px',
+                    background: 'rgba(0,0,0,0.01)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                  }}>
                     {/* Dimension Select */}
-                    <div className="flex-1 min-w-[150px]">
+                    <div style={{ flex: 1 }}>
                       <select
                         value={rule.dimension}
                         onChange={(e) =>
@@ -215,7 +294,17 @@ export default function CampaignSegmentation({
                             dimension: e.target.value as any,
                           })
                         }
-                        className="w-full px-3 py-2 bg-[var(--surface-raised)] border border-[var(--border)] rounded-lg text-xs font-semibold text-[var(--text-primary)] outline-none focus:border-[var(--accent)] transition-all"
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          background: 'var(--surface)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 6,
+                          color: 'var(--text-primary)',
+                          fontSize: 12,
+                          outline: 'none',
+                          fontWeight: 600,
+                        }}
                       >
                         <option value="lead_source">Origem do Lead</option>
                         <option value="product_acquired">Produto Adquirido</option>
@@ -224,7 +313,7 @@ export default function CampaignSegmentation({
                     </div>
 
                     {/* Operator Select */}
-                    <div className="w-full md:w-[130px]">
+                    <div style={{ width: 110 }}>
                       <select
                         value={rule.operator}
                         onChange={(e) =>
@@ -232,7 +321,16 @@ export default function CampaignSegmentation({
                             operator: e.target.value as any,
                           })
                         }
-                        className="w-full px-3 py-2 bg-[var(--surface-raised)] border border-[var(--border)] rounded-lg text-xs text-[var(--text-primary)] outline-none focus:border-[var(--accent)] transition-all"
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          background: 'var(--surface)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 6,
+                          color: 'var(--text-primary)',
+                          fontSize: 12,
+                          outline: 'none',
+                        }}
                       >
                         <option value="equals">É igual a</option>
                         <option value="not_equals">Não é igual a</option>
@@ -242,17 +340,26 @@ export default function CampaignSegmentation({
                       </select>
                     </div>
 
-                    {/* Value Input/Select */}
-                    <div className="flex-[1.5] min-w-[200px]">
+                    {/* Value Select */}
+                    <div style={{ flex: 1.3 }}>
                       {rule.dimension === 'lead_source' ? (
                         <select
                           value={rule.value}
                           onChange={(e) =>
                             handleUpdateRule(rule.id, { value: e.target.value })
                           }
-                          className="w-full px-3 py-2 bg-[var(--surface-raised)] border border-[var(--border)] rounded-lg text-xs text-[var(--text-primary)] outline-none focus:border-[var(--accent)] transition-all"
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            background: 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 6,
+                            color: 'var(--text-primary)',
+                            fontSize: 12,
+                            outline: 'none',
+                          }}
                         >
-                          <option value="CSV">📥 Upload/Importação CSV</option>
+                          <option value="CSV">📥 Importação CSV</option>
                           {loadingForms ? (
                             <option disabled>Carregando formulários...</option>
                           ) : (
@@ -261,7 +368,7 @@ export default function CampaignSegmentation({
                                 key={form.id}
                                 value={`Form Capture: ${form.name}`}
                               >
-                                📝 Formulário: {form.name}
+                                📝 Form: {form.name}
                               </option>
                             ))
                           )}
@@ -272,7 +379,16 @@ export default function CampaignSegmentation({
                           onChange={(e) =>
                             handleUpdateRule(rule.id, { value: e.target.value })
                           }
-                          className="w-full px-3 py-2 bg-[var(--surface-raised)] border border-[var(--border)] rounded-lg text-xs text-[var(--text-primary)] outline-none focus:border-[var(--accent)] transition-all"
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            background: 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 6,
+                            color: 'var(--text-primary)',
+                            fontSize: 12,
+                            outline: 'none',
+                          }}
                         >
                           {productsList.length === 0 ? (
                             <option disabled>Nenhum produto cadastrado</option>
@@ -290,26 +406,45 @@ export default function CampaignSegmentation({
                           onChange={(e) =>
                             handleUpdateRule(rule.id, { value: e.target.value })
                           }
-                          className="w-full px-3 py-2 bg-[var(--surface-raised)] border border-[var(--border)] rounded-lg text-xs text-[var(--text-primary)] outline-none focus:border-[var(--accent)] transition-all"
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            background: 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 6,
+                            color: 'var(--text-primary)',
+                            fontSize: 12,
+                            outline: 'none',
+                          }}
                         >
-                          <option value="ACTIVE">🟢 Assinatura Ativa (ACTIVE)</option>
-                          <option value="EXPIRED">🟡 Assinatura Expirada (EXPIRED)</option>
-                          <option value="CANCELED">🔴 Assinatura Cancelada (CANCELED)</option>
-                          <option value="COMPLETED">🔵 Assinatura Concluída (COMPLETED)</option>
+                          <option value="ACTIVE">🟢 Ativo (ACTIVE)</option>
+                          <option value="EXPIRED">🟡 Expirado (EXPIRED)</option>
+                          <option value="CANCELED">🔴 Cancelado (CANCELED)</option>
+                          <option value="COMPLETED">🔵 Concluído (COMPLETED)</option>
                         </select>
                       )}
                     </div>
 
-                    {/* Delete Rule Button */}
+                    {/* Delete button */}
                     <button
                       type="button"
                       onClick={() => handleRemoveRule(rule.id)}
-                      className="p-2 text-rose-500 hover:bg-rose-500/10 hover:text-rose-600 rounded-lg transition-all self-end md:self-center"
+                      style={{
+                        padding: 8,
+                        background: 'none',
+                        border: 'none',
+                        color: '#F43F5E',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: 6,
+                      }}
                       title="Excluir regra"
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
-                        className="h-4 w-4"
+                        style={{ width: 16, height: 16 }}
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -326,14 +461,23 @@ export default function CampaignSegmentation({
                 </React.Fragment>
               ))}
 
-              {/* Add Rule Button at the end */}
-              <div className="flex justify-start mt-2">
+              {/* Add Rule Button */}
+              <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 4 }}>
                 <button
                   type="button"
                   onClick={handleAddRule}
-                  className="px-3.5 py-1.5 bg-black/5 dark:bg-white/5 border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] font-semibold text-xs rounded-xl transition-all flex items-center gap-1.5"
+                  style={{
+                    padding: '6px 12px',
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: 'var(--accent)',
+                    cursor: 'pointer',
+                  }}
                 >
-                  <span>+</span> Adicionar Regra
+                  + Adicionar Regra
                 </button>
               </div>
             </div>
@@ -341,51 +485,99 @@ export default function CampaignSegmentation({
         </div>
 
         {/* Nurturing exclusion checkbox */}
-        <div className="flex items-center gap-3 bg-[var(--surface-raised)] p-3.5 border border-[var(--border)] rounded-xl shadow-sm">
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          background: 'var(--surface-raised)',
+          padding: '8px 12px',
+          borderRadius: 8,
+          border: '1px solid var(--border)',
+          width: '100%',
+        }}>
           <input
             type="checkbox"
             id="excludeNurturing"
             checked={excludeNurturing}
             onChange={(e) => onChangeExcludeNurturing(e.target.checked)}
-            className="w-4 h-4 cursor-pointer accent-[var(--accent)] rounded border-[var(--border)] bg-transparent focus:ring-0"
+            style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }}
           />
           <label
             htmlFor="excludeNurturing"
-            className="text-xs cursor-pointer text-[var(--text-primary)] leading-normal flex items-center gap-1.5 font-medium select-none"
+            style={{
+              fontSize: 12,
+              cursor: 'pointer',
+              color: 'var(--text-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              margin: 0,
+              fontWeight: 500,
+            }}
           >
-            <span>⚠️</span>
-            <span>
-              <strong>Ignorar leads em esteira de recuperação/nutrição</strong> (Evita sobreposição de mensagens)
-            </span>
+            ⚠️ <strong>Ignorar leads em esteira de recuperação/nutrição</strong> (Evita sobreposição de mensagens)
           </label>
         </div>
 
       </div>
 
       {/* Right side: Estimated Audience */}
-      <div className="w-full lg:w-[280px] bg-gradient-to-br from-[rgba(var(--accent-rgb),0.05)] to-transparent border border-[var(--accent-light)] rounded-2xl p-6 flex flex-col justify-center items-center text-center self-stretch min-h-[220px]">
-        <div className="text-4xl mb-3 animate-pulse">🎯</div>
-        <h4 className="font-extrabold text-sm text-[var(--text-primary)] mb-1">
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        background: 'linear-gradient(135deg, rgba(var(--accent-rgb), 0.05), transparent)',
+        border: '1px solid var(--accent-light)',
+        borderRadius: 12,
+        padding: '24px 16px',
+        textAlign: 'center',
+        minHeight: 220,
+        boxSizing: 'border-box',
+      }}>
+        <div style={{ fontSize: 36, marginBottom: 12 }}>🎯</div>
+        <h4 style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 8, marginTop: 0 }}>
           Público-Alvo Estimado
         </h4>
         
         {loadingEstimate ? (
-          <div className="h-9 w-24 bg-[var(--border)] rounded-lg animate-pulse my-2"></div>
+          <div style={{
+            height: 32,
+            width: 100,
+            background: 'var(--border)',
+            borderRadius: 6,
+            animation: 'pulse 1.5s infinite',
+            margin: '8px 0',
+          }}></div>
         ) : (
-          <div className="text-3xl font-black text-[var(--accent)] my-2 tracking-tight">
-            {estimatedAudience.toLocaleString()}
+          <div style={{ fontSize: 32, fontWeight: 900, color: 'var(--accent)', margin: '8px 0' }}>
+            {estimatedAudience}
           </div>
         )}
         
-        <p className="text-xs text-[var(--text-secondary)] max-w-[200px] leading-relaxed">
+        <p style={{ fontSize: 11, color: 'var(--text-secondary)', maxWidth: 180, margin: 0, lineHeight: 1.4 }}>
           leads atendem às regras lógicas configuradas ao lado.
         </p>
 
         {collisionCount > 0 && (
-          <div className="bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-500 p-3 rounded-xl text-[10px] leading-relaxed flex gap-2.5 mt-4 text-left">
-            <span className="text-xs">⚠️</span>
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.12)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            color: '#CA8A04',
+            padding: '10px 12px',
+            borderRadius: 8,
+            fontSize: 10,
+            lineHeight: 1.4,
+            display: 'flex',
+            alignItems: 'start',
+            gap: 6,
+            marginTop: 16,
+            textAlign: 'left',
+          }}>
+            <span>⚠️</span>
             <div>
-              <strong>Atenção:</strong> {collisionCount} leads desta lista já estão ativos em outras jornadas. Mantenha a opção de <strong>ignorar leads em esteira</strong> ativa para evitar contatos duplicados.
+              <strong>Atenção:</strong> {collisionCount} leads desta lista já estão ativos em outras nutrições. Mantenha a opção de ignorar leads marcada.
             </div>
           </div>
         )}
