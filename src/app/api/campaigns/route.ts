@@ -119,7 +119,7 @@ async function getMatchingPersonIdsFromSubscriptions(rule: any) {
         SELECT 1 FROM subscriptions s2 WHERE s2.personId = s.personId AND s2.status = 'active'
       )`;
     } else if (sLower === 'expired') {
-      query += ` AND s.status = 'active' AND COALESCE(s.isValidUntil, s.expiresIn) < CURDATE()`;
+      query += ` AND (s.status = 'expired' OR (s.status = 'active' AND COALESCE(s.isValidUntil, s.expiresIn) < CURDATE()))`;
     }
   }
 
