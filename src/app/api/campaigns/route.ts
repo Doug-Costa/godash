@@ -66,7 +66,53 @@ export async function GET() {
   }
 }
 
-function buildPrismaWhereFromRules(rules: any[], relation: 'AND' | 'OR', excludeNurturing: boolean) {
+async function getMatchingPersonIdsFromSubscriptions(rule: any) {
+  const planId = rule.planId || (rule.value !== 'DENTALGO' && rule.value !== 'CSV' && !rule.value?.startsWith('Form Capture:') ? rule.value : null);
+  const status = rule.status;
+  const startDate = rule.startDate;
+  const endDate = rule.endDate;
+
+  let query = `
+    SELECT DISTINCT s.personId
+    FROM subscriptions s
+    LEFT JOIN plans pl ON s.planId = pl.id
+    WHERE 1=1
+  `;
+  const params: any[] = [];
+
+  if (planId && planId !== 'all') {
+    query += ` AND pl.id = ?`;
+    params.push(planId);
+  }
+
+  if (status && status !== 'all') {
+    const sLower = status.toLowerCase();
+    if (sLower === 'active') {
+      query += ` AND s.status = 'active'`;
+    } else if (sLower === 'canceled') {
+      query += ` AND s.status = 'canceled' AND NOT EXISTS (
+        SELECT 1 FROM subscriptions s2 WHERE s2.personId = s.personId AND s2.status = 'active'
+      )`;
+    } else if (sLower === 'expired') {
+      query += ` AND s.status = 'active' AND COALESCE(s.isValidUntil, s.expiresIn) < CURDATE()`;
+    }
+  }
+
+  if (startDate) {
+    query += ` AND COALESCE(s.createdAt, s.updatedAt) >= ?`;
+    params.push(new Date(startDate));
+  }
+
+  if (endDate) {
+    query += ` AND COALESCE(s.createdAt, s.updatedAt) <= ?`;
+    params.push(new Date(`${endDate}T23:59:59.999Z`));
+  }
+
+  const [rows] = await pool.query(query, params);
+  return (rows as any[]).map((r) => Number(r.personId)).filter((id) => !isNaN(id));
+}
+
+async function buildPrismaWhereFromRules(rules: any[], relation: 'AND' | 'OR', excludeNurturing: boolean) {
   const where: any = {};
   
   if (excludeNurturing) {
@@ -80,12 +126,32 @@ function buildPrismaWhereFromRules(rules: any[], relation: 'AND' | 'OR', exclude
   const conditions: any[] = [];
   
   for (const rule of rules) {
-    const { dimension, operator, value, status, startDate, endDate, utmSource } = rule;
+    const { dimension, operator, value, planId, status, startDate, endDate, utmSource } = rule;
     if (!dimension) continue;
     
     let cond: any = null;
-    
-    if (dimension === 'lead_source') {
+    const isDentalGo = dimension === 'dentalgo_subscription' || (dimension === 'lead_source' && value === 'DENTALGO');
+
+    if (isDentalGo) {
+      const personIds = await getMatchingPersonIdsFromSubscriptions(rule);
+      const cpCondition: any = {};
+      if (planId && planId !== 'all') cpCondition.productId = planId;
+      if (status && status !== 'all') cpCondition.status = status.toUpperCase();
+      if (startDate || endDate) {
+        const dateCond: any = {};
+        if (startDate) dateCond.gte = new Date(startDate);
+        if (endDate) dateCond.lte = new Date(`${endDate}T23:59:59.999Z`);
+        cpCondition.startDate = dateCond;
+      }
+      
+      const subConditions: any[] = [];
+      if (personIds.length > 0) {
+        subConditions.push({ externalPersonId: { in: personIds } });
+      }
+      subConditions.push({ customerProducts: { some: cpCondition } });
+      
+      cond = { OR: subConditions };
+    } else if (dimension === 'lead_source') {
       const isForm = value !== 'CSV' && value !== 'DENTALGO';
       const sourceCond: any = {};
       
@@ -109,22 +175,6 @@ function buildPrismaWhereFromRules(rules: any[], relation: 'AND' | 'OR', exclude
       } else {
         cond = sourceCond;
       }
-    } else if (dimension === 'dentalgo_subscription') {
-      const cpCondition: any = {};
-      if (value) cpCondition.productId = value;
-      if (status) cpCondition.status = status;
-      if (startDate || endDate) {
-        const dateCond: any = {};
-        if (startDate) dateCond.gte = new Date(startDate);
-        if (endDate) dateCond.lte = new Date(endDate);
-        cpCondition.startDate = dateCond;
-      }
-      
-      cond = {
-        customerProducts: {
-          some: cpCondition
-        }
-      };
     } else if (dimension === 'congresso' || dimension === 'curso') {
       if (operator === 'not_equals') {
         cond = {
@@ -199,7 +249,7 @@ export async function POST(request: Request) {
         }
       }
 
-      const prismaWhere = buildPrismaWhereFromRules(rules, rulesRelation || 'AND', excludeNurturing !== false);
+      const prismaWhere = await buildPrismaWhereFromRules(rules, rulesRelation || 'AND', excludeNurturing !== false);
 
       const count = await prisma.customer.count({
         where: prismaWhere
@@ -287,7 +337,7 @@ export async function POST(request: Request) {
       });
 
       // Segmentar público-alvo a partir do banco unificado
-      const prismaWhere = buildPrismaWhereFromRules(rules, rulesRelation || 'AND', excludeNurturing !== false);
+      const prismaWhere = await buildPrismaWhereFromRules(rules, rulesRelation || 'AND', excludeNurturing !== false);
       const matchingCustomers = await prisma.customer.findMany({
         where: prismaWhere,
         select: { id: true }

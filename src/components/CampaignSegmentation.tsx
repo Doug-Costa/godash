@@ -7,6 +7,7 @@ export interface CampaignRule {
   dimension: 'lead_source' | 'dentalgo_subscription' | 'congresso' | 'curso';
   operator: 'equals' | 'not_equals' | 'contains';
   value: string;
+  planId?: string;
   status?: string;
   startDate?: string;
   endDate?: string;
@@ -48,8 +49,10 @@ export default function CampaignSegmentation({
 }: CampaignSegmentationProps) {
   const [formsList, setFormsList] = useState<any[]>([]);
   const [loadingForms, setLoadingForms] = useState(false);
+  const [plansList, setPlansList] = useState<any[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(false);
 
-  // Fetch Inbound Forms list for Dimension 1 "Origem do Lead" -> Forms Site
+  // Fetch Inbound Forms list
   useEffect(() => {
     const fetchForms = async () => {
       setLoadingForms(true);
@@ -68,10 +71,26 @@ export default function CampaignSegmentation({
     fetchForms();
   }, []);
 
+  // Fetch DentalGO Subscription Plans list
+  useEffect(() => {
+    const fetchPlans = async () => {
+      setLoadingPlans(true);
+      try {
+        const res = await fetch('/api/plans');
+        if (res.ok) {
+          const data = await res.json();
+          setPlansList(data.data || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch plans:', err);
+      } finally {
+        setLoadingPlans(false);
+      }
+    };
+    fetchPlans();
+  }, []);
+
   // Filtered lists of products by category
-  const saasProducts = productsList.filter(
-    (p) => p.category === 'SAAS' || p.name.toLowerCase().includes('dentalgo')
-  );
   const congressProducts = productsList.filter(
     (p) => p.category === 'CONGRESSO' || p.name.toLowerCase().includes('congresso')
   );
@@ -106,20 +125,23 @@ export default function CampaignSegmentation({
         if (updates.dimension === 'lead_source') {
           nextRule.operator = 'equals';
           nextRule.value = 'CSV';
+          delete nextRule.planId;
           delete nextRule.status;
           delete nextRule.startDate;
           delete nextRule.endDate;
           delete nextRule.utmSource;
         } else if (updates.dimension === 'dentalgo_subscription') {
           nextRule.operator = 'equals';
-          nextRule.value = saasProducts[0]?.id || '';
-          nextRule.status = 'ACTIVE';
+          nextRule.value = 'DENTALGO';
+          nextRule.planId = 'all';
+          nextRule.status = 'all';
           nextRule.startDate = '';
           nextRule.endDate = '';
           delete nextRule.utmSource;
         } else if (updates.dimension === 'congresso') {
           nextRule.operator = 'equals';
           nextRule.value = congressProducts[0]?.id || '';
+          delete nextRule.planId;
           delete nextRule.status;
           delete nextRule.startDate;
           delete nextRule.endDate;
@@ -127,6 +149,7 @@ export default function CampaignSegmentation({
         } else if (updates.dimension === 'curso') {
           nextRule.operator = 'equals';
           nextRule.value = courseProducts[0]?.id || '';
+          delete nextRule.planId;
           delete nextRule.status;
           delete nextRule.startDate;
           delete nextRule.endDate;
@@ -134,12 +157,26 @@ export default function CampaignSegmentation({
         }
       }
 
-      // Reset values if sub-dimension choices change
+      // Reset values if sub-dimension choices change for lead_source
       if (updates.value && rule.dimension === 'lead_source') {
         if (updates.value === 'FORM') {
           nextRule.utmSource = '';
-          nextRule.value = formsList[0] ? `Form Capture: ${formsList[0].name}` : '';
+          nextRule.value = formsList[0] ? `Form Capture: ${formsList[0].name}` : 'FORM';
+          delete nextRule.planId;
+          delete nextRule.status;
+          delete nextRule.startDate;
+          delete nextRule.endDate;
+        } else if (updates.value === 'DENTALGO') {
+          nextRule.planId = 'all';
+          nextRule.status = 'all';
+          nextRule.startDate = '';
+          nextRule.endDate = '';
+          delete nextRule.utmSource;
         } else {
+          delete nextRule.planId;
+          delete nextRule.status;
+          delete nextRule.startDate;
+          delete nextRule.endDate;
           delete nextRule.utmSource;
         }
       }
@@ -156,9 +193,10 @@ export default function CampaignSegmentation({
 
   // Perform date consistency checks
   const dateErrors = rules.map((rule) => {
-    if (rule.dimension === 'dentalgo_subscription' && rule.startDate && rule.endDate) {
+    const isDentalGo = rule.dimension === 'dentalgo_subscription' || (rule.dimension === 'lead_source' && rule.value === 'DENTALGO');
+    if (isDentalGo && rule.startDate && rule.endDate) {
       if (rule.startDate > rule.endDate) {
-        return 'Data inicial não pode ser maior que a data final.';
+        return 'Data inicial (De) não pode ser maior que a data final (Até).';
       }
     }
     return null;
@@ -306,153 +344,53 @@ export default function CampaignSegmentation({
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {rules.map((rule, index) => (
-                <React.Fragment key={rule.id}>
-                  {/* Connector badge */}
-                  {index > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'center', margin: '-4px 0' }}>
-                      <button
-                        type="button"
-                        onClick={handleToggleRelation}
-                        style={{
-                          padding: '2px 8px',
-                          fontSize: 10,
-                          fontWeight: 800,
-                          borderRadius: 10,
-                          border: '1px solid var(--border)',
-                          background: 'var(--surface-raised)',
-                          color: 'var(--accent)',
-                          cursor: 'pointer',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                        }}
-                      >
-                        {rulesRelation === 'AND' ? 'E' : 'OU'}
-                      </button>
-                    </div>
-                  )}
+              {rules.map((rule, index) => {
+                const isDentalGo = rule.dimension === 'dentalgo_subscription' || (rule.dimension === 'lead_source' && rule.value === 'DENTALGO');
 
-                  {/* Rule Row Container */}
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 10,
-                    padding: '12px',
-                    background: 'rgba(0,0,0,0.01)',
-                    border: dateErrors[index] ? '1px solid #EF4444' : '1px solid var(--border)',
-                    borderRadius: 8,
-                  }}>
-                    {/* Top Row: Dimension Selection, Operator/Source type and Remove action */}
-                    <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                      {/* Dimension Select */}
-                      <div style={{ flex: 1.2 }}>
-                        <select
-                          value={rule.dimension}
-                          onChange={(e) =>
-                            handleUpdateRule(rule.id, {
-                              dimension: e.target.value as any,
-                            })
-                          }
+                return (
+                  <React.Fragment key={rule.id}>
+                    {/* Connector badge */}
+                    {index > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'center', margin: '-4px 0' }}>
+                        <button
+                          type="button"
+                          onClick={handleToggleRelation}
                           style={{
-                            width: '100%',
-                            padding: '8px 10px',
-                            background: 'var(--surface)',
+                            padding: '2px 8px',
+                            fontSize: 10,
+                            fontWeight: 800,
+                            borderRadius: 10,
                             border: '1px solid var(--border)',
-                            borderRadius: 6,
-                            color: 'var(--text-primary)',
-                            fontSize: 12,
-                            outline: 'none',
-                            fontWeight: 600,
+                            background: 'var(--surface-raised)',
+                            color: 'var(--accent)',
+                            cursor: 'pointer',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
                           }}
                         >
-                          <option value="lead_source">Origem do Lead</option>
-                          <option value="dentalgo_subscription">Assinatura DentalGO</option>
-                          <option value="congresso">Participou de Congresso</option>
-                          <option value="curso">Realizou Curso</option>
-                        </select>
+                          {rulesRelation === 'AND' ? 'E' : 'OU'}
+                        </button>
                       </div>
+                    )}
 
-                      {/* Enchained Sub-Filters / Operator */}
-                      <div style={{ flex: 1.8, display: 'flex', gap: 8 }}>
-                        {rule.dimension === 'lead_source' ? (
+                    {/* Rule Row Container */}
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10,
+                      padding: '12px',
+                      background: 'rgba(0,0,0,0.01)',
+                      border: dateErrors[index] ? '1px solid #EF4444' : '1px solid var(--border)',
+                      borderRadius: 8,
+                    }}>
+                      {/* Top Row: Dimension Selection, Operator/Source type and Remove action */}
+                      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        {/* Dimension Select */}
+                        <div style={{ flex: 1.2 }}>
                           <select
-                            value={rule.value === 'CSV' || rule.value === 'DENTALGO' ? rule.value : 'FORM'}
-                            onChange={(e) =>
-                              handleUpdateRule(rule.id, { value: e.target.value })
-                            }
-                            style={{
-                              width: '100%',
-                              padding: '8px 10px',
-                              background: 'var(--surface)',
-                              border: '1px solid var(--border)',
-                              borderRadius: 6,
-                              color: 'var(--text-primary)',
-                              fontSize: 12,
-                              outline: 'none',
-                            }}
-                          >
-                            <option value="CSV">📥 Importação CSV</option>
-                            <option value="DENTALGO">🌐 DentalGO Sinc DB</option>
-                            <option value="FORM">📝 Formulários Site</option>
-                          </select>
-                        ) : rule.dimension === 'dentalgo_subscription' ? (
-                          <div style={{ display: 'flex', gap: 8, width: '100%' }}>
-                            {/* Product selection (Plans category) */}
-                            <select
-                              value={rule.value}
-                              onChange={(e) =>
-                                handleUpdateRule(rule.id, { value: e.target.value })
-                              }
-                              style={{
-                                width: '60%',
-                                padding: '8px 10px',
-                                background: 'var(--surface)',
-                                border: '1px solid var(--border)',
-                                borderRadius: 6,
-                                color: 'var(--text-primary)',
-                                fontSize: 12,
-                                outline: 'none',
-                              }}
-                            >
-                              {saasProducts.length === 0 ? (
-                                <option disabled>Nenhum plano cadastrado</option>
-                              ) : (
-                                saasProducts.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    Plan: {p.name}
-                                  </option>
-                                ))
-                              )}
-                            </select>
-                            {/* Subscription Status select */}
-                            <select
-                              value={rule.status || 'ACTIVE'}
-                              onChange={(e) =>
-                                handleUpdateRule(rule.id, { status: e.target.value })
-                              }
-                              style={{
-                                width: '40%',
-                                padding: '8px 10px',
-                                background: 'var(--surface)',
-                                border: '1px solid var(--border)',
-                                borderRadius: 6,
-                                color: 'var(--text-primary)',
-                                fontSize: 12,
-                                outline: 'none',
-                              }}
-                            >
-                              <option value="ACTIVE">🟢 Ativo</option>
-                              <option value="EXPIRED">🟡 Expirado</option>
-                              <option value="CANCELED">🔴 Cancelado</option>
-                              <option value="COMPLETED">🔵 Concluído</option>
-                            </select>
-                          </div>
-                        ) : (
-                          /* Congresso and Curso operator */
-                          <select
-                            value={rule.operator}
+                            value={rule.dimension}
                             onChange={(e) =>
                               handleUpdateRule(rule.id, {
-                                operator: e.target.value as any,
+                                dimension: e.target.value as any,
                               })
                             }
                             style={{
@@ -464,55 +402,275 @@ export default function CampaignSegmentation({
                               color: 'var(--text-primary)',
                               fontSize: 12,
                               outline: 'none',
+                              fontWeight: 600,
                             }}
                           >
-                            <option value="equals">É igual a</option>
-                            <option value="not_equals">Não é igual a</option>
+                            <option value="lead_source">Origem do Lead</option>
+                            <option value="dentalgo_subscription">Assinatura DentalGO</option>
+                            <option value="congresso">Participou de Congresso</option>
+                            <option value="curso">Realizou Curso</option>
                           </select>
-                        )}
+                        </div>
+
+                        {/* Sub-Filters / Operator */}
+                        <div style={{ flex: 1.8, display: 'flex', gap: 8 }}>
+                          {rule.dimension === 'lead_source' ? (
+                            <select
+                              value={rule.value.startsWith('Form Capture:') ? 'FORM' : rule.value}
+                              onChange={(e) =>
+                                handleUpdateRule(rule.id, { value: e.target.value })
+                              }
+                              style={{
+                                width: '100%',
+                                padding: '8px 10px',
+                                background: 'var(--surface)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 6,
+                                color: 'var(--text-primary)',
+                                fontSize: 12,
+                                outline: 'none',
+                              }}
+                            >
+                              <option value="CSV">📥 Importação CSV</option>
+                              <option value="DENTALGO">🌐 DentalGO Sinc DB</option>
+                              <option value="FORM">📝 Formulários Site</option>
+                            </select>
+                          ) : isDentalGo ? (
+                            <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                              {/* DentalGO Plans Selection */}
+                              <select
+                                value={rule.planId || 'all'}
+                                onChange={(e) =>
+                                  handleUpdateRule(rule.id, { planId: e.target.value })
+                                }
+                                style={{
+                                  width: '60%',
+                                  padding: '8px 10px',
+                                  background: 'var(--surface)',
+                                  border: '1px solid var(--border)',
+                                  borderRadius: 6,
+                                  color: 'var(--text-primary)',
+                                  fontSize: 12,
+                                  outline: 'none',
+                                }}
+                              >
+                                <option value="all">🌐 Todos os Planos</option>
+                                {loadingPlans ? (
+                                  <option disabled>Carregando planos...</option>
+                                ) : (
+                                  plansList.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      💵 {p.title} {p.price ? `(R$ ${Number(p.price).toFixed(2)})` : ''}
+                                    </option>
+                                  ))
+                                )}
+                              </select>
+                              {/* Subscription Status select */}
+                              <select
+                                value={rule.status || 'all'}
+                                onChange={(e) =>
+                                  handleUpdateRule(rule.id, { status: e.target.value })
+                                }
+                                style={{
+                                  width: '40%',
+                                  padding: '8px 10px',
+                                  background: 'var(--surface)',
+                                  border: '1px solid var(--border)',
+                                  borderRadius: 6,
+                                  color: 'var(--text-primary)',
+                                  fontSize: 12,
+                                  outline: 'none',
+                                }}
+                              >
+                                <option value="all">🌐 Todos Status</option>
+                                <option value="active">🟢 Ativo</option>
+                                <option value="expired">🟡 Expirado</option>
+                                <option value="canceled">🔴 Cancelado</option>
+                              </select>
+                            </div>
+                          ) : (
+                            /* Congresso and Curso operator */
+                            <select
+                              value={rule.operator}
+                              onChange={(e) =>
+                                handleUpdateRule(rule.id, {
+                                  operator: e.target.value as any,
+                                })
+                              }
+                              style={{
+                                width: '100%',
+                                padding: '8px 10px',
+                                background: 'var(--surface)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 6,
+                                color: 'var(--text-primary)',
+                                fontSize: 12,
+                                outline: 'none',
+                              }}
+                            >
+                              <option value="equals">É igual a</option>
+                              <option value="not_equals">Não é igual a</option>
+                            </select>
+                          )}
+                        </div>
+
+                        {/* Remove Rule Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRule(rule.id)}
+                          style={{
+                            padding: 8,
+                            background: 'none',
+                            border: 'none',
+                            color: '#F43F5E',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: 6,
+                          }}
+                          title="Excluir regra"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            style={{ width: 16, height: 16 }}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
+                        </button>
                       </div>
 
-                      {/* Remove Rule Button */}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveRule(rule.id)}
-                        style={{
-                          padding: 8,
-                          background: 'none',
-                          border: 'none',
-                          color: '#F43F5E',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 6,
-                        }}
-                        title="Excluir regra"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          style={{ width: 16, height: 16 }}
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                          />
-                        </svg>
-                      </button>
-                    </div>
+                      {/* Sub-row: Additional inputs depending on choice */}
+                      {rule.dimension === 'lead_source' && (rule.value === 'FORM' || rule.value.startsWith('Form Capture:')) && (
+                        <div style={{ display: 'flex', gap: 12, paddingLeft: 4 }}>
+                          {/* Forms site select list */}
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                              Selecione o Formulário:
+                            </label>
+                            <select
+                              value={rule.value}
+                              onChange={(e) =>
+                                handleUpdateRule(rule.id, { value: e.target.value })
+                              }
+                              style={{
+                                width: '100%',
+                                padding: '6px 10px',
+                                background: 'var(--surface)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 6,
+                                color: 'var(--text-primary)',
+                                fontSize: 12,
+                                outline: 'none',
+                              }}
+                            >
+                              {loadingForms ? (
+                                <option disabled>Carregando formulários...</option>
+                              ) : formsList.length === 0 ? (
+                                <option disabled>Nenhum formulário cadastrado</option>
+                              ) : (
+                                formsList.map((form) => (
+                                  <option
+                                    key={form.id}
+                                    value={`Form Capture: ${form.name}`}
+                                  >
+                                    {form.name}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          </div>
+                          {/* UTM source filter */}
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                              UTM Origem (utm_source):
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Ex: facebook_ads (opcional)"
+                              value={rule.utmSource || ''}
+                              onChange={(e) =>
+                                handleUpdateRule(rule.id, { utmSource: e.target.value })
+                              }
+                              style={{
+                                width: '100%',
+                                padding: '5px 10px',
+                                background: 'var(--surface)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 6,
+                                color: 'var(--text-primary)',
+                                fontSize: 12,
+                                outline: 'none',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
 
-                    {/* Bottom Row: Additional inputs depend on dimension choice */}
-                    {rule.dimension === 'lead_source' && rule.value !== 'CSV' && rule.value !== 'DENTALGO' && (
-                      <div style={{ display: 'flex', gap: 12, paddingLeft: 4 }}>
-                        {/* Forms site select list */}
-                        <div style={{ flex: 1 }}>
+                      {/* DentalGO Subscription Sub-Filters (Plano, Status, Datas) */}
+                      {isDentalGo && (
+                        <div style={{ display: 'flex', gap: 12, paddingLeft: 4 }}>
+                          {/* Start Date */}
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                              Assinatura De:
+                            </label>
+                            <input
+                              type="date"
+                              value={rule.startDate || ''}
+                              onChange={(e) =>
+                                handleUpdateRule(rule.id, { startDate: e.target.value })
+                              }
+                              style={{
+                                width: '100%',
+                                padding: '5px 10px',
+                                background: 'var(--surface)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 6,
+                                color: 'var(--text-primary)',
+                                fontSize: 12,
+                                outline: 'none',
+                              }}
+                            />
+                          </div>
+                          {/* End Date */}
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                              Assinatura Até:
+                            </label>
+                            <input
+                              type="date"
+                              value={rule.endDate || ''}
+                              onChange={(e) =>
+                                handleUpdateRule(rule.id, { endDate: e.target.value })
+                              }
+                              style={{
+                                width: '100%',
+                                padding: '5px 10px',
+                                background: 'var(--surface)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 6,
+                                color: 'var(--text-primary)',
+                                fontSize: 12,
+                                outline: 'none',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {rule.dimension === 'congresso' && (
+                        <div style={{ paddingLeft: 4 }}>
                           <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-                            Selecione o Formulário:
+                            Selecione o Congresso:
                           </label>
                           <select
                             value={rule.value}
@@ -530,37 +688,32 @@ export default function CampaignSegmentation({
                               outline: 'none',
                             }}
                           >
-                            {loadingForms ? (
-                              <option disabled>Carregando formulários...</option>
-                            ) : formsList.length === 0 ? (
-                              <option disabled>Nenhum formulário cadastrado</option>
+                            {congressProducts.length === 0 ? (
+                              <option disabled>Nenhum congresso cadastrado</option>
                             ) : (
-                              formsList.map((form) => (
-                                <option
-                                  key={form.id}
-                                  value={`Form Capture: ${form.name}`}
-                                >
-                                  {form.name}
+                              congressProducts.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  🏆 {p.name}
                                 </option>
                               ))
                             )}
                           </select>
                         </div>
-                        {/* UTM source filter */}
-                        <div style={{ flex: 1 }}>
+                      )}
+
+                      {rule.dimension === 'curso' && (
+                        <div style={{ paddingLeft: 4 }}>
                           <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-                            UTM Origem (utm_source):
+                            Selecione o Curso:
                           </label>
-                          <input
-                            type="text"
-                            placeholder="Ex: facebook_ads (opcional)"
-                            value={rule.utmSource || ''}
+                          <select
+                            value={rule.value}
                             onChange={(e) =>
-                              handleUpdateRule(rule.id, { utmSource: e.target.value })
+                              handleUpdateRule(rule.id, { value: e.target.value })
                             }
                             style={{
                               width: '100%',
-                              padding: '5px 10px',
+                              padding: '6px 10px',
                               background: 'var(--surface)',
                               border: '1px solid var(--border)',
                               borderRadius: 6,
@@ -568,139 +721,30 @@ export default function CampaignSegmentation({
                               fontSize: 12,
                               outline: 'none',
                             }}
-                          />
+                          >
+                            {courseProducts.length === 0 ? (
+                              <option disabled>Nenhum curso cadastrado</option>
+                            ) : (
+                              courseProducts.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  🎓 {p.name}
+                                </option>
+                              ))
+                            )}
+                          </select>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {rule.dimension === 'dentalgo_subscription' && (
-                      <div style={{ display: 'flex', gap: 12, paddingLeft: 4 }}>
-                        {/* Start Date */}
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-                            Assinatura De:
-                          </label>
-                          <input
-                            type="date"
-                            value={rule.startDate || ''}
-                            onChange={(e) =>
-                              handleUpdateRule(rule.id, { startDate: e.target.value })
-                            }
-                            style={{
-                              width: '100%',
-                              padding: '5px 10px',
-                              background: 'var(--surface)',
-                              border: '1px solid var(--border)',
-                              borderRadius: 6,
-                              color: 'var(--text-primary)',
-                              fontSize: 12,
-                              outline: 'none',
-                            }}
-                          />
+                      {/* Date inconsistency warnings */}
+                      {dateErrors[index] && (
+                        <div style={{ color: '#EF4444', fontSize: 11, fontWeight: 600, paddingLeft: 4 }}>
+                          ⚠️ {dateErrors[index]}
                         </div>
-                        {/* End Date */}
-                        <div style={{ flex: 1 }}>
-                          <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-                            Assinatura Até:
-                          </label>
-                          <input
-                            type="date"
-                            value={rule.endDate || ''}
-                            onChange={(e) =>
-                              handleUpdateRule(rule.id, { endDate: e.target.value })
-                            }
-                            style={{
-                              width: '100%',
-                              padding: '5px 10px',
-                              background: 'var(--surface)',
-                              border: '1px solid var(--border)',
-                              borderRadius: 6,
-                              color: 'var(--text-primary)',
-                              fontSize: 12,
-                              outline: 'none',
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {rule.dimension === 'congresso' && (
-                      <div style={{ paddingLeft: 4 }}>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-                          Selecione o Congresso:
-                        </label>
-                        <select
-                          value={rule.value}
-                          onChange={(e) =>
-                            handleUpdateRule(rule.id, { value: e.target.value })
-                          }
-                          style={{
-                            width: '100%',
-                            padding: '6px 10px',
-                            background: 'var(--surface)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 6,
-                            color: 'var(--text-primary)',
-                            fontSize: 12,
-                            outline: 'none',
-                          }}
-                        >
-                          {congressProducts.length === 0 ? (
-                            <option disabled>Nenhum congresso cadastrado</option>
-                          ) : (
-                            congressProducts.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                🏆 {p.name}
-                              </option>
-                            ))
-                          )}
-                        </select>
-                      </div>
-                    )}
-
-                    {rule.dimension === 'curso' && (
-                      <div style={{ paddingLeft: 4 }}>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-                          Selecione o Curso:
-                        </label>
-                        <select
-                          value={rule.value}
-                          onChange={(e) =>
-                            handleUpdateRule(rule.id, { value: e.target.value })
-                          }
-                          style={{
-                            width: '100%',
-                            padding: '6px 10px',
-                            background: 'var(--surface)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 6,
-                            color: 'var(--text-primary)',
-                            fontSize: 12,
-                            outline: 'none',
-                          }}
-                        >
-                          {courseProducts.length === 0 ? (
-                            <option disabled>Nenhum curso cadastrado</option>
-                          ) : (
-                            courseProducts.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                🎓 {p.name}
-                              </option>
-                            ))
-                          )}
-                        </select>
-                      </div>
-                    )}
-
-                    {/* Date inconsistency warnings */}
-                    {dateErrors[index] && (
-                      <div style={{ color: '#EF4444', fontSize: 11, fontWeight: 600, paddingLeft: 4 }}>
-                        ⚠️ {dateErrors[index]}
-                      </div>
-                    )}
-                  </div>
-                </React.Fragment>
-              ))}
+                      )}
+                    </div>
+                  </React.Fragment>
+                );
+              })}
 
               {/* Add Rule Button */}
               <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 4 }}>
