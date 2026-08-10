@@ -133,14 +133,32 @@ export async function GET(request: Request) {
       }
     }
 
-    // If specific plan or subscription status is selected for DentalGO, restrict Prisma Customers to matching externalPersonIds
-    if ((planId !== 'all' || subscriptionStatus !== 'all') && (source === 'all' || source === 'DENTALGO')) {
+    // Filter Prisma Customers when planId or subscriptionStatus is specified
+    if (planId !== 'all' || subscriptionStatus !== 'all') {
       const validPersonIds = Array.from(mysqlLeadMap.keys());
+      const subConds: any[] = [];
+
       if (validPersonIds.length > 0) {
-        prismaWhere.externalPersonId = { in: validPersonIds };
-      } else {
-        // If MySQL returned 0 matching person IDs for this plan/status filter, Prisma should also return 0 DentalGO leads
-        prismaWhere.id = 'impossible_no_match_id';
+        subConds.push({ externalPersonId: { in: validPersonIds } });
+      }
+
+      const cpWhere: any = {};
+      if (planId !== 'all' && planId !== 'no_plan') cpWhere.productId = planId;
+      if (subscriptionStatus === 'active') cpWhere.status = 'ACTIVE';
+      else if (subscriptionStatus === 'expired') cpWhere.status = 'EXPIRED';
+      else if (subscriptionStatus === 'canceled') cpWhere.status = 'CANCELED';
+
+      if (subscriptionStatus === 'no_plan' || planId === 'no_plan') {
+        subConds.push({ customerProducts: { none: {} } });
+      } else if (Object.keys(cpWhere).length > 0) {
+        subConds.push({ customerProducts: { some: cpWhere } });
+      }
+
+      if (subConds.length > 0) {
+        prismaWhere.AND = [
+          ...(prismaWhere.AND || []),
+          { OR: subConds }
+        ];
       }
     }
 
