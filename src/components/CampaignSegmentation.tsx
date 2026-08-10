@@ -67,7 +67,7 @@ export default function CampaignSegmentation({
   // Add a new empty rule
   const handleAddRule = () => {
     const newRule: CampaignRule = {
-      id: crypto.randomUUID(),
+      id: Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
       dimension: 'lead_source',
       operator: 'equals',
       value: 'CSV',
