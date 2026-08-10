@@ -18,6 +18,7 @@ import AutomatedCampaignAnalytics from '@/components/AutomatedCampaignAnalytics'
 import { NewLeadModal } from '@/components/ui/NewLeadModal';
 import ProductFormModal from '@/components/ProductFormModal';
 import CampaignSegmentation, { CampaignRule } from '@/components/CampaignSegmentation';
+import UnifiedLeadsExplorer from '@/components/UnifiedLeadsExplorer';
 
 const formatBRL = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -2251,6 +2252,19 @@ export default function DashboardContent({
           )}
           {isAdmin && (
             <button 
+              onClick={() => setActiveTab('leads')}
+              style={{
+                padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                background: activeTab === 'leads' ? 'var(--accent-glow)' : 'transparent',
+                color: activeTab === 'leads' ? 'var(--accent)' : 'var(--text-secondary)',
+                transition: 'all 0.2s'
+              }}
+            >
+              👥 Audiência & Leads
+            </button>
+          )}
+          {isAdmin && (
+            <button 
               onClick={() => setActiveTab('team')}
               style={{
                 padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
@@ -2554,6 +2568,13 @@ export default function DashboardContent({
 
       {/* 2. Atendimento Hub (ADMIN & AGENT) */}
       {activeTab === 'atendimento' && renderAtendimento()}
+
+      {/* Tab: Universal Audience & Leads Explorer */}
+      {activeTab === 'leads' && (
+        <div className="animate-fadeUp" style={{ width: '100%' }}>
+          <UnifiedLeadsExplorer agents={agents} products={products} />
+        </div>
+      )}
 
 
 

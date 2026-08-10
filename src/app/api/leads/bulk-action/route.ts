@@ -15,9 +15,9 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { action, targetAssigneeId, filters } = body;
+    const { action, targetAssigneeId, targetJourneyId, leadIds, filters } = body;
 
-    if (!action || !['assign', 'return_to_queue'].includes(action)) {
+    if (!action || !['assign', 'return_to_queue', 'enrol_campaign'].includes(action)) {
       return NextResponse.json(
         { success: false, error: 'Ação inválida ou não especificada.' },
         { status: 400 }
@@ -64,7 +64,22 @@ export async function POST(request: Request) {
     let updatedCount = 0;
 
     // 3. Execute actions based on type
-    if (action === 'assign') {
+    if (action === 'enrol_campaign') {
+      if (!targetJourneyId) {
+        return NextResponse.json({ success: false, error: 'Jornada de destino é obrigatória.' }, { status: 400 });
+      }
+
+      const targetIdsToProcess = Array.isArray(leadIds) && leadIds.length > 0
+        ? leadIds.map((id: string) => id.startsWith('ext_') ? parseInt(id.replace('ext_', ''), 10) : id)
+        : [];
+
+      if (targetIdsToProcess.length > 0) {
+        const { AssignCampaignLeadsUseCase } = await import('@/lib/application/AssignCampaignLeadsUseCase');
+        const useCase = new AssignCampaignLeadsUseCase();
+        const results = await useCase.execute(targetIdsToProcess, targetJourneyId, []);
+        updatedCount = results.length;
+      }
+    } else if (action === 'assign') {
       if (targetAssigneeId === undefined) {
         return NextResponse.json(
           { success: false, error: 'Operador de destino é obrigatório para atribuição.' },
@@ -74,13 +89,41 @@ export async function POST(request: Request) {
 
       const assigneeValue = targetAssigneeId === 'unassign' ? null : targetAssigneeId;
 
-      const result = await prisma.customer.updateMany({
-        where: crmFilter,
-        data: {
-          assigneeId: assigneeValue
+      if (Array.isArray(leadIds) && leadIds.length > 0) {
+        const cIds = leadIds.filter((id: string) => !id.startsWith('ext_'));
+        const extIds = leadIds.filter((id: string) => id.startsWith('ext_')).map((id: string) => parseInt(id.replace('ext_', ''), 10));
+
+        if (cIds.length > 0) {
+          const res = await prisma.customer.updateMany({
+            where: { id: { in: cIds } },
+            data: { assigneeId: assigneeValue }
+          });
+          updatedCount += res.count;
         }
-      });
-      updatedCount = result.count;
+
+        for (const extId of extIds) {
+          await prisma.customer.upsert({
+            where: { externalPersonId_journeyId: { externalPersonId: extId, journeyId: 'generic' } },
+            create: {
+              externalPersonId: extId,
+              assigneeId: assigneeValue,
+              stage: 'novo_cadastro'
+            },
+            update: {
+              assigneeId: assigneeValue
+            }
+          });
+          updatedCount++;
+        }
+      } else {
+        const result = await prisma.customer.updateMany({
+          where: crmFilter,
+          data: {
+            assigneeId: assigneeValue
+          }
+        });
+        updatedCount = result.count;
+      }
 
     } else if (action === 'return_to_queue') {
       // Find all matching customers
