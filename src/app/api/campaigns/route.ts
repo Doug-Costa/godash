@@ -132,12 +132,12 @@ async function getMatchingPersonIdsFromSubscriptions(rule: any) {
   }
 
   if (startDate) {
-    query += ` AND COALESCE(s.createdAt, s.updatedAt) >= ?`;
+    query += ` AND s.createdAt >= ?`;
     params.push(new Date(startDate));
   }
 
   if (endDate) {
-    query += ` AND COALESCE(s.createdAt, s.updatedAt) <= ?`;
+    query += ` AND s.createdAt <= ?`;
     params.push(new Date(`${endDate}T23:59:59.999Z`));
   }
 
