@@ -176,7 +176,6 @@ export default function UnifiedLeadsExplorer({
         alert(`Sucesso! ${data.updatedCount || selectedLeadIds.length} leads inscritos na campanha.`);
         setSelectedLeadIds([]);
         setBulkActionType(null);
-        // Refresh page
         setPage(p => p);
       } else {
         alert(`Erro: ${data.error}`);
@@ -258,29 +257,29 @@ export default function UnifiedLeadsExplorer({
   const getStatusBadge = (status: string) => {
     switch (status?.toLowerCase()) {
       case 'active':
-        return <span style={{ padding: '4px 10px', borderRadius: '12px', background: 'rgba(74, 222, 128, 0.15)', color: '#4ADE80', fontWeight: 600, fontSize: '0.8rem' }}>🟢 Ativo</span>;
+        return <span style={{ padding: '4px 10px', borderRadius: '12px', background: 'var(--green-glow, rgba(74, 222, 128, 0.15))', color: 'var(--green, #16A34A)', fontWeight: 600, fontSize: '0.8rem' }}>🟢 Ativo</span>;
       case 'expired':
-        return <span style={{ padding: '4px 10px', borderRadius: '12px', background: 'rgba(250, 204, 21, 0.15)', color: '#FACC15', fontWeight: 600, fontSize: '0.8rem' }}>🟡 Expirado</span>;
+        return <span style={{ padding: '4px 10px', borderRadius: '12px', background: 'var(--yellow-glow, rgba(250, 204, 21, 0.15))', color: 'var(--yellow, #CA8A04)', fontWeight: 600, fontSize: '0.8rem' }}>🟡 Expirado</span>;
       case 'canceled':
-        return <span style={{ padding: '4px 10px', borderRadius: '12px', background: 'rgba(248, 113, 113, 0.15)', color: '#F87171', fontWeight: 600, fontSize: '0.8rem' }}>🔴 Cancelado</span>;
+        return <span style={{ padding: '4px 10px', borderRadius: '12px', background: 'var(--red-glow, rgba(248, 113, 113, 0.15))', color: 'var(--red, #DC2626)', fontWeight: 600, fontSize: '0.8rem' }}>🔴 Cancelado</span>;
       default:
-        return <span style={{ padding: '4px 10px', borderRadius: '12px', background: 'rgba(156, 163, 175, 0.15)', color: '#9CA3AF', fontWeight: 600, fontSize: '0.8rem' }}>🛒 Sem Plano</span>;
+        return <span style={{ padding: '4px 10px', borderRadius: '12px', background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.8rem', border: '1px solid var(--border)' }}>🛒 Sem Plano</span>;
     }
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
       {/* Header & Controls Panel */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--surface-elevated, #181824)', padding: '24px', borderRadius: '16px', border: '1px solid var(--border-color, #27273a)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--surface)', padding: '24px', borderRadius: '16px', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0, color: 'var(--text-primary, #ffffff)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h2 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
               👥 Diretório Unificado de Clientes & Audiência
-              <span style={{ fontSize: '0.85rem', padding: '3px 10px', borderRadius: '20px', background: 'var(--accent-glow, rgba(99, 102, 241, 0.2))', color: 'var(--accent, #6366f1)', fontWeight: 600 }}>
+              <span style={{ fontSize: '0.85rem', padding: '3px 10px', borderRadius: '20px', background: 'var(--accent-glow)', color: 'var(--accent)', fontWeight: 600 }}>
                 {total} leads encontrados
               </span>
             </h2>
-            <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary, #a1a1aa)', fontSize: '0.9rem' }}>
+            <p style={{ margin: '4px 0 0 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
               Explore toda a base do DentalGO, Formulários do Site, CSVs e Cursos em tempo real com ações em massa.
             </p>
           </div>
@@ -294,9 +293,9 @@ export default function UnifiedLeadsExplorer({
               style={{
                 padding: '10px 16px',
                 borderRadius: '10px',
-                border: '1px solid var(--border-color, #27273a)',
-                background: 'var(--surface, #0f0f17)',
-                color: '#fff',
+                border: '1px solid var(--border)',
+                background: 'var(--surface-raised)',
+                color: 'var(--text-primary)',
                 width: '320px',
                 fontSize: '0.9rem'
               }}
@@ -308,11 +307,11 @@ export default function UnifiedLeadsExplorer({
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginTop: '8px' }}>
           {/* Origem */}
           <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary, #a1a1aa)', display: 'block', marginBottom: '4px' }}>Origem do Lead</label>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Origem do Lead</label>
             <select
               value={source}
               onChange={(e) => { setSource(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color, #27273a)', background: 'var(--surface, #0f0f17)', color: '#fff', fontSize: '0.85rem' }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">🌐 Todas as Origens</option>
               <option value="DENTALGO">🦷 DentalGO Sinc DB</option>
@@ -325,11 +324,11 @@ export default function UnifiedLeadsExplorer({
 
           {/* Plano DentalGO */}
           <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary, #a1a1aa)', display: 'block', marginBottom: '4px' }}>Plano DentalGO</label>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Plano DentalGO</label>
             <select
               value={planId}
               onChange={(e) => { setPlanId(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color, #27273a)', background: 'var(--surface, #0f0f17)', color: '#fff', fontSize: '0.85rem' }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">💳 Todos os Planos</option>
               <option value="no_plan">🛒 Sem Plano (Carrinho Abandonado)</option>
@@ -341,11 +340,11 @@ export default function UnifiedLeadsExplorer({
 
           {/* Status Assinatura */}
           <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary, #a1a1aa)', display: 'block', marginBottom: '4px' }}>Status da Assinatura</label>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Status da Assinatura</label>
             <select
               value={subscriptionStatus}
               onChange={(e) => { setSubscriptionStatus(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color, #27273a)', background: 'var(--surface, #0f0f17)', color: '#fff', fontSize: '0.85rem' }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">🌐 Todos os Status</option>
               <option value="active">🟢 Ativo</option>
@@ -357,11 +356,11 @@ export default function UnifiedLeadsExplorer({
 
           {/* Campanha */}
           <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary, #a1a1aa)', display: 'block', marginBottom: '4px' }}>Campanha / Jornada</label>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Campanha / Jornada</label>
             <select
               value={journeyId}
               onChange={(e) => { setJourneyId(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color, #27273a)', background: 'var(--surface, #0f0f17)', color: '#fff', fontSize: '0.85rem' }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">🚀 Todas as Campanhas</option>
               <option value="none">⭕ Fora de Campanha</option>
@@ -373,11 +372,11 @@ export default function UnifiedLeadsExplorer({
 
           {/* Operador */}
           <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary, #a1a1aa)', display: 'block', marginBottom: '4px' }}>Atendente / Operador</label>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Atendente / Operador</label>
             <select
               value={assigneeId}
               onChange={(e) => { setAssigneeId(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color, #27273a)', background: 'var(--surface, #0f0f17)', color: '#fff', fontSize: '0.85rem' }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">👤 Todos os Operadores</option>
               <option value="unassigned">⚠️ Não Atribuído (Órfão)</option>
@@ -389,23 +388,23 @@ export default function UnifiedLeadsExplorer({
 
           {/* Período De */}
           <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary, #a1a1aa)', display: 'block', marginBottom: '4px' }}>Cadastro De</label>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Cadastro De</label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color, #27273a)', background: 'var(--surface, #0f0f17)', color: '#fff', fontSize: '0.85rem' }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             />
           </div>
 
           {/* Período Até */}
           <div>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary, #a1a1aa)', display: 'block', marginBottom: '4px' }}>Cadastro Até</label>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Cadastro Até</label>
             <input
               type="date"
               value={endDate}
               onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color, #27273a)', background: 'var(--surface, #0f0f17)', color: '#fff', fontSize: '0.85rem' }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             />
           </div>
         </div>
@@ -424,7 +423,7 @@ export default function UnifiedLeadsExplorer({
           justifyContent: 'space-between',
           alignItems: 'center',
           boxShadow: '0 10px 25px rgba(79, 70, 229, 0.4)',
-          color: '#fff'
+          color: '#ffffff'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ fontWeight: 700, fontSize: '1rem' }}>
@@ -439,7 +438,7 @@ export default function UnifiedLeadsExplorer({
                 <select
                   value={selectedTargetJourneyId}
                   onChange={(e) => setSelectedTargetJourneyId(e.target.value)}
-                  style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#fff', color: '#000', fontSize: '0.85rem' }}
+                  style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#ffffff', color: '#000000', fontSize: '0.85rem' }}
                 >
                   <option value="">Selecione a Campanha...</option>
                   {activeJourneys.map(j => (
@@ -449,18 +448,18 @@ export default function UnifiedLeadsExplorer({
                 <button
                   onClick={handleBulkEnrolCampaign}
                   disabled={isSubmittingBulk}
-                  style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#10B981', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                  style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#10B981', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
                 >
                   {isSubmittingBulk ? 'Confirmando...' : 'Confirmar Lançamento'}
                 </button>
-                <button onClick={() => setBulkActionType(null)} style={{ background: 'transparent', border: '1px solid #fff', color: '#fff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer' }}>Cancelar</button>
+                <button onClick={() => setBulkActionType(null)} style={{ background: 'transparent', border: '1px solid #ffffff', color: '#ffffff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer' }}>Cancelar</button>
               </div>
             ) : bulkActionType === 'assign' ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <select
                   value={selectedTargetAssigneeId}
                   onChange={(e) => setSelectedTargetAssigneeId(e.target.value)}
-                  style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#fff', color: '#000', fontSize: '0.85rem' }}
+                  style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#ffffff', color: '#000000', fontSize: '0.85rem' }}
                 >
                   <option value="">Selecione o Operador...</option>
                   <option value="unassign">⚠️ Desatribuir (Voltar para Fila)</option>
@@ -471,11 +470,11 @@ export default function UnifiedLeadsExplorer({
                 <button
                   onClick={handleBulkAssignOperator}
                   disabled={isSubmittingBulk}
-                  style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#10B981', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                  style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#10B981', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
                 >
                   {isSubmittingBulk ? 'Confirmando...' : 'Confirmar Atribuição'}
                 </button>
-                <button onClick={() => setBulkActionType(null)} style={{ background: 'transparent', border: '1px solid #fff', color: '#fff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer' }}>Cancelar</button>
+                <button onClick={() => setBulkActionType(null)} style={{ background: 'transparent', border: '1px solid #ffffff', color: '#ffffff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer' }}>Cancelar</button>
               </div>
             ) : (
               <>
@@ -510,19 +509,19 @@ export default function UnifiedLeadsExplorer({
       )}
 
       {/* Main Table */}
-      <div style={{ background: 'var(--surface-elevated, #181824)', borderRadius: '16px', border: '1px solid var(--border-color, #27273a)', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--surface)', borderRadius: '16px', border: '1px solid var(--border)', overflow: 'hidden', boxShadow: 'var(--shadow-card)' }}>
         {loading ? (
-          <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary, #a1a1aa)' }}>
+          <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary)' }}>
             ⏳ Carregando dados da audiência...
           </div>
         ) : leads.length === 0 ? (
-          <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary, #a1a1aa)' }}>
+          <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary)' }}>
             🔍 Nenhum lead encontrado com os filtros selecionados.
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
             <thead>
-              <tr style={{ background: 'var(--surface, #0f0f17)', borderBottom: '1px solid var(--border-color, #27273a)', color: 'var(--text-secondary, #a1a1aa)' }}>
+              <tr style={{ background: 'var(--surface-raised)', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
                 <th style={{ padding: '14px 16px', width: '40px' }}>
                   <input
                     type="checkbox"
@@ -547,8 +546,8 @@ export default function UnifiedLeadsExplorer({
                   <tr
                     key={lead.id}
                     style={{
-                      borderBottom: '1px solid var(--border-color, #27273a)',
-                      background: isChecked ? 'var(--accent-glow, rgba(99, 102, 241, 0.08))' : 'transparent',
+                      borderBottom: '1px solid var(--border)',
+                      background: isChecked ? 'var(--accent-glow)' : 'transparent',
                       transition: 'background 0.15s'
                     }}
                   >
@@ -561,33 +560,33 @@ export default function UnifiedLeadsExplorer({
                       />
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary, #ffffff)' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                         {lead.name}
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #a1a1aa)' }}>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                         {lead.email} {lead.phone ? `• ${lead.phone}` : ''}
                       </div>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <span style={{ fontSize: '0.8rem', padding: '3px 8px', borderRadius: '6px', background: 'var(--surface, #0f0f17)', color: 'var(--text-secondary, #a1a1aa)', border: '1px solid var(--border-color, #27273a)' }}>
+                      <span style={{ fontSize: '0.8rem', padding: '3px 8px', borderRadius: '6px', background: 'var(--surface-raised)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
                         {lead.source}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 16px', fontWeight: 500, color: 'var(--text-primary, #ffffff)' }}>
+                    <td style={{ padding: '14px 16px', fontWeight: 500, color: 'var(--text-primary)' }}>
                       {lead.planTitle}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       {getStatusBadge(lead.subscriptionStatus)}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <span style={{ fontSize: '0.8rem', color: lead.journeyName !== 'Fora de Campanha' ? '#818cf8' : 'var(--text-secondary, #a1a1aa)' }}>
+                      <span style={{ fontSize: '0.8rem', color: lead.journeyName !== 'Fora de Campanha' ? 'var(--accent)' : 'var(--text-secondary)' }}>
                         {lead.journeyName}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-primary, #ffffff)' }}>
+                    <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
                       {lead.assigneeName}
                     </td>
-                    <td style={{ padding: '14px 16px', color: 'var(--text-secondary, #a1a1aa)', fontSize: '0.82rem' }}>
+                    <td style={{ padding: '14px 16px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
                       {lead.createdAt ? new Date(lead.createdAt).toLocaleDateString('pt-BR') : '—'}
                     </td>
                   </tr>
@@ -598,8 +597,8 @@ export default function UnifiedLeadsExplorer({
         )}
 
         {/* Pagination Footer */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderTop: '1px solid var(--border-color, #27273a)', background: 'var(--surface, #0f0f17)' }}>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #a1a1aa)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderTop: '1px solid var(--border)', background: 'var(--surface-raised)' }}>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
             Mostrando página {page} de {totalPages} ({total} leads no total)
           </div>
 
@@ -610,9 +609,9 @@ export default function UnifiedLeadsExplorer({
               style={{
                 padding: '6px 14px',
                 borderRadius: '8px',
-                border: '1px solid var(--border-color, #27273a)',
-                background: page <= 1 ? 'transparent' : 'var(--surface-elevated, #181824)',
-                color: page <= 1 ? '#555' : '#fff',
+                border: '1px solid var(--border)',
+                background: page <= 1 ? 'transparent' : 'var(--surface)',
+                color: page <= 1 ? 'var(--text-muted)' : 'var(--text-primary)',
                 cursor: page <= 1 ? 'not-allowed' : 'pointer'
               }}
             >
@@ -624,9 +623,9 @@ export default function UnifiedLeadsExplorer({
               style={{
                 padding: '6px 14px',
                 borderRadius: '8px',
-                border: '1px solid var(--border-color, #27273a)',
-                background: page >= totalPages ? 'transparent' : 'var(--surface-elevated, #181824)',
-                color: page >= totalPages ? '#555' : '#fff',
+                border: '1px solid var(--border)',
+                background: page >= totalPages ? 'transparent' : 'var(--surface)',
+                color: page >= totalPages ? 'var(--text-muted)' : 'var(--text-primary)',
                 cursor: page >= totalPages ? 'not-allowed' : 'pointer'
               }}
             >
