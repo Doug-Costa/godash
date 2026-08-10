@@ -34,9 +34,9 @@ export async function GET(request: Request) {
         let sql = `
           SELECT 
             p.id,
-            p.fullName,
+            COALESCE(NULLIF(p.fullName, ''), NULLIF(p.name, ''), p.email, CONCAT('Lead DentalGO #', p.id)) AS fullName,
             p.email,
-            p.phone,
+            p.phoneNumber AS phone,
             p.createdAt,
             s.id AS subId,
             s.planId,
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
         const params: any[] = [];
 
         if (search) {
-          sql += ` AND (LOWER(p.fullName) LIKE ? OR LOWER(p.email) LIKE ? OR p.phone LIKE ?)`;
+          sql += ` AND (LOWER(COALESCE(p.fullName, p.name, '')) LIKE ? OR LOWER(p.email) LIKE ? OR p.phoneNumber LIKE ?)`;
           const sTerm = `%${search.toLowerCase()}%`;
           params.push(sTerm, sTerm, `%${search}%`);
         }
@@ -204,9 +204,9 @@ export async function GET(request: Request) {
       combinedLeadsMap.set(key, {
         id: c.id,
         externalPersonId: c.externalPersonId || existing.externalPersonId || null,
-        name: c.name || existing.name || 'Lead Sem Nome',
+        name: c.name || existing.name || (c.email ? c.email.split('@')[0] : null) || `Lead #${c.externalPersonId || c.id}`,
         email: c.email || existing.email || '',
-        phone: c.phone || existing.phone || '',
+        phone: c.phone || c.phoneNumber || existing.phone || '',
         source: c.source || existing.source || 'Form Capture / CDP',
         planTitle: existing.planTitle || planFromPrisma || 'Sem Plano / Pendente',
         subscriptionStatus: existing.subscriptionStatus || statusFromPrisma || 'no_plan',
