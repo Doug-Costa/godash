@@ -83,14 +83,19 @@ export default function UnifiedLeadsExplorer({
           fetch('/api/campaigns').then(r => r.json()).catch(() => ({ journeys: [] }))
         ]);
 
-        if (resPlans?.success && Array.isArray(resPlans.plans)) {
-          setPlans(resPlans.plans);
+        const planList = resPlans?.data || resPlans?.plans;
+        if (resPlans?.success && Array.isArray(planList)) {
+          setPlans(planList);
         }
-        if (resForms?.success && Array.isArray(resForms.forms)) {
-          setForms(resForms.forms);
+
+        const formList = resForms?.data || resForms?.forms;
+        if (resForms?.success && Array.isArray(formList)) {
+          setForms(formList.map((f: any) => ({ id: f.id, title: f.name || f.title })));
         }
-        if (resJourneys?.data && Array.isArray(resJourneys.data)) {
-          setActiveJourneys(resJourneys.data);
+
+        const journeyList = resJourneys?.data || resJourneys?.journeys;
+        if (Array.isArray(journeyList) && journeyList.length > 0) {
+          setActiveJourneys(journeyList);
         }
       } catch (err) {
         console.warn('Error loading filter options:', err);

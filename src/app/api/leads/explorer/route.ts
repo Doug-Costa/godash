@@ -121,9 +121,16 @@ export async function GET(request: Request) {
     }
 
     if (source !== 'all') {
-      if (source === 'DENTALGO') prismaWhere.source = 'DENTALGO';
-      else if (source.startsWith('Form Capture')) prismaWhere.source = { contains: 'Form' };
-      else if (source === 'CSV') prismaWhere.source = 'CSV';
+      if (source === 'DENTALGO') {
+        prismaWhere.source = 'DENTALGO';
+      } else if (source.startsWith('Form Capture: ')) {
+        const formTitle = source.replace('Form Capture: ', '');
+        prismaWhere.source = { contains: formTitle, mode: 'insensitive' };
+      } else if (source.includes('Form')) {
+        prismaWhere.source = { contains: 'Form', mode: 'insensitive' };
+      } else if (source === 'CSV') {
+        prismaWhere.source = 'CSV';
+      }
     }
 
     if (journeyId !== 'all') {
