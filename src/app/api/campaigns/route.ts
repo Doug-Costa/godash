@@ -80,32 +80,68 @@ function buildPrismaWhereFromRules(rules: any[], relation: 'AND' | 'OR', exclude
   const conditions: any[] = [];
   
   for (const rule of rules) {
-    const { dimension, operator, value } = rule;
-    if (!dimension || !operator) continue;
+    const { dimension, operator, value, status, startDate, endDate, utmSource } = rule;
+    if (!dimension) continue;
     
     let cond: any = null;
     
     if (dimension === 'lead_source') {
-      if (operator === 'equals') {
-        cond = { source: value };
-      } else if (operator === 'not_equals') {
-        cond = { NOT: { source: value } };
-      } else if (operator === 'contains') {
-        cond = { source: { contains: value } };
+      const isForm = value !== 'CSV' && value !== 'DENTALGO';
+      const sourceCond: any = {};
+      
+      if (isForm) {
+        sourceCond.source = value;
+        if (utmSource) {
+          sourceCond.opportunities = {
+            some: {
+              utmSource: {
+                contains: utmSource
+              }
+            }
+          };
+        }
+      } else {
+        sourceCond.source = value;
       }
-    } else if (dimension === 'product_acquired') {
-      if (operator === 'equals') {
-        cond = { customerProducts: { some: { productId: value } } };
-      } else if (operator === 'not_equals') {
-        cond = { customerProducts: { none: { productId: value } } };
-      } else if (operator === 'contains') {
-        cond = { customerProducts: { some: { productId: value } } };
+      
+      if (operator === 'not_equals') {
+        cond = { NOT: sourceCond };
+      } else {
+        cond = sourceCond;
       }
-    } else if (dimension === 'product_status') {
-      if (operator === 'equals') {
-        cond = { customerProducts: { some: { status: value } } };
-      } else if (operator === 'not_equals') {
-        cond = { customerProducts: { none: { status: value } } };
+    } else if (dimension === 'dentalgo_subscription') {
+      const cpCondition: any = {};
+      if (value) cpCondition.productId = value;
+      if (status) cpCondition.status = status;
+      if (startDate || endDate) {
+        const dateCond: any = {};
+        if (startDate) dateCond.gte = new Date(startDate);
+        if (endDate) dateCond.lte = new Date(endDate);
+        cpCondition.startDate = dateCond;
+      }
+      
+      cond = {
+        customerProducts: {
+          some: cpCondition
+        }
+      };
+    } else if (dimension === 'congresso' || dimension === 'curso') {
+      if (operator === 'not_equals') {
+        cond = {
+          customerProducts: {
+            none: {
+              productId: value
+            }
+          }
+        };
+      } else {
+        cond = {
+          customerProducts: {
+            some: {
+              productId: value
+            }
+          }
+        };
       }
     }
     
@@ -151,6 +187,18 @@ export async function POST(request: Request) {
     // 2. Ação de Estimativa de Público em Tempo Real
     if (action === 'estimate') {
       const { rules, rulesRelation, excludeNurturing } = body;
+
+      // Validate date ranges
+      if (rules && Array.isArray(rules)) {
+        for (const rule of rules) {
+          if (rule.dimension === 'dentalgo_subscription' && rule.startDate && rule.endDate) {
+            if (rule.startDate > rule.endDate) {
+              return NextResponse.json({ success: false, error: 'Erro: Data inicial não pode ser maior que a data final.' }, { status: 400 });
+            }
+          }
+        }
+      }
+
       const prismaWhere = buildPrismaWhereFromRules(rules, rulesRelation || 'AND', excludeNurturing !== false);
 
       const count = await prisma.customer.count({
@@ -179,6 +227,17 @@ export async function POST(request: Request) {
       } else {
         if (!name) {
           return NextResponse.json({ success: false, error: 'Nome da campanha é obrigatório.' }, { status: 400 });
+        }
+      }
+
+      // Validate date ranges
+      if (rules && Array.isArray(rules)) {
+        for (const rule of rules) {
+          if (rule.dimension === 'dentalgo_subscription' && rule.startDate && rule.endDate) {
+            if (rule.startDate > rule.endDate) {
+              return NextResponse.json({ success: false, error: 'Erro: Data inicial não pode ser maior que a data final.' }, { status: 400 });
+            }
+          }
         }
       }
 
@@ -234,6 +293,10 @@ export async function POST(request: Request) {
         select: { id: true }
       });
       const customerIds = matchingCustomers.map(c => c.id);
+
+      if (customerIds.length === 0) {
+        return NextResponse.json({ success: false, error: 'Sem clientes elegíveis encontrados para as regras e período registrados.' }, { status: 400 });
+      }
 
       // Distribuir ou enfileirar leads
       let resultsCount = 0;
