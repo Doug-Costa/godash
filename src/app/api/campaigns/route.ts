@@ -73,7 +73,7 @@ async function getMatchingPersonIdsFromSubscriptions(rule: any) {
   const endDate = rule.endDate;
 
   if (planId === 'no_plan' || status === 'no_plan') {
-    const query = `
+    let query = `
       SELECT DISTINCT p.id as personId
       FROM people p
       LEFT JOIN subscriptions s ON s.personId = p.id
@@ -82,7 +82,18 @@ async function getMatchingPersonIdsFromSubscriptions(rule: any) {
         SELECT 1 FROM subscriptions s2 WHERE s2.personId = p.id AND s2.status IN ('active', 'expired', 'canceled')
       ))
     `;
-    const [rows] = await pool.query(query);
+    const params: any[] = [];
+
+    if (startDate) {
+      query += ` AND p.createdAt >= ?`;
+      params.push(new Date(startDate));
+    }
+    if (endDate) {
+      query += ` AND p.createdAt <= ?`;
+      params.push(new Date(`${endDate}T23:59:59.999Z`));
+    }
+
+    const [rows] = await pool.query(query, params);
     return (rows as any[]).map((r) => Number(r.personId)).filter((id) => !isNaN(id));
   }
 
@@ -124,6 +135,52 @@ async function getMatchingPersonIdsFromSubscriptions(rule: any) {
 
   const [rows] = await pool.query(query, params);
   return (rows as any[]).map((r) => Number(r.personId)).filter((id) => !isNaN(id));
+}
+
+async function getSegmentedLeadIds(rules: any[], relation: 'AND' | 'OR', excludeNurturing: boolean) {
+  let mysqlPersonIds: number[] = [];
+  
+  if (rules && Array.isArray(rules)) {
+    for (const rule of rules) {
+      const isDentalGo = rule.dimension === 'dentalgo_subscription' || (rule.dimension === 'lead_source' && rule.value === 'DENTALGO');
+      if (isDentalGo) {
+        const ids = await getMatchingPersonIdsFromSubscriptions(rule);
+        if (rules.length === 1 || relation === 'OR') {
+          mysqlPersonIds = Array.from(new Set([...mysqlPersonIds, ...ids]));
+        } else {
+          if (mysqlPersonIds.length === 0) {
+            mysqlPersonIds = ids;
+          } else {
+            const set = new Set(ids);
+            mysqlPersonIds = mysqlPersonIds.filter(id => set.has(id));
+          }
+        }
+      }
+    }
+  }
+
+  const prismaWhere = await buildPrismaWhereFromRules(rules, relation, excludeNurturing);
+  
+  const prismaCustomers = await prisma.customer.findMany({
+    where: prismaWhere,
+    select: { id: true, externalPersonId: true }
+  });
+
+  const targetIdsSet = new Set<string | number>();
+  
+  for (const pid of mysqlPersonIds) {
+    targetIdsSet.add(pid);
+  }
+  
+  for (const c of prismaCustomers) {
+    if (c.externalPersonId) {
+      targetIdsSet.add(c.externalPersonId);
+    } else {
+      targetIdsSet.add(c.id);
+    }
+  }
+
+  return Array.from(targetIdsSet);
 }
 
 async function buildPrismaWhereFromRules(rules: any[], relation: 'AND' | 'OR', excludeNurturing: boolean) {
@@ -265,7 +322,8 @@ export async function POST(request: Request) {
       // Validate date ranges
       if (rules && Array.isArray(rules)) {
         for (const rule of rules) {
-          if (rule.dimension === 'dentalgo_subscription' && rule.startDate && rule.endDate) {
+          const isDentalGo = rule.dimension === 'dentalgo_subscription' || (rule.dimension === 'lead_source' && rule.value === 'DENTALGO');
+          if (isDentalGo && rule.startDate && rule.endDate) {
             if (rule.startDate > rule.endDate) {
               return NextResponse.json({ success: false, error: 'Erro: Data inicial não pode ser maior que a data final.' }, { status: 400 });
             }
@@ -273,12 +331,9 @@ export async function POST(request: Request) {
         }
       }
 
-      const prismaWhere = await buildPrismaWhereFromRules(rules, rulesRelation || 'AND', excludeNurturing !== false);
+      const targetLeadIds = await getSegmentedLeadIds(rules, rulesRelation || 'AND', excludeNurturing !== false);
 
-      const count = await prisma.customer.count({
-        where: prismaWhere
-      });
-
+      const prismaWhere = await buildPrismaWhereFromRules(rules, rulesRelation || 'AND', false);
       const collisionCount = await prisma.customer.count({
         where: {
           ...prismaWhere,
@@ -286,7 +341,7 @@ export async function POST(request: Request) {
         }
       });
 
-      return NextResponse.json({ success: true, count, collisionCount });
+      return NextResponse.json({ success: true, count: targetLeadIds.length, collisionCount });
     }
 
     // 3. Ação de Lançamento / Ativação Direta (Wizard Finalizado)
@@ -361,26 +416,21 @@ export async function POST(request: Request) {
       });
 
       // Segmentar público-alvo a partir do banco unificado
-      const prismaWhere = await buildPrismaWhereFromRules(rules, rulesRelation || 'AND', excludeNurturing !== false);
-      const matchingCustomers = await prisma.customer.findMany({
-        where: prismaWhere,
-        select: { id: true }
-      });
-      const customerIds = matchingCustomers.map(c => c.id);
+      const targetLeadIds = await getSegmentedLeadIds(rules, rulesRelation || 'AND', excludeNurturing !== false);
 
-      if (customerIds.length === 0) {
+      if (targetLeadIds.length === 0) {
         return NextResponse.json({ success: false, error: 'Sem clientes elegíveis encontrados para as regras e período registrados.' }, { status: 400 });
       }
 
       // Distribuir ou enfileirar leads
       let resultsCount = 0;
-      if (nature === 'COMMERCIAL' && customerIds.length > 0) {
+      if (nature === 'COMMERCIAL' && targetLeadIds.length > 0) {
         const useCase = new AssignCampaignLeadsUseCase();
-        const results = await useCase.execute(customerIds, journey.id, userIds, startDate);
+        const results = await useCase.execute(targetLeadIds, journey.id, userIds, startDate);
         resultsCount = results.length;
-      } else if (nature === 'AUTOMATED' && customerIds.length > 0) {
+      } else if (nature === 'AUTOMATED' && targetLeadIds.length > 0) {
         // Para campanhas automáticas, associa os customers existentes a esta jornada e agenda os disparos
-        for (const customerId of customerIds) {
+        for (const currentId of targetLeadIds) {
           let targetPipelineId = body.pipelineId;
           if (!targetPipelineId) {
             const defaultPipe = await prisma.pipeline.findFirst({
@@ -389,15 +439,35 @@ export async function POST(request: Request) {
             targetPipelineId = defaultPipe?.id;
           }
 
-          const customer = await prisma.customer.update({
-            where: { id: customerId },
-            data: {
-              journeyId: journey.id,
-              pipelineId: targetPipelineId,
-              stage: 'novo_cadastro',
-              joinedJourneyAt: new Date(),
-            }
+          let customer = await prisma.customer.findFirst({
+            where: typeof currentId === 'number'
+              ? { externalPersonId: currentId }
+              : { id: currentId }
           });
+
+          if (customer) {
+            customer = await prisma.customer.update({
+              where: { id: customer.id },
+              data: {
+                journeyId: journey.id,
+                pipelineId: targetPipelineId,
+                stage: 'novo_cadastro',
+                joinedJourneyAt: new Date(),
+              }
+            });
+          } else if (typeof currentId === 'number') {
+            customer = await prisma.customer.create({
+              data: {
+                externalPersonId: currentId,
+                journeyId: journey.id,
+                pipelineId: targetPipelineId,
+                stage: 'novo_cadastro',
+                joinedJourneyAt: new Date(),
+              }
+            });
+          } else {
+            continue;
+          }
 
           if (flowSteps && Array.isArray(flowSteps)) {
             const { automationQueue } = await import('@/lib/queue/automationQueue');
@@ -421,7 +491,7 @@ export async function POST(request: Request) {
             }
           }
         }
-        resultsCount = customerIds.length;
+        resultsCount = targetLeadIds.length;
       }
 
       return NextResponse.json({ success: true, data: journey, leadsAssignedCount: resultsCount });
