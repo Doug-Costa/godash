@@ -2,7 +2,7 @@ import prisma from '../prisma';
 import { RoutingEngineService } from '../services/RoutingEngineService';
 
 export class AssignCampaignLeadsUseCase {
-  async execute(externalPersonIds: number[], campaignId: string, userIds: string[], startDate?: string) {
+  async execute(customerIdsOrExternalIds: (string | number)[], campaignId: string, userIds: string[], startDate?: string) {
     // 1. Buscar a jornada (incluindo as automações/passos do fluxo para pré-geração de alertas)
     const journey = await prisma.journey.findUnique({
       where: { id: campaignId },
@@ -23,7 +23,7 @@ export class AssignCampaignLeadsUseCase {
     const targetPipelineId = journey.pipelineId || defaultPipeline?.id || null;
 
     const limitPerDay = journey.limitPerDay;
-    const results: { externalPersonId: number; assigneeId: string | null; joinedCampaignAt: Date }[] = [];
+    const results: { customerId?: string; externalPersonId?: number | null; assigneeId: string | null; joinedCampaignAt: Date }[] = [];
 
     const routingEngine = new RoutingEngineService();
 
@@ -47,12 +47,12 @@ export class AssignCampaignLeadsUseCase {
     const now = new Date();
     const tasksToCreate: any[] = [];
 
-    for (let i = 0; i < externalPersonIds.length; i++) {
-      const externalPersonId = externalPersonIds[i];
+    for (let i = 0; i < customerIdsOrExternalIds.length; i++) {
+      const currentId = customerIdsOrExternalIds[i];
       
       // Obter assigneeId usando o motor de roteamento inteligente
       const assigneeId = await routingEngine.determineAssignee(
-        externalPersonId,
+        currentId,
         {
           routingMode: journey.routingMode,
           useAccountManager: journey.useAccountManager,
@@ -83,7 +83,9 @@ export class AssignCampaignLeadsUseCase {
       }
 
       let customer = await prisma.customer.findFirst({
-        where: { externalPersonId, journeyId: campaignId }
+        where: typeof currentId === 'number'
+          ? { externalPersonId: currentId, journeyId: campaignId }
+          : { id: currentId }
       });
 
       if (customer) {
@@ -91,6 +93,7 @@ export class AssignCampaignLeadsUseCase {
           where: { id: customer.id },
           data: {
             assigneeId,
+            journeyId: campaignId,
             joinedJourneyAt: joinedCampaignAt,
             stage: 'novo_cadastro', // Reinicia como "novo_cadastro" (Sem Contato) para o rodízio
             frozenUntil: null,      // Remove qualquer congelamento pré-existente
@@ -100,16 +103,21 @@ export class AssignCampaignLeadsUseCase {
           }
         });
       } else {
-        customer = await prisma.customer.create({
-          data: {
-            externalPersonId,
-            assigneeId,
-            journeyId: campaignId,
-            joinedJourneyAt: joinedCampaignAt,
-            stage: 'novo_cadastro',
-            pipelineId: targetPipelineId,
-          }
-        });
+        if (typeof currentId === 'number') {
+          customer = await prisma.customer.create({
+            data: {
+              externalPersonId: currentId,
+              assigneeId,
+              journeyId: campaignId,
+              joinedJourneyAt: joinedCampaignAt,
+              stage: 'novo_cadastro',
+              pipelineId: targetPipelineId,
+            }
+          });
+        } else {
+          console.warn(`[AssignCampaignLeads] Customer ID ${currentId} não encontrado no banco.`);
+          continue;
+        }
       }
 
       // 3. Excluir alertas pendentes anteriores para este customer
@@ -157,7 +165,12 @@ export class AssignCampaignLeadsUseCase {
         }
       }
 
-      results.push({ externalPersonId, assigneeId, joinedCampaignAt: joinedCampaignAt });
+      results.push({
+        customerId: customer.id,
+        externalPersonId: customer.externalPersonId,
+        assigneeId,
+        joinedCampaignAt: joinedCampaignAt
+      });
     }
 
     // 5. Inserir tarefas em lotes (batch insert) de 500 registros para otimizar desempenho

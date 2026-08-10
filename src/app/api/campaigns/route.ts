@@ -66,6 +66,65 @@ export async function GET() {
   }
 }
 
+function buildPrismaWhereFromRules(rules: any[], relation: 'AND' | 'OR', excludeNurturing: boolean) {
+  const where: any = {};
+  
+  if (excludeNurturing) {
+    where.isInNurturing = false;
+  }
+  
+  if (!rules || !Array.isArray(rules) || rules.length === 0) {
+    return where;
+  }
+  
+  const conditions: any[] = [];
+  
+  for (const rule of rules) {
+    const { dimension, operator, value } = rule;
+    if (!dimension || !operator) continue;
+    
+    let cond: any = null;
+    
+    if (dimension === 'lead_source') {
+      if (operator === 'equals') {
+        cond = { source: value };
+      } else if (operator === 'not_equals') {
+        cond = { NOT: { source: value } };
+      } else if (operator === 'contains') {
+        cond = { source: { contains: value } };
+      }
+    } else if (dimension === 'product_acquired') {
+      if (operator === 'equals') {
+        cond = { customerProducts: { some: { productId: value } } };
+      } else if (operator === 'not_equals') {
+        cond = { customerProducts: { none: { productId: value } } };
+      } else if (operator === 'contains') {
+        cond = { customerProducts: { some: { productId: value } } };
+      }
+    } else if (dimension === 'product_status') {
+      if (operator === 'equals') {
+        cond = { customerProducts: { some: { status: value } } };
+      } else if (operator === 'not_equals') {
+        cond = { customerProducts: { none: { status: value } } };
+      }
+    }
+    
+    if (cond) {
+      conditions.push(cond);
+    }
+  }
+  
+  if (conditions.length > 0) {
+    if (relation === 'OR') {
+      where.OR = conditions;
+    } else {
+      where.AND = conditions;
+    }
+  }
+  
+  return where;
+}
+
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -91,112 +150,26 @@ export async function POST(request: Request) {
 
     // 2. Ação de Estimativa de Público em Tempo Real
     if (action === 'estimate') {
-      const { plansFilter, selectedPlans, statusFilter, expiryDays } = body;
+      const { rules, rulesRelation, excludeNurturing } = body;
+      const prismaWhere = buildPrismaWhereFromRules(rules, rulesRelation || 'AND', excludeNurturing !== false);
 
-      let query = `
-        SELECT COUNT(DISTINCT p.id) as count
-        FROM people p
-        LEFT JOIN subscriptions s ON s.personId = p.id
-        LEFT JOIN plans pl ON s.planId = pl.id
-        WHERE p.admin = 0
-      `;
-      const params: any[] = [];
-
-      // Filtro de planos pagos / cortesias
-      if (selectedPlans && Array.isArray(selectedPlans) && selectedPlans.length > 0) {
-        query += ` AND pl.id IN (${selectedPlans.map(() => '?').join(',')})`;
-        params.push(...selectedPlans);
-      } else {
-        if (plansFilter === 'pagos') {
-          query += ` AND pl.price > 100`;
-        } else if (plansFilter === 'cortesia') {
-          query += ` AND pl.price <= 100`;
-        }
-      }
-
-      // Filtro de status da assinatura
-      if (statusFilter === 'active') {
-        query += ` AND s.status = 'active'`;
-      } else if (statusFilter === 'canceled') {
-        query += ` AND s.status = 'canceled' AND NOT EXISTS (
-          SELECT 1 FROM subscriptions s2 WHERE s2.personId = p.id AND s2.status = 'active'
-        )`;
-      } else if (statusFilter === 'expired') {
-        query += ` AND s.status = 'active' AND COALESCE(s.isValidUntil, s.expiresIn) < CURDATE()`;
-        if (expiryDays && Number(expiryDays) > 0) {
-          query += ` AND COALESCE(s.isValidUntil, s.expiresIn) >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`;
-          params.push(Number(expiryDays));
-        }
-      }
-
-      if (body.excludeNurturing !== false) {
-        const nurturingCustomers = await prisma.customer.findMany({
-          where: { isInNurturing: true },
-          select: { externalPersonId: true }
-        });
-        const nurturingIds = nurturingCustomers.map(nc => nc.externalPersonId);
-        if (nurturingIds.length > 0) {
-          query += ` AND p.id NOT IN (${nurturingIds.join(',')})`;
-        }
-      }
-
-      const [rows] = await pool.query(query, params);
-      const count = (rows as any[])[0]?.count || 0;
-
-      // Calculate collisionCount (leads that fit target criteria but are already in nurturing)
-      const nurturingCustomers = await prisma.customer.findMany({
-        where: { isInNurturing: true },
-        select: { externalPersonId: true }
+      const count = await prisma.customer.count({
+        where: prismaWhere
       });
-      const nurturingIds = nurturingCustomers.map(nc => nc.externalPersonId);
-      let collisionCount = 0;
 
-      if (nurturingIds.length > 0) {
-        let collisionQueryStr = `
-          SELECT COUNT(DISTINCT p.id) as count
-          FROM people p
-          LEFT JOIN subscriptions s ON s.personId = p.id
-          LEFT JOIN plans pl ON s.planId = pl.id
-          WHERE p.admin = 0
-            AND p.id IN (${nurturingIds.join(',')})
-        `;
-        const collisionParams: any[] = [];
-        
-        if (selectedPlans && Array.isArray(selectedPlans) && selectedPlans.length > 0) {
-          collisionQueryStr += ` AND pl.id IN (${selectedPlans.map(() => '?').join(',')})`;
-          collisionParams.push(...selectedPlans);
-        } else {
-          if (plansFilter === 'pagos') {
-            collisionQueryStr += ` AND pl.price > 100`;
-          } else if (plansFilter === 'cortesia') {
-            collisionQueryStr += ` AND pl.price <= 100`;
-          }
+      const collisionCount = await prisma.customer.count({
+        where: {
+          ...prismaWhere,
+          isInNurturing: true
         }
-
-        if (statusFilter === 'active') {
-          collisionQueryStr += ` AND s.status = 'active'`;
-        } else if (statusFilter === 'canceled') {
-          collisionQueryStr += ` AND s.status = 'canceled' AND NOT EXISTS (
-            SELECT 1 FROM subscriptions s2 WHERE s2.personId = p.id AND s2.status = 'active'
-          )`;
-        } else if (statusFilter === 'expired') {
-          collisionQueryStr += ` AND s.status = 'active' AND COALESCE(s.isValidUntil, s.expiresIn) < CURDATE()`;
-          if (expiryDays && Number(expiryDays) > 0) {
-            collisionQueryStr += ` AND COALESCE(s.isValidUntil, s.expiresIn) >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`;
-            collisionParams.push(Number(expiryDays));
-          }
-        }
-
-        const [collisionRows] = await pool.query(collisionQueryStr, collisionParams);
-        collisionCount = (collisionRows as any[])[0]?.count || 0;
-      }
+      });
 
       return NextResponse.json({ success: true, count, collisionCount });
     }
 
     // 3. Ação de Lançamento / Ativação Direta (Wizard Finalizado)
     if (action === 'launch') {
-      const { name, plansFilter, selectedPlans, statusFilter, expiryDays, userIds, limitPerDay, flowSteps, flowGraph, startDate, campaignNature } = body;
+      const { name, rules, rulesRelation, userIds, limitPerDay, flowSteps, flowGraph, startDate, campaignNature, excludeNurturing } = body;
       const nature = campaignNature || 'COMMERCIAL';
 
       if (nature === 'COMMERCIAL') {
@@ -209,7 +182,7 @@ export async function POST(request: Request) {
         }
       }
 
-      const targetCriteria = JSON.stringify({ plansFilter, selectedPlans, statusFilter, expiryDays, startDate });
+      const targetCriteria = JSON.stringify({ rules, rulesRelation, startDate, excludeNurturing: excludeNurturing !== false });
 
       // Criar jornada e automações
       const journey = await prisma.journey.create({
@@ -254,64 +227,23 @@ export async function POST(request: Request) {
         }
       });
 
-      // Segmentar público-alvo a partir do MySQL de produção
-      let targetQuery = `
-        SELECT DISTINCT p.id
-        FROM people p
-        LEFT JOIN subscriptions s ON s.personId = p.id
-        LEFT JOIN plans pl ON s.planId = pl.id
-        WHERE p.admin = 0
-      `;
-      const targetParams: any[] = [];
-
-      if (selectedPlans && Array.isArray(selectedPlans) && selectedPlans.length > 0) {
-        targetQuery += ` AND pl.id IN (${selectedPlans.map(() => '?').join(',')})`;
-        targetParams.push(...selectedPlans);
-      } else {
-        if (plansFilter === 'pagos') {
-          targetQuery += ` AND pl.price > 100`;
-        } else if (plansFilter === 'cortesia') {
-          targetQuery += ` AND pl.price <= 100`;
-        }
-      }
-
-      if (statusFilter === 'active') {
-        targetQuery += ` AND s.status = 'active'`;
-      } else if (statusFilter === 'canceled') {
-        targetQuery += ` AND s.status = 'canceled' AND NOT EXISTS (
-          SELECT 1 FROM subscriptions s2 WHERE s2.personId = p.id AND s2.status = 'active'
-        )`;
-      } else if (statusFilter === 'expired') {
-        targetQuery += ` AND s.status = 'active' AND COALESCE(s.isValidUntil, s.expiresIn) < CURDATE()`;
-        if (expiryDays && Number(expiryDays) > 0) {
-          targetQuery += ` AND COALESCE(s.isValidUntil, s.expiresIn) >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`;
-          targetParams.push(Number(expiryDays));
-        }
-      }
-
-      if (body.excludeNurturing !== false) {
-        const nurturingCustomers = await prisma.customer.findMany({
-          where: { isInNurturing: true },
-          select: { externalPersonId: true }
-        });
-        const nurturingIds = nurturingCustomers.map(nc => nc.externalPersonId);
-        if (nurturingIds.length > 0) {
-          targetQuery += ` AND p.id NOT IN (${nurturingIds.join(',')})`;
-        }
-      }
-
-      const [rows] = await pool.query(targetQuery, targetParams);
-      const externalPersonIds = (rows as any[]).map(r => r.id);
+      // Segmentar público-alvo a partir do banco unificado
+      const prismaWhere = buildPrismaWhereFromRules(rules, rulesRelation || 'AND', excludeNurturing !== false);
+      const matchingCustomers = await prisma.customer.findMany({
+        where: prismaWhere,
+        select: { id: true }
+      });
+      const customerIds = matchingCustomers.map(c => c.id);
 
       // Distribuir ou enfileirar leads
       let resultsCount = 0;
-      if (nature === 'COMMERCIAL' && externalPersonIds.length > 0) {
+      if (nature === 'COMMERCIAL' && customerIds.length > 0) {
         const useCase = new AssignCampaignLeadsUseCase();
-        const results = await useCase.execute(externalPersonIds, journey.id, userIds, startDate);
+        const results = await useCase.execute(customerIds, journey.id, userIds, startDate);
         resultsCount = results.length;
-      } else if (nature === 'AUTOMATED' && externalPersonIds.length > 0) {
-        // Para campanhas automáticas, cria os customers diretamente no funil e agenda os disparos
-        for (const personId of externalPersonIds) {
+      } else if (nature === 'AUTOMATED' && customerIds.length > 0) {
+        // Para campanhas automáticas, associa os customers existentes a esta jornada e agenda os disparos
+        for (const customerId of customerIds) {
           let targetPipelineId = body.pipelineId;
           if (!targetPipelineId) {
             const defaultPipe = await prisma.pipeline.findFirst({
@@ -320,17 +252,13 @@ export async function POST(request: Request) {
             targetPipelineId = defaultPipe?.id;
           }
 
-          const customer = await prisma.customer.create({
+          const customer = await prisma.customer.update({
+            where: { id: customerId },
             data: {
-              externalPersonId: Number(personId),
               journeyId: journey.id,
               pipelineId: targetPipelineId,
               stage: 'novo_cadastro',
               joinedJourneyAt: new Date(),
-              metadata: {
-                fullName: 'Lead Automático',
-                type: 'AUTOMATED_CAMPAIGN'
-              }
             }
           });
 
@@ -356,7 +284,7 @@ export async function POST(request: Request) {
             }
           }
         }
-        resultsCount = externalPersonIds.length;
+        resultsCount = customerIds.length;
       }
 
       return NextResponse.json({ success: true, data: journey, leadsAssignedCount: resultsCount });

@@ -17,6 +17,7 @@ import Timeline from '@/components/ui/Timeline';
 import AutomatedCampaignAnalytics from '@/components/AutomatedCampaignAnalytics';
 import { NewLeadModal } from '@/components/ui/NewLeadModal';
 import ProductFormModal from '@/components/ProductFormModal';
+import CampaignSegmentation, { CampaignRule } from '@/components/CampaignSegmentation';
 
 const formatBRL = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -230,12 +231,8 @@ export default function DashboardContent({
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
   const [campaignNature, setCampaignNature] = useState<'COMMERCIAL' | 'AUTOMATED'>('COMMERCIAL');
   const [campaignCollisionCount, setCampaignCollisionCount] = useState<number>(0);
-  const [campaignPlansFilter, setCampaignPlansFilter] = useState<'all' | 'pagos' | 'cortesia'>('all');
-  const [plansList, setPlansList] = useState<any[]>([]);
-  const [campaignSelectedPlans, setCampaignSelectedPlans] = useState<any[]>([]);
-  const [loadingPlans, setLoadingPlans] = useState(false);
-  const [campaignStatusFilter, setCampaignStatusFilter] = useState<'active' | 'canceled' | 'expired'>('active');
-  const [campaignExpiryDays, setCampaignExpiryDays] = useState<string>('30');
+  const [campaignRules, setCampaignRules] = useState<CampaignRule[]>([]);
+  const [campaignRulesRelation, setCampaignRulesRelation] = useState<'AND' | 'OR'>('AND');
   const [campaignStartDate, setCampaignStartDate] = useState(() => {
     const d = new Date();
     const year = d.getFullYear();
@@ -516,32 +513,6 @@ export default function DashboardContent({
     setLeadsPage(1);
   }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, filterCampaignId, activeTab, atendimentoFila, atendimentoViewMode]);
 
-  // Fetch plans list when campaign modal is open
-  useEffect(() => {
-    if (showCampaignModal && plansList.length === 0) {
-      const fetchPlans = async () => {
-        setLoadingPlans(true);
-        try {
-          const res = await fetch('/api/plans');
-          if (res.ok) {
-            const data = await res.json();
-            setPlansList(data.data || []);
-          }
-        } catch (err) {
-          console.error('Failed to fetch plans list:', err);
-        } finally {
-          setLoadingPlans(false);
-        }
-      };
-      fetchPlans();
-    }
-  }, [showCampaignModal, plansList.length]);
-
-  // Reset selected plans when plans filter category changes
-  useEffect(() => {
-    setCampaignSelectedPlans([]);
-  }, [campaignPlansFilter]);
-
   // Fetch estimated audience for campaign wizard (debounced)
   useEffect(() => {
     if (!showCampaignModal) return;
@@ -554,10 +525,8 @@ export default function DashboardContent({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'estimate',
-            plansFilter: campaignPlansFilter,
-            selectedPlans: campaignSelectedPlans,
-            statusFilter: campaignStatusFilter,
-            expiryDays: campaignStatusFilter === 'expired' ? Number(campaignExpiryDays) : undefined,
+            rules: campaignRules,
+            rulesRelation: campaignRulesRelation,
             excludeNurturing: excludeNurturing
           })
         });
@@ -574,7 +543,7 @@ export default function DashboardContent({
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [campaignPlansFilter, campaignSelectedPlans, campaignStatusFilter, campaignExpiryDays, excludeNurturing, showCampaignModal]);
+  }, [campaignRules, campaignRulesRelation, excludeNurturing, showCampaignModal]);
 
   useEffect(() => {
     if (activeTab === 'alerts') {
@@ -1272,10 +1241,8 @@ export default function DashboardContent({
           action: 'launch',
           name: campaignName,
           startDate: campaignStartDate,
-          plansFilter: campaignPlansFilter,
-          selectedPlans: campaignSelectedPlans,
-          statusFilter: campaignStatusFilter,
-          expiryDays: campaignStatusFilter === 'expired' ? Number(campaignExpiryDays) : undefined,
+          rules: campaignRules,
+          rulesRelation: campaignRulesRelation,
           userIds: campaignAgentIds,
           limitPerDay: campaignLimitEnabled && campaignLimitPerDay ? Number(campaignLimitPerDay) : null,
           smtpConfigId: campaignSmtpConfigId || null,
@@ -1297,10 +1264,8 @@ export default function DashboardContent({
       if (res.ok) {
         setCampaignName('');
         setCampaignSmtpConfigId('');
-        setCampaignPlansFilter('all');
-        setCampaignSelectedPlans([]);
-        setCampaignStatusFilter('active');
-        setCampaignExpiryDays('30');
+        setCampaignRules([]);
+        setCampaignRulesRelation('AND');
         setCampaignStartDate(() => {
           const d = new Date();
           const year = d.getFullYear();
@@ -4746,211 +4711,22 @@ export default function DashboardContent({
               )}
 
               {wizardStep === 2 && (
-                <div className="animate-fadeUp" style={{ display: 'flex', gap: 24 }}>
-                  <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
-                      <div>
-                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Nome da Campanha:</label>
-                        <input 
-                          type="text" 
-                          required
-                          value={campaignName} 
-                          onChange={(e) => setCampaignName(e.target.value)}
-                          placeholder="Ex: Campanha Resgate Congresso DentalPress"
-                          style={{
-                            width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
-                            border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Data de Início:</label>
-                        <input 
-                          type="date" 
-                          required
-                          value={campaignStartDate} 
-                          onChange={(e) => setCampaignStartDate(e.target.value)}
-                          style={{
-                            width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
-                            border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                      <div>
-                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Onde Buscar (Base de Clientes):</label>
-                        <select 
-                          value={campaignPlansFilter}
-                          onChange={(e) => setCampaignPlansFilter(e.target.value as any)}
-                          style={{ width: '100%', padding: '10px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
-                        >
-                          <option value="all">🌐 Geral (Todos os Planos)</option>
-                          <option value="pagos">💵 Planos Pagos</option>
-                          <option value="cortesia">🎁 Planos Cortesia / Parcerias</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Status no DentalGO:</label>
-                        <select 
-                          value={campaignStatusFilter}
-                          onChange={(e) => setCampaignStatusFilter(e.target.value as any)}
-                          style={{ width: '100%', padding: '10px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }}
-                        >
-                          <option value="active">🟢 Assinantes Ativos</option>
-                          <option value="expired">🟡 Assinantes Expirados</option>
-                          <option value="canceled">🔴 Assinantes Cancelados</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, background: 'var(--surface-raised)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
-                      <input
-                        type="checkbox"
-                        id="excludeNurturing"
-                        checked={excludeNurturing}
-                        onChange={(e) => setExcludeNurturing(e.target.checked)}
-                        style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--accent)' }}
-                      />
-                      <label htmlFor="excludeNurturing" style={{ fontSize: 12, cursor: 'pointer', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 4, margin: 0 }}>
-                        ⚠️ <strong>Ignorar leads em esteira de recuperação/nutrição</strong> (Evita sobreposição de mensagens)
-                      </label>
-                    </div>
-
-                    {campaignPlansFilter !== 'all' && (() => {
-                      const filteredPlans = plansList.filter(p => {
-                        if (campaignPlansFilter === 'pagos') return Number(p.price) > 100;
-                        if (campaignPlansFilter === 'cortesia') return Number(p.price) <= 100;
-                        return false;
-                      });
-                      return (
-                        <div className="animate-fadeUp" style={{ marginTop: 12 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <label className="label-sm" style={{ display: 'block', margin: 0 }}>
-                              {campaignPlansFilter === 'pagos' ? 'Selecione os Planos Pagos:' : 'Selecione os Planos Cortesia:'}
-                            </label>
-                            {filteredPlans.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const allIds = filteredPlans.map(p => p.id);
-                                  const allSelected = allIds.every(id => campaignSelectedPlans.includes(id));
-                                  if (allSelected) {
-                                    setCampaignSelectedPlans(campaignSelectedPlans.filter(id => !allIds.includes(id)));
-                                  } else {
-                                    const uniqueIds = Array.from(new Set([...campaignSelectedPlans, ...allIds]));
-                                    setCampaignSelectedPlans(uniqueIds);
-                                  }
-                                }}
-                                style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, cursor: 'pointer', padding: 0, fontWeight: 500 }}
-                              >
-                                {filteredPlans.map(p => p.id).every(id => campaignSelectedPlans.includes(id)) ? 'Desmarcar Todos' : 'Selecionar Todos'}
-                              </button>
-                            )}
-                          </div>
-                          
-                          {loadingPlans ? (
-                            <div className="skeleton" style={{ height: 100, width: '100%', borderRadius: 8 }}></div>
-                          ) : filteredPlans.length === 0 ? (
-                            <div style={{ padding: 12, fontSize: 12, color: 'var(--text-faint)', textAlign: 'center', border: '1px dashed var(--border)', borderRadius: 8 }}>
-                              Nenhum plano cadastrado nesta categoria.
-                            </div>
-                          ) : (
-                            <div style={{ 
-                              maxHeight: 150, 
-                              overflowY: 'auto', 
-                              background: 'var(--surface-raised)', 
-                              border: '1px solid var(--border)', 
-                              borderRadius: 8, 
-                              padding: '8px 12px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 6
-                            }}>
-                              {filteredPlans.map((p) => {
-                                const isChecked = campaignSelectedPlans.includes(p.id);
-                                return (
-                                  <label 
-                                    key={p.id} 
-                                    style={{ 
-                                      display: 'flex', 
-                                      alignItems: 'center', 
-                                      gap: 8, 
-                                      fontSize: 12, 
-                                      cursor: 'pointer', 
-                                      color: isChecked ? 'var(--text-primary)' : 'var(--text-secondary)',
-                                      transition: 'color 0.2s',
-                                      padding: '2px 0'
-                                    }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          setCampaignSelectedPlans([...campaignSelectedPlans, p.id]);
-                                        } else {
-                                          setCampaignSelectedPlans(campaignSelectedPlans.filter(id => id !== p.id));
-                                        }
-                                      }}
-                                      style={{ accentColor: 'var(--accent)' }}
-                                    />
-                                    <span>{p.title}</span>
-                                    <span style={{ color: 'var(--text-faint)', fontSize: 11, marginLeft: 'auto' }}>
-                                      {p.price > 0 ? `R$ ${Number(p.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Cortesia'}
-                                    </span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {campaignStatusFilter === 'expired' && (
-                      <div className="animate-fadeUp">
-                        <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Expirados há mais de (Dias):</label>
-                        <input 
-                          type="number" 
-                          value={campaignExpiryDays} 
-                          onChange={(e) => setCampaignExpiryDays(e.target.value)}
-                          placeholder="Ex: 30"
-                          style={{
-                            width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
-                            border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Estimated Target Card */}
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: 'linear-gradient(135deg, rgba(var(--accent-rgb), 0.05), transparent)', border: '1px solid var(--accent-light)', borderRadius: 12, padding: 24, textAlign: 'center' }}>
-                    <div style={{ fontSize: 40, marginBottom: 12 }}>🎯</div>
-                    <h4 style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>Público-Alvo Estimado</h4>
-                    {loadingEstimate ? (
-                      <div className="skeleton" style={{ height: 32, width: 120, margin: '8px 0' }}></div>
-                    ) : (
-                      <div style={{ fontSize: 32, fontWeight: 900, color: 'var(--accent)', margin: '8px 0' }}>
-                        {estimatedAudience}
-                      </div>
-                    )}
-                    <p style={{ fontSize: 11, color: 'var(--text-secondary)', maxWidth: 200, marginBottom: 0 }}>
-                      leads atendem às regras lógicas configuradas ao lado.
-                    </p>
-
-                    {campaignCollisionCount > 0 && (
-                      <div style={{ background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.3)', color: '#CA8A04', padding: '10px 14px', borderRadius: 8, fontSize: 11, display: 'flex', alignItems: 'start', gap: 6, marginTop: 12, textAlign: 'left' }}>
-                        <span>⚠️</span>
-                        <div>
-                          <strong>Atenção:</strong> {campaignCollisionCount} leads desta lista já estão ativos em outras jornadas de nutrição. Deixe a opção de <strong>ignorar leads em esteira</strong> marcada para evitar contatos duplicados.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <CampaignSegmentation
+                  campaignName={campaignName}
+                  onChangeName={setCampaignName}
+                  campaignStartDate={campaignStartDate}
+                  onChangeStartDate={setCampaignStartDate}
+                  rules={campaignRules}
+                  onChangeRules={setCampaignRules}
+                  rulesRelation={campaignRulesRelation}
+                  onChangeRelation={setCampaignRulesRelation}
+                  excludeNurturing={excludeNurturing}
+                  onChangeExcludeNurturing={setExcludeNurturing}
+                  estimatedAudience={estimatedAudience}
+                  collisionCount={campaignCollisionCount}
+                  loadingEstimate={loadingEstimate}
+                  productsList={productsList}
+                />
               )}
 
               {wizardStep === 3 && (

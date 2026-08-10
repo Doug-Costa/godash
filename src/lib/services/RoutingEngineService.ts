@@ -13,7 +13,7 @@ export class RoutingEngineService {
    * Retorna `null` se a campanha estiver em modo POOL ou se nenhum operador estiver disponível.
    */
   async determineAssignee(
-    externalPersonId: number,
+    customerIdOrExternalId: string | number,
     config: RoutingConfig,
     targetRole: 'AGENT' | 'POST_SALES',
     index?: number,
@@ -23,18 +23,20 @@ export class RoutingEngineService {
 
     // 1. Modo POOL (Fila de Órfãos Estratégica)
     if (routingMode === 'POOL') {
-      console.log(`[RoutingEngine] Lead ${externalPersonId} está em modo POOL. Retornando null (órfão).`);
+      console.log(`[RoutingEngine] Lead ${customerIdOrExternalId} está em modo POOL. Retornando null (órfão).`);
       return null;
     }
 
     // 2. Verificação de Account Manager (Intimidade/Histórico)
     if (useAccountManager) {
-      console.log(`[RoutingEngine] Verificando Account Manager para o lead ${externalPersonId}...`);
+      console.log(`[RoutingEngine] Verificando Account Manager para o lead ${customerIdOrExternalId}...`);
       
       // Buscar última oportunidade ativa/concluída do lead que possui operador ativo com a role correta
       const lastOp = await prisma.opportunity.findFirst({
         where: {
-          customer: { externalPersonId },
+          customer: typeof customerIdOrExternalId === 'number'
+            ? { externalPersonId: customerIdOrExternalId }
+            : { id: customerIdOrExternalId },
           assigneeId: { not: null },
           assignee: {
             isActive: true,
@@ -52,14 +54,23 @@ export class RoutingEngineService {
 
       // Fallback: verificar se o registro do Customer possui um operador atribuído
       const customerRecord = await prisma.customer.findFirst({
-        where: {
-          externalPersonId,
-          assigneeId: { not: null },
-          assignee: {
-            isActive: true,
-            role: targetRole
-          }
-        },
+        where: typeof customerIdOrExternalId === 'number'
+          ? {
+              externalPersonId: customerIdOrExternalId,
+              assigneeId: { not: null },
+              assignee: {
+                isActive: true,
+                role: targetRole
+              }
+            }
+          : {
+              id: customerIdOrExternalId,
+              assigneeId: { not: null },
+              assignee: {
+                isActive: true,
+                role: targetRole
+              }
+            },
         select: { assigneeId: true }
       });
 
