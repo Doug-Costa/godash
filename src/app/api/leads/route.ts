@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import prisma from '@/lib/prisma';
 import { PrismaCrmRepository } from '@/lib/repositories/PrismaCrmRepository';
+import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
 import { auth } from '@/auth';
 import { RegisterLeadInteractionService } from '@/lib/application/RegisterLeadInteractionService';
 import { LeadTaggingService } from '@/lib/application/LeadTaggingService';
@@ -273,6 +274,9 @@ export async function GET(request: Request) {
       } else if (atendimentoFila === 'abandonados') {
         whereClause += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
         params.push(month);
+      } else {
+        whereClause += ` AND DATE_FORMAT(p.createdAt, '%Y-%m') = ?`;
+        params.push(month);
       }
     }
 
@@ -286,6 +290,10 @@ export async function GET(request: Request) {
     if (plan) {
       if (plan === 'none') {
         whereClause += ` AND pl.id IS NULL`;
+      } else if (plan === 'core_annual') {
+        whereClause += ` AND pl.id IS NOT NULL AND LOWER(pl.title) LIKE '%anual%'`;
+      } else if (plan === 'core_recurring') {
+        whereClause += ` AND pl.id IS NOT NULL AND (LOWER(pl.title) LIKE '%recorrente%' OR LOWER(pl.title) LIKE '%mensal%' OR (LOWER(pl.title) LIKE '%dentalgo%' AND LOWER(pl.title) NOT LIKE '%anual%'))`;
       } else {
         whereClause += ` AND pl.id = ?`;
         params.push(Number(plan));
@@ -341,6 +349,9 @@ export async function GET(request: Request) {
     const customers = await prisma.customer.findMany({
       where: postgresQueryFilter,
       include: {
+        person: {
+          select: { id: true, fullName: true, email: true, phoneNumber: true, source: true, accountManagerId: true, accountManagerActive: true }
+        },
         assignee: {
           select: { id: true, name: true }
         },
@@ -553,10 +564,20 @@ export async function GET(request: Request) {
       // Mapeia baseando-se nos registros de Customer do Postgres deduplicados
       data = uniqueCustomers.map(c => {
         const r = peopleMap.get(c.externalPersonId);
-        if (!r) return null;
+        const person = (c as any).person; // identidade canônica do Postgres (Fase 1)
+
+        // Fallback: usa dados da Person do Postgres quando MySQL não tem o registro
+        // (resolve o problema "Lead #7509")
+        const displayName = r?.fullName || person?.fullName || null;
+        const displayEmail = r?.email || person?.email || '';
+        const displayPhone = r?.phoneNumber || person?.phoneNumber || '';
+        const displayId = r?.id ?? c.externalPersonId;
+
+        // Se não tem dados em nenhuma das fontes, descarta apenas se não houver Person
+        if (!r && !person) return null;
 
         let subBadge = 'expirado';
-        if (r.planId) {
+        if (r?.planId) {
           const now = new Date();
           const expiresDate = r.subIsValidUntil ? new Date(r.subIsValidUntil) : (r.subExpiresIn ? new Date(r.subExpiresIn) : null);
           const isCanceled = r.subStatus === 'canceled' || r.subCanceledAt !== null;
@@ -571,7 +592,8 @@ export async function GET(request: Request) {
         }
 
         return {
-          id: r.id, // ID no MySQL para o front saber qual lead é (externalPersonId)
+          id: displayId, // ID no MySQL para o front saber qual lead é (externalPersonId)
+          personId: person?.id || null, // ID canônico no Postgres (Fase 1)
           journeyId: c.journey && (() => {
             const joinedAt = c.joinedJourneyAt || c.createdAt;
             const durationDays = c.journey.durationDays || 30;
@@ -579,11 +601,11 @@ export async function GET(request: Request) {
             return elapsedMs <= durationDays * 24 * 60 * 60 * 1000;
           })() ? c.journeyId : null,
           customerCuid: c.id, // O ID único (CUID) do customer no Postgres
-          fullName: r.fullName || 'Sem Nome',
-          email: r.email || '',
-          phoneNumber: r.phoneNumber || '',
-          createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
-          plan: r.planId ? {
+          fullName: displayName || `Lead #${displayId || c.id}`,
+          email: displayEmail,
+          phoneNumber: displayPhone,
+          createdAt: r?.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
+          plan: r?.planId ? {
             id: r.planId,
             title: r.planTitle,
             price: r.planPrice,
@@ -591,9 +613,9 @@ export async function GET(request: Request) {
           } : null,
           stage: c.stage || 'novo_cadastro',
           tag: c.tag || null,
-          assignee: assigneeByPersonId.has(r.id) ? {
-            id: assigneeByPersonId.get(r.id).id,
-            name: assigneeByPersonId.get(r.id).name
+          assignee: assigneeByPersonId.has(displayId) ? {
+            id: assigneeByPersonId.get(displayId).id,
+            name: assigneeByPersonId.get(displayId).name
           } : c.assignee ? {
             id: c.assignee.id,
             name: c.assignee.name
@@ -608,15 +630,15 @@ export async function GET(request: Request) {
             name: c.journey.name
           } : null,
           hasPendingAlert: (c.tasks || []).length > 0,
-          notes: interactionsByPersonId.get(r.id) || [],
-          metadata: metadataByPersonId.get(r.id) || {},
-          scheduledFor: scheduledForByPersonId.get(r.id) || c.scheduledFor || null,
+          notes: interactionsByPersonId.get(displayId) || interactionsByPersonId.get(c.id) || [],
+          metadata: metadataByPersonId.get(displayId) || metadataByPersonId.get(c.id) || {},
+          scheduledFor: scheduledForByPersonId.get(displayId) || c.scheduledFor || null,
           subscriptionStatus: subBadge,
-          isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1',
+          isBookPurchase: r?.hasBookPurchase === 1 || r?.hasBookPurchase === true || r?.hasBookPurchase === '1',
           humanTakeover: c.humanTakeover || false,
-          customerProducts: customerProductsByPersonId.get(r.id) || [],
+          customerProducts: customerProductsByPersonId.get(displayId) || customerProductsByPersonId.get(c.id) || [],
           hasParallelNegotiation: (() => {
-            const pipeNames = pipelinesByPersonId.get(r.id);
+            const pipeNames = pipelinesByPersonId.get(displayId);
             return pipeNames ? (pipeNames.has('Vendas') && pipeNames.has('CS')) : false;
           })()
         };
@@ -849,8 +871,14 @@ export async function POST(request: Request) {
         where: { externalPersonId, journeyId: resolvedJourneyId }
       });
       if (!customer) {
+        // CDP V4 - Resolver identidade canônica antes de persistir o Customer
+        const person = await CanonicalIdentityService.resolve({
+          source: 'DENTALGO',
+          externalId: String(externalPersonId)
+        });
+
         customer = await prisma.customer.create({
-          data: { externalPersonId, journeyId: resolvedJourneyId, stage: 'novo_cadastro' }
+          data: { externalPersonId, personId: person.id, journeyId: resolvedJourneyId, stage: 'novo_cadastro' }
         });
       }
       const currentMeta = (customer.metadata as Record<string, any>) || {};

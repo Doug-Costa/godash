@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { ICrmRepository, CrmCustomer, CrmInteraction, LossReason, LeadTag } from '@/lib/domain/crm.types';
 import { CustomerRevenueService } from '@/lib/application/CustomerRevenueService';
+import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
 
 export class PrismaCrmRepository implements ICrmRepository {
   private async findOrCreateCustomer(idOrExtId: string | number | null, journeyId: string | null = null): Promise<any> {
@@ -27,9 +28,16 @@ export class PrismaCrmRepository implements ICrmRepository {
       where: { name: 'Vendas' }
     }) || await prisma.pipeline.findFirst();
 
+    // CDP V4 - Identidade Canônica
+    const person = await CanonicalIdentityService.resolve({
+      source: 'DENTALGO',
+      externalId: String(idOrExtId)
+    });
+
     return prisma.customer.create({
       data: {
         externalPersonId: idOrExtId,
+        personId: person.id,
         journeyId: journeyId || null,
         stage: 'novo_cadastro',
         pipelineId: defaultPipeline?.id || null

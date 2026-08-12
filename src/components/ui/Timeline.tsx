@@ -92,6 +92,31 @@ const TYPE_CONFIGS: Record<string, { label: string; icon: string; bg: string; bo
   },
 };
 
+const getInitials = (name: string) => {
+  if (!name) return 'AG';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return parts[0].slice(0, 2).toUpperCase();
+};
+
+const getAvatarColor = (name: string) => {
+  if (!name) return 'var(--accent)';
+  const charCode = name.charCodeAt(0) || 0;
+  const colors = [
+    '#6366f1', // Indigo
+    '#3b82f6', // Blue
+    '#10b981', // Emerald
+    '#f59e0b', // Amber
+    '#ef4444', // Red
+    '#8b5cf6', // Violet
+    '#ec4899', // Pink
+    '#06b6d4', // Cyan
+  ];
+  return colors[charCode % colors.length];
+};
+
 export default function Timeline({ events }: TimelineProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
@@ -180,10 +205,19 @@ export default function Timeline({ events }: TimelineProps) {
                   <span style={{ fontWeight: 700, color: cfg.border }}>
                     {cfg.icon} {cfg.label}
                   </span>
-                  <div style={{ display: 'flex', gap: 8, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                    <span>por {evt.authorName}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)' }}>
+                    <div style={{
+                      width: 20, height: 20, borderRadius: '50%',
+                      background: getAvatarColor(evt.authorName), color: '#fff',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 9, fontWeight: 700,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                    }}>
+                      {getInitials(evt.authorName)}
+                    </div>
+                    <span style={{ fontSize: 11 }}>por <strong style={{ color: 'var(--text-primary)' }}>{evt.authorName}</strong></span>
                     <span>&bull;</span>
-                    <span>{formatDate(evt.date)}</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{formatDate(evt.date)}</span>
                   </div>
                 </div>
                 <p style={{

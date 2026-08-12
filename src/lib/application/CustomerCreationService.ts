@@ -38,12 +38,71 @@ export class CustomerCreationService {
       saleChannel
     } = data;
 
-    // 1. Resolve Identity
-    const existingCustomer = await IdentityResolutionService.resolveIdentity({
+    // 1. Resolve Identity (Person-based CDP V4)
+    const fullName = metadata?.fullName || metadata?.name || null;
+    const email = metadata?.email || null;
+    const phoneNumber = metadata?.phoneNumber || metadata?.phone || null;
+
+    const resolution = await IdentityResolutionService.resolve({
       externalPersonId,
-      phoneNumber: metadata?.phoneNumber,
-      email: metadata?.email
+      email,
+      phoneNumber,
+      fullName
     });
+
+    let personId: string;
+
+    if (resolution.action === 'FOUND' && resolution.person) {
+      personId = resolution.person.id;
+      // Enrich Person details if there are new signals
+      await IdentityResolutionService.registerAlias(personId, {
+        source,
+        externalId: externalPersonId ? String(externalPersonId) : undefined,
+        email,
+        phone: phoneNumber,
+        name: fullName,
+        rawData: metadata
+      });
+    } else {
+      // Create new canonical Person
+      const cleanEmail = IdentityResolutionService.normalizeEmail(email);
+      const cleanPhone = IdentityResolutionService.normalizePhone(phoneNumber);
+      const newPerson = await prisma.person.create({
+        data: {
+          externalPersonId: externalPersonId || null,
+          fullName,
+          email: cleanEmail,
+          phoneNumber: cleanPhone,
+          source,
+          identityAliases: (cleanEmail || cleanPhone || fullName) ? {
+            create: {
+              source,
+              externalId: externalPersonId ? String(externalPersonId) : `gen_${Math.random().toString(36).substring(2, 11)}`,
+              email: cleanEmail,
+              phone: cleanPhone,
+              name: fullName,
+              rawData: metadata as any
+            }
+          } : undefined
+        }
+      });
+      personId = newPerson.id;
+    }
+
+    // Find if there is an existing Customer for this Person and journey
+    let existingCustomer = await prisma.customer.findFirst({
+      where: {
+        personId,
+        journeyId: journeyId || undefined
+      }
+    });
+
+    // Fallback: search by legacy externalPersonId
+    if (!existingCustomer && externalPersonId) {
+      existingCustomer = await prisma.customer.findFirst({
+        where: { externalPersonId }
+      });
+    }
 
     let customerId: string;
 
@@ -57,17 +116,19 @@ export class CustomerCreationService {
       const updated = await prisma.customer.update({
         where: { id: existingCustomer.id },
         data: {
+          personId,
           metadata: mergedMetadata,
           interactionCount: { increment: 1 }
         }
       });
       
       customerId = updated.id;
-      console.log(`[IdentityResolution] Merged new data into existing customer ${customerId}`);
+      console.log(`[IdentityResolution] Merged new data into existing customer ${customerId} (Person: ${personId})`);
     } else {
       // CREATE NEW CUSTOMER
       const created = await prisma.customer.create({
         data: {
+          personId,
           externalPersonId,
           source,
           journeyId,
@@ -79,7 +140,7 @@ export class CustomerCreationService {
       });
       
       customerId = created.id;
-      console.log(`[IdentityResolution] Created NEW customer ${customerId}`);
+      console.log(`[IdentityResolution] Created NEW customer ${customerId} (Person: ${personId})`);
     }
     
     // 2. Register Purchase (CustomerProduct & LTV)

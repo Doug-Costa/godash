@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
 import { NotificationService } from '@/lib/services/NotificationService';
+import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
 
 export async function POST(request: Request) {
   try {
@@ -31,9 +32,16 @@ export async function POST(request: Request) {
         where: { externalPersonId: extId, journeyId: null }
       });
       if (!customer) {
+        // CDP V4 - Resolver identidade canônica antes de persistir o Customer
+        const person = await CanonicalIdentityService.resolve({
+          source: 'DENTALGO',
+          externalId: String(extId)
+        });
+
         customer = await prisma.customer.create({
           data: {
             externalPersonId: extId,
+            personId: person.id,
             journeyId: null,
             stage: 'novo_cadastro'
           }

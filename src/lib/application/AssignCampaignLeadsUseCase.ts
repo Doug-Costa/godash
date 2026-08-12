@@ -88,6 +88,65 @@ export class AssignCampaignLeadsUseCase {
           : { id: currentId }
       });
 
+      let personInfo: any = null;
+      if (typeof currentId === 'number') {
+        try {
+          const pool = (await import('../db')).default;
+          const [pRows]: any = await pool.query(
+            `SELECT COALESCE(NULLIF(fullName, ''), NULLIF(name, ''), email) AS fullName, email, phoneNumber FROM people WHERE id = ?`,
+            [currentId]
+          );
+          if (pRows && pRows[0]) {
+            personInfo = pRows[0];
+          }
+        } catch (e) {
+          console.warn(`[AssignCampaignLeads] Could not fetch person ${currentId} from MySQL:`, e);
+        }
+      }
+
+      // Upsert Person com dados de identidade do MySQL (resolve "Lead #7509" em campanhas)
+      if (typeof currentId === 'number' && personInfo) {
+        const normalizePhone = (raw: string | null) => {
+          if (!raw) return null;
+          const d = raw.replace(/\D/g, '');
+          if (d.startsWith('55') && (d.length === 12 || d.length === 13)) return `+${d}`;
+          if (d.length >= 10 && d.length <= 11) return `+55${d}`;
+          return null;
+        };
+        const cleanEmail = personInfo.email?.toLowerCase().trim() || null;
+        const cleanPhone = normalizePhone(personInfo.phoneNumber);
+        const cleanName = personInfo.fullName || null;
+
+        let existingPerson = await prisma.person.findFirst({ where: { externalPersonId: currentId } });
+        if (existingPerson) {
+          await prisma.person.update({
+            where: { id: existingPerson.id },
+            data: {
+              fullName: existingPerson.fullName || cleanName,
+              email: existingPerson.email || cleanEmail,
+              phoneNumber: existingPerson.phoneNumber || cleanPhone,
+            }
+          });
+        } else {
+          existingPerson = await prisma.person.create({
+            data: {
+              externalPersonId: currentId,
+              fullName: cleanName,
+              email: cleanEmail,
+              phoneNumber: cleanPhone,
+              source: 'DENTALGO',
+            }
+          });
+        }
+
+        if (customer && !customer.personId) {
+          await prisma.customer.update({
+            where: { id: customer.id },
+            data: { personId: existingPerson.id }
+          });
+        }
+      }
+
       if (customer) {
         customer = await prisma.customer.update({
           where: { id: customer.id },
@@ -104,9 +163,22 @@ export class AssignCampaignLeadsUseCase {
         });
       } else {
         if (typeof currentId === 'number') {
+          // Encontrar ou criar Person
+          let person = await prisma.person.findFirst({ where: { externalPersonId: currentId } });
+          if (!person) {
+            person = await prisma.person.create({
+              data: {
+                externalPersonId: currentId,
+                source: 'DENTALGO',
+              }
+            });
+          }
+
           customer = await prisma.customer.create({
             data: {
               externalPersonId: currentId,
+              personId: person.id,
+              source: 'DENTALGO',
               assigneeId,
               journeyId: campaignId,
               joinedJourneyAt: joinedCampaignAt,

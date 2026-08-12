@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
 import pool from '@/lib/db';
 import { AssignCampaignLeadsUseCase } from '@/lib/application/AssignCampaignLeadsUseCase';
+import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
 
 export async function GET() {
   try {
@@ -447,6 +448,22 @@ export async function POST(request: Request) {
             targetPipelineId = defaultPipe?.id;
           }
 
+          // CDP V4 - Resolver identidade canônica antes de persistir/atualizar o Customer
+          let personId: string;
+          if (typeof currentId === 'number') {
+            const person = await CanonicalIdentityService.resolve({
+              source: 'DENTALGO',
+              externalId: String(currentId)
+            });
+            personId = person.id;
+          } else {
+            const existing = await prisma.customer.findUnique({
+              where: { id: currentId }
+            });
+            if (!existing) continue;
+            personId = existing.personId;
+          }
+
           let customer = await prisma.customer.findFirst({
             where: typeof currentId === 'number'
               ? { externalPersonId: currentId }
@@ -457,6 +474,7 @@ export async function POST(request: Request) {
             customer = await prisma.customer.update({
               where: { id: customer.id },
               data: {
+                personId: personId,
                 journeyId: journey.id,
                 pipelineId: targetPipelineId,
                 stage: 'novo_cadastro',
@@ -467,6 +485,7 @@ export async function POST(request: Request) {
             customer = await prisma.customer.create({
               data: {
                 externalPersonId: currentId,
+                personId: personId,
                 journeyId: journey.id,
                 pipelineId: targetPipelineId,
                 stage: 'novo_cadastro',

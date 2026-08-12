@@ -1673,6 +1673,8 @@ export default function DashboardContent({
               >
                 <option value="all">Todos os Planos</option>
                 <option value="none">Cadastro Grátis (Sem Plano)</option>
+                <option value="core_annual">Core Anual</option>
+                <option value="core_recurring">Core Recorrente</option>
                 {users?.usersByPlan?.map((p: any) => (
                   <option key={p.planId} value={p.planId}>{p.planTitle}</option>
                 ))}
@@ -3555,6 +3557,8 @@ export default function DashboardContent({
                   ) : (
                     <span>📞 Sem telefone</span>
                   )}
+                  <span>&bull;</span>
+                  <span>📅 Cadastrado em: {selectedLead.createdAt ? new Date(selectedLead.createdAt).toLocaleDateString('pt-BR') : 'N/A'}</span>
                   {selectedLead.humanTakeover && (
                     <>
                       <span>&bull;</span>
@@ -4217,6 +4221,7 @@ export default function DashboardContent({
                       <div><strong style={{ color: 'var(--text-primary)' }}>Email:</strong> {selectedLead.email || 'N/A'}</div>
                       <div><strong style={{ color: 'var(--text-primary)' }}>Telefone:</strong> {selectedLead.phoneNumber || 'N/A'}</div>
                       <div><strong style={{ color: 'var(--text-primary)' }}>Origem:</strong> {selectedLead.source || 'ORGÂNICO'}</div>
+                      <div><strong style={{ color: 'var(--text-primary)' }}>Data de Cadastro:</strong> {selectedLead.createdAt ? new Date(selectedLead.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A'}</div>
                     </div>
                   </div>
 

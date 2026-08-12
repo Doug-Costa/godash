@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
 import type {
   IPostSaleRepository,
   PostSaleSequenceDTO,
@@ -160,9 +161,16 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
     });
 
     if (!customer) {
+      // CDP V4 - Resolver identidade canônica antes de persistir o Customer
+      const person = await CanonicalIdentityService.resolve({
+        source: 'DENTALGO',
+        externalId: String(data.externalPersonId)
+      });
+
       customer = await prisma.customer.create({
         data: {
           externalPersonId: data.externalPersonId,
+          personId: person.id,
           journeyId,
           stage: 'novo_cadastro'
         }
@@ -214,11 +222,19 @@ export class PrismaPostSaleRepository implements IPostSaleRepository {
     // 3. Create missing customers
     const missingPersonIds = externalPersonIds.filter(id => !customerMap.has(id));
     if (missingPersonIds.length > 0) {
+      // CDP V4 - Resolver em lote as identidades canônicas correspondentes
+      const batchInputs = missingPersonIds.map(missingId => ({
+        source: 'DENTALGO',
+        externalId: String(missingId)
+      }));
+      const personIdMap = await CanonicalIdentityService.resolveMany(batchInputs);
+
       const missingCustomersData = missingPersonIds.map(missingId => {
         const row = data.find(d => d.externalPersonId === missingId);
         const seq = row?.sequenceId ? automationMap.get(row.sequenceId) : null;
         return {
           externalPersonId: missingId,
+          personId: personIdMap.get(`DENTALGO:${missingId}`) || '',
           journeyId: seq?.journeyId || null,
           stage: 'novo_cadastro'
         };

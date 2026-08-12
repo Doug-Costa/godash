@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import pool from '../src/lib/db';
+import { CustomerCreationService } from '../src/lib/application/CustomerCreationService';
 
 const prisma = new PrismaClient();
 
@@ -111,27 +112,13 @@ async function runDirectSync() {
         type: 'ABANDONED_CART',
       };
 
-      let customer = await prisma.customer.findFirst({
-        where: { externalPersonId, journeyId: null }
+      await CustomerCreationService.createOrMerge({
+        externalPersonId,
+        tag: 'ABANDONED_CART',
+        pipelineId: vendasPipelineId,
+        metadata,
+        source: 'API Sync (Cart)'
       });
-
-      if (customer) {
-        await prisma.customer.update({
-          where: { id: customer.id },
-          data: { metadata, tag: 'ABANDONED_CART' }
-        });
-      } else {
-        await prisma.customer.create({
-          data: {
-            externalPersonId,
-            journeyId: null,
-            stage: 'novo_cadastro',
-            tag: 'ABANDONED_CART',
-            pipelineId: vendasPipelineId,
-            metadata
-          }
-        });
-      }
       abandonedCount++;
     }
 
@@ -150,27 +137,13 @@ async function runDirectSync() {
         type: 'EXPIRING_SUBSCRIPTION',
       };
 
-      let customer = await prisma.customer.findFirst({
-        where: { externalPersonId, journeyId: null }
+      await CustomerCreationService.createOrMerge({
+        externalPersonId,
+        tag: 'CANCELED_CLIENT',
+        pipelineId: vendasPipelineId,
+        metadata,
+        source: 'API Sync (Expiring)'
       });
-
-      if (customer) {
-        await prisma.customer.update({
-          where: { id: customer.id },
-          data: { metadata, tag: 'CANCELED_CLIENT' }
-        });
-      } else {
-        await prisma.customer.create({
-          data: {
-            externalPersonId,
-            journeyId: null,
-            stage: 'novo_cadastro',
-            tag: 'CANCELED_CLIENT',
-            pipelineId: vendasPipelineId,
-            metadata
-          }
-        });
-      }
       expiringCount++;
     }
 

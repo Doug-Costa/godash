@@ -48,6 +48,7 @@ export class JourneyTransitionService {
             // Prepare new Customer data
             const newCustomerData = {
               externalPersonId,
+              personId: currentCustomer.personId, // CDP V4 - Propagar identidade canônica existente
               journeyId: targetJourneyId,
               pipelineId: targetPipelineId || currentCustomer.pipelineId,
               stage: 'novo_cadastro',
@@ -138,10 +139,25 @@ export class JourneyTransitionService {
       where: { id: campaignCustomerId }
     });
 
+    let personId = campaignCust?.personId;
+    if (!personId && externalPersonId) {
+      const person = await prisma.person.findFirst({
+        where: { externalPersonId }
+      });
+      if (person) {
+        personId = person.id;
+      }
+    }
+
+    if (!personId) {
+      throw new Error(`Cannot merge customer ${campaignCustomerId} to generic: Person not resolved.`);
+    }
+
     if (!genericCustomer) {
       genericCustomer = await prisma.customer.create({
         data: {
           externalPersonId,
+          personId, // CDP V4 - Propagar identidade canônica
           journeyId: null,
           stage: nextStage,
           assigneeId: campaignCust?.assigneeId || authorId || null,
@@ -153,6 +169,7 @@ export class JourneyTransitionService {
       genericCustomer = await prisma.customer.update({
         where: { id: genericCustomer.id },
         data: {
+          personId: genericCustomer.personId || personId, // CDP V4 - Manter/Propagar
           stage: nextStage,
           assigneeId: campaignCust?.assigneeId || genericCustomer.assigneeId || authorId || null,
           metadata: { ...((genericCustomer.metadata as any) || {}), ...((campaignCust?.metadata as any) || {}) },
