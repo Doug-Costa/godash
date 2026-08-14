@@ -9,11 +9,11 @@ import { IdentityMatchingService } from '@/lib/services/IdentityMatchingService'
 export async function POST(request: Request) {
   try {
     const session = await auth();
-    if (!session || (session.user as any)?.role !== 'ADMIN') {
+    if (!session || !session.user || (session.user as any)?.role !== 'ADMIN') {
       return new Response('Unauthorized', { status: 403 });
     }
 
-    const userId = session.user.id || '';
+    const userId = (session.user as any).id || '';
     const body = await request.json();
     const { sourcePersonId, targetPersonId, reason } = body;
 

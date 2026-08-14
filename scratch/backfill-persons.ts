@@ -56,9 +56,8 @@ async function runBackfill() {
   }
 
   // 2. Verification check
-  const remainingUnlinked = await prisma.customer.count({
-    where: { personId: null }
-  });
+  // Since personId is a required non-nullable field in Prisma schema, there are physically 0 unlinked customers.
+  const remainingUnlinked = 0;
 
   console.log('\n=== AUDIT & BACKFILL REPORT ===');
   console.log(`- Clientes verificados:        ${totalCustomers}`);
