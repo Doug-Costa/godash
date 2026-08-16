@@ -1,24 +1,10 @@
-import mysql from 'mysql2/promise';
+import pool from '../src/lib/db';
 import prisma from '../src/lib/prisma';
-
-const config = {
-  host: '187.77.48.78',
-  port: 3306,
-  user: 'xkey',
-  password: 'xkey@2026*',
-  database: 'dentalgo_production',
-  ssl: { rejectUnauthorized: false },
-  connectTimeout: 25000,
-};
 
 async function syncCustomers() {
   console.log('=== SYNCING CUSTOMER NAMES & CONTACTS FROM MYSQL PEOPLE ===\n');
 
-  let conn;
   try {
-    conn = await mysql.createConnection(config);
-    console.log('✅ Connected to MySQL!');
-
     // 1. Find all Customers in Prisma with externalPersonId and missing name/email/phone
     const incompleteCustomers = await prisma.customer.findMany({
       where: {
@@ -46,7 +32,7 @@ async function syncCustomers() {
         .filter((id): id is number => id !== null);
 
       const idsStr = Array.from(new Set(extIds)).join(',');
-      const [peopleRows]: any = await conn.query(`
+      const [peopleRows]: any = await pool.query(`
         SELECT 
           p.id,
           COALESCE(NULLIF(p.fullName, ''), NULLIF(p.name, ''), p.email) AS fullName,
@@ -88,8 +74,6 @@ async function syncCustomers() {
     }
   } catch (err: any) {
     console.error('Error:', err.message);
-  } finally {
-    if (conn) await conn.end();
   }
 
   process.exit(0);
