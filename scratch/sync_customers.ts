@@ -5,30 +5,30 @@ async function syncCustomers() {
   console.log('=== SYNCING CUSTOMER NAMES & CONTACTS FROM MYSQL PEOPLE ===\n');
 
   try {
-    // 1. Find all Customers in Prisma with externalPersonId and missing name/email/phone
-    const incompleteCustomers = await prisma.customer.findMany({
+    // 1. Find all Persons in Prisma with externalPersonId and missing fullName/email/phoneNumber
+    const incompletePersons = await prisma.person.findMany({
       where: {
         externalPersonId: { not: null },
         OR: [
-          { name: null },
+          { fullName: null },
           { email: null },
-          { phone: null }
+          { phoneNumber: null }
         ]
       },
       select: {
         id: true,
         externalPersonId: true,
-        name: true,
+        fullName: true,
         email: true,
-        phone: true
+        phoneNumber: true
       }
     });
 
-    console.log(`Found ${incompleteCustomers.length} incomplete Customer records in Prisma CDP.`);
+    console.log(`Found ${incompletePersons.length} incomplete Person records in Prisma CDP.`);
 
-    if (incompleteCustomers.length > 0) {
-      const extIds = incompleteCustomers
-        .map(c => c.externalPersonId)
+    if (incompletePersons.length > 0) {
+      const extIds = incompletePersons
+        .map(p => p.externalPersonId)
         .filter((id): id is number => id !== null);
 
       const idsStr = Array.from(new Set(extIds)).join(',');
@@ -49,20 +49,20 @@ async function syncCustomers() {
       }
 
       let updatedCount = 0;
-      for (const cust of incompleteCustomers) {
-        if (cust.externalPersonId && peopleMap.has(cust.externalPersonId)) {
-          const p = peopleMap.get(cust.externalPersonId);
-          const newName = p.fullName || cust.name || (p.email ? p.email.split('@')[0] : null);
-          const newEmail = p.email || cust.email || null;
-          const newPhone = p.phone || cust.phone || null;
+      for (const person of incompletePersons) {
+        if (person.externalPersonId && peopleMap.has(person.externalPersonId)) {
+          const p = peopleMap.get(person.externalPersonId);
+          const newName = p.fullName || person.fullName || (p.email ? p.email.split('@')[0] : null);
+          const newEmail = p.email || person.email || null;
+          const newPhone = p.phone || person.phoneNumber || null;
 
           if (newName || newEmail || newPhone) {
-            await prisma.customer.update({
-              where: { id: cust.id },
+            await prisma.person.update({
+              where: { id: person.id },
               data: {
-                name: newName,
+                fullName: newName,
                 email: newEmail,
-                phone: newPhone
+                phoneNumber: newPhone
               }
             });
             updatedCount++;
@@ -70,7 +70,7 @@ async function syncCustomers() {
         }
       }
 
-      console.log(`✅ Successfully updated ${updatedCount} Customer records in PostgreSQL!`);
+      console.log(`✅ Successfully updated ${updatedCount} Person records in PostgreSQL!`);
     }
   } catch (err: any) {
     console.error('Error:', err.message);
