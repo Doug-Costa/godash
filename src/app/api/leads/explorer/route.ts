@@ -186,6 +186,7 @@ export async function GET(request: Request) {
     const prismaCustomers = await prisma.customer.findMany({
       where: prismaWhere,
       include: {
+        person: true,
         assignee: { select: { id: true, name: true, email: true } },
         journey: { select: { id: true, name: true } },
         customerProducts: {
@@ -268,9 +269,9 @@ export async function GET(request: Request) {
       combinedLeadsMap.set(key, {
         id: c.id,
         externalPersonId: c.externalPersonId || existing.externalPersonId || null,
-        name: existing.name || c.name || (c.email ? c.email.split('@')[0] : null) || `Lead #${c.externalPersonId || c.id}`,
-        email: existing.email || c.email || '',
-        phone: existing.phone || c.phone || c.phoneNumber || '',
+        name: existing.name || c.person?.fullName || (c.person?.email ? c.person.email.split('@')[0] : null) || `Lead #${c.externalPersonId || c.id}`,
+        email: existing.email || c.person?.email || '',
+        phone: existing.phone || c.person?.phoneNumber || '',
         source: existing.source || c.source || 'Form Capture / CDP',
         planTitle: existing.planTitle || planFromPrisma || 'Sem Plano / Pendente',
         subscriptionStatus: existing.subscriptionStatus || statusFromPrisma || 'no_plan',
