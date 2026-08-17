@@ -34,7 +34,7 @@ export async function GET(request: Request) {
         let sql = `
           SELECT 
             p.id,
-            COALESCE(NULLIF(p.fullName, ''), NULLIF(p.name, ''), p.email, CONCAT('Lead DentalGO #', p.id)) AS fullName,
+            COALESCE(NULLIF(p.fullName, ''), p.email, CONCAT('Lead DentalGO #', p.id)) AS fullName,
             p.email,
             p.phoneNumber AS phone,
             p.createdAt,
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
         const params: any[] = [];
 
         if (search) {
-          sql += ` AND (LOWER(COALESCE(p.fullName, p.name, '')) LIKE ? OR LOWER(p.email) LIKE ? OR p.phoneNumber LIKE ?)`;
+          sql += ` AND (LOWER(COALESCE(p.fullName, '')) LIKE ? OR LOWER(p.email) LIKE ? OR p.phoneNumber LIKE ?)`;
           const sTerm = `%${search.toLowerCase()}%`;
           params.push(sTerm, sTerm, `%${search}%`);
         }
@@ -208,7 +208,7 @@ export async function GET(request: Request) {
         const [extraPeople]: any = await pool.query(`
           SELECT 
             p.id,
-            COALESCE(NULLIF(p.fullName, ''), NULLIF(p.name, ''), p.email, CONCAT('Dr. Lead #', p.id)) AS fullName,
+            COALESCE(NULLIF(p.fullName, ''), p.email, CONCAT('Dr. Lead #', p.id)) AS fullName,
             p.email,
             p.phoneNumber AS phone,
             p.createdAt
