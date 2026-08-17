@@ -252,6 +252,7 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
           channel: n.data.channel,
           messageTemplate: n.data.messageTemplate || '',
           templateId: n.data.templateId || null,
+          reactflowNodeId: n.id,
           provider: n.data.provider || (n.data.channel === 'WHATSAPP' ? 'EVOLUTION' : 'INTERNAL_SMTP')
         }))
         .sort((a, b) => a.dayOffset - b.dayOffset);

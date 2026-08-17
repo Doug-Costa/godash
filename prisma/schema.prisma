@@ -346,6 +346,7 @@ model Interaction {
   deliveryStatus String   @default("PENDING") // PENDING, SENT, DELIVERED, READ, FAILED
   errorMessage   String?
   channel        String?
+  automationId   String? // Para tracking visual no Campaign Monitor
 
   // Relations
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -407,6 +408,7 @@ model Automation {
   timeout      Int?      @default(5000)
   stepNumber   Int       @default(1)
   delayDays    Int       @default(0)
+  reactflowNodeId String?
 
   // Relations
   journey Journey? @relation(fields: [journeyId], references: [id], onDelete: Cascade)

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import ImportCSVModal from './ImportCSVModal';
+import VisualAuditorModal from './ui/VisualAuditorModal';
 
 interface Agent {
   id: string;
@@ -76,6 +77,7 @@ export default function UnifiedLeadsExplorer({
 
   // Import Modal State
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [auditorModalData, setAuditorModalData] = useState<{isOpen: boolean, customerId: string, journeyId: string}>({ isOpen: false, customerId: '', journeyId: '' });
   const [refreshKey, setRefreshKey] = useState<number>(0);
 
   // Fetch Plans, Forms, Journeys on Mount
@@ -662,9 +664,21 @@ export default function UnifiedLeadsExplorer({
                       {getStatusBadge(lead.subscriptionStatus)}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <span style={{ fontSize: '0.8rem', color: lead.journeyName !== 'Fora de Campanha' ? 'var(--accent)' : 'var(--text-secondary)' }}>
-                        {lead.journeyName}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '0.8rem', color: lead.journeyName !== 'Fora de Campanha' ? 'var(--accent)' : 'var(--text-secondary)' }}>
+                          {lead.journeyName}
+                        </span>
+                        {lead.journeyId && (
+                          <button
+                            onClick={() => setAuditorModalData({ isOpen: true, customerId: lead.id, journeyId: lead.journeyId })}
+                            className="btn-action btn-action-outline"
+                            style={{ padding: '2px 6px', fontSize: '0.7rem' }}
+                            title="Ver no Fluxo"
+                          >
+                            👁️
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
                       {lead.assigneeName}
@@ -731,6 +745,14 @@ export default function UnifiedLeadsExplorer({
         isOpen={showImportModal} 
         onClose={() => setShowImportModal(false)} 
         onSuccess={handleImportSuccess}
+      />
+
+      {/* Visual Auditor Modal */}
+      <VisualAuditorModal
+        isOpen={auditorModalData.isOpen}
+        onClose={() => setAuditorModalData({ ...auditorModalData, isOpen: false })}
+        customerId={auditorModalData.customerId}
+        journeyId={auditorModalData.journeyId}
       />
     </div>
   );

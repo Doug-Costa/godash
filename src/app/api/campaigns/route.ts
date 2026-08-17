@@ -57,6 +57,7 @@ export async function GET() {
           channel: config?.channel || 'WHATSAPP',
           messageTemplate: config?.messageTemplate || '',
           templateId: a.templateId || null,
+          reactflowNodeId: a.reactflowNodeId || null,
           provider: a.provider || 'EVOLUTION'
         };
       }).sort((a, b) => a.dayOffset - b.dayOffset)
@@ -564,6 +565,7 @@ export async function POST(request: Request) {
               provider: step.provider || 'EVOLUTION',
               stepNumber: index + 1,
               delayDays: Number(step.dayOffset),
+              reactflowNodeId: step.reactflowNodeId || null,
               actionConfig: {
                 dayOffset: Number(step.dayOffset),
                 channel: step.channel,
@@ -625,6 +627,7 @@ export async function POST(request: Request) {
               provider: step.provider || 'EVOLUTION',
               stepNumber: index + 1,
               delayDays: Number(step.dayOffset),
+              reactflowNodeId: step.reactflowNodeId || null,
               actionConfig: {
                 dayOffset: Number(step.dayOffset),
                 channel: step.channel,

@@ -103,18 +103,18 @@ export const automationWorker = new Worker(
     // Check availability of target channels
     if (targetChannel === 'EMAIL' && !recipientEmail) {
       console.warn(`[AutomationWorker] E-mail channel selected but customer has no email address. FAILED.`);
-      await recordFailure(customerId, 'Cliente não possui endereço de e-mail cadastrado.', 'EMAIL');
+      await recordFailure(customerId, 'Cliente não possui endereço de e-mail cadastrado.', 'EMAIL', automationId);
       return;
     }
     if (targetChannel === 'WHATSAPP' && !recipientPhone) {
       console.warn(`[AutomationWorker] WhatsApp channel selected but customer has no phone number. FAILED.`);
-      await recordFailure(customerId, 'Cliente não possui número de telefone cadastrado.', 'WHATSAPP');
+      await recordFailure(customerId, 'Cliente não possui número de telefone cadastrado.', 'WHATSAPP', automationId);
       return;
     }
 
     if (!templateContent) {
       console.warn(`[AutomationWorker] No message content or template found. FAILED.`);
-      await recordFailure(customerId, 'Conteúdo do template de automação vazio.', targetChannel);
+      await recordFailure(customerId, 'Conteúdo do template de automação vazio.', targetChannel, automationId);
       return;
     }
 
@@ -185,6 +185,7 @@ export const automationWorker = new Worker(
         channel: targetChannel,
         deliveryStatus: success ? 'SENT' : 'FAILED',
         errorMessage: success ? null : (errorMessage || 'Falha no conector de envio.'),
+        automationId: automationId || null,
       }
     });
 
@@ -196,7 +197,7 @@ export const automationWorker = new Worker(
 );
 
 // Helper function to record failures in Interaction logs
-async function recordFailure(customerId: string, reason: string, channel: string) {
+async function recordFailure(customerId: string, reason: string, channel: string, automationId?: string) {
   await prisma.interaction.create({
     data: {
       customerId,
@@ -205,7 +206,8 @@ async function recordFailure(customerId: string, reason: string, channel: string
       type: 'SYSTEM_AUTOMATION',
       channel,
       deliveryStatus: 'FAILED',
-      errorMessage: reason
+      errorMessage: reason,
+      automationId: automationId || null
     }
   });
 }
