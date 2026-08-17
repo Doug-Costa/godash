@@ -44,6 +44,8 @@ export async function GET() {
       useAccountManager: j.useAccountManager,
       strictSkillMatch: j.strictSkillMatch,
       productId: j.productId,
+      rotationEnabled: j.rotationEnabled,
+      rotationInactivityDays: j.rotationInactivityDays,
       createdAt: j.createdAt,
       updatedAt: j.updatedAt,
       _count: { leads: j._count.customers },
@@ -549,6 +551,8 @@ export async function POST(request: Request) {
           useAccountManager: body.useAccountManager === true,
           strictSkillMatch: body.strictSkillMatch === true,
           productId: body.productId || null,
+          rotationEnabled: body.rotationEnabled === true,
+          rotationInactivityDays: body.rotationInactivityDays !== undefined ? Number(body.rotationInactivityDays) : 3,
           automations: flowSteps && Array.isArray(flowSteps) ? {
             create: flowSteps.map((step: any, index: number) => ({
               name: `Passo ${index + 1} - ${step.channel}`,
@@ -608,6 +612,8 @@ export async function POST(request: Request) {
           useAccountManager: body.useAccountManager !== undefined ? (body.useAccountManager === true) : undefined,
           strictSkillMatch: body.strictSkillMatch !== undefined ? (body.strictSkillMatch === true) : undefined,
           productId: body.productId !== undefined ? (body.productId || null) : undefined,
+          rotationEnabled: body.rotationEnabled !== undefined ? (body.rotationEnabled === true) : undefined,
+          rotationInactivityDays: body.rotationInactivityDays !== undefined ? Number(body.rotationInactivityDays) : undefined,
           automations: flowSteps && Array.isArray(flowSteps) ? {
             create: flowSteps.map((step: any, index: number) => ({
               name: `Passo ${index + 1} - ${step.channel}`,

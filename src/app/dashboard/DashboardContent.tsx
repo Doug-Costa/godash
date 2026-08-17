@@ -87,7 +87,7 @@ export default function DashboardContent({
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
   const [atendimentoFila, setAtendimentoFila] = useState<'alerts' | 'cancelados' | 'expirar' | 'abandonados'>('alerts');
   const [filaCounts, setFilaCounts] = useState({ alerts: 0, cancelados: 0, expirar: 0, abandonados: 0 });
-  const [modalActiveTab, setModalActiveTab] = useState<'oportunidade' | 'perfil'>('oportunidade');
+  const [modalActiveTab, setModalActiveTab] = useState<'oportunidade' | 'perfil' | 'historico_sla'>('oportunidade');
   
   const visiblePipelines = pipelines.filter(p => isAdmin || p.name !== 'Nutrição');
   const defaultPipeline = visiblePipelines.find(p => p.name === 'Vendas') || visiblePipelines[0];
@@ -129,6 +129,7 @@ export default function DashboardContent({
 
   // Modals state
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
+  const [leadAssignmentHistory, setLeadAssignmentHistory] = useState<any[]>([]);
   const [showTimelineModal, setShowTimelineModal] = useState(false);
   const [showFastAcquisitionModal, setShowFastAcquisitionModal] = useState(false);
   
@@ -251,9 +252,11 @@ export default function DashboardContent({
   const [campaignOnWinJourneyId, setCampaignOnWinJourneyId] = useState('');
   const [campaignOnLoseJourneyId, setCampaignOnLoseJourneyId] = useState('');
   const [campaignPipelineId, setCampaignPipelineId] = useState('');
-  const [campaignRoutingMode, setCampaignRoutingMode] = useState<'ROUND_ROBIN' | 'POOL'>('ROUND_ROBIN');
+  const [campaignRoutingMode, setCampaignRoutingMode] = useState<string>('ROUND_ROBIN');
   const [campaignUseAccountManager, setCampaignUseAccountManager] = useState<boolean>(false);
   const [campaignStrictSkillMatch, setCampaignStrictSkillMatch] = useState<boolean>(false);
+  const [campaignRotationEnabled, setCampaignRotationEnabled] = useState<boolean>(false);
+  const [campaignRotationInactivityDays, setCampaignRotationInactivityDays] = useState<number>(3);
   const [campaignProductId, setCampaignProductId] = useState<string>('');
   const [campaignWarmupTemplateId, setCampaignWarmupTemplateId] = useState('');
 
@@ -662,13 +665,23 @@ export default function DashboardContent({
   };
 
   // Open Detailed Timeline modal
-  const openTimeline = (lead: any) => {
+  const openTimeline = async (lead: any) => {
     setSelectedLead(lead);
     setDetailNote('');
     setShowLossReasons(false);
     setShowScheduler(false);
     setScheduledDate('');
     setShowTimelineModal(true);
+    setLeadAssignmentHistory([]);
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/history`);
+      if (res.ok) {
+        const data = await res.json();
+        setLeadAssignmentHistory(data.data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // One-click disposition handler
@@ -1258,7 +1271,9 @@ export default function DashboardContent({
           routingMode: campaignRoutingMode,
           useAccountManager: campaignUseAccountManager,
           strictSkillMatch: campaignStrictSkillMatch,
-          productId: campaignProductId || null
+          productId: campaignProductId || null,
+          rotationEnabled: campaignRotationEnabled,
+          rotationInactivityDays: campaignRotationInactivityDays
         })
       });
 
@@ -1286,6 +1301,8 @@ export default function DashboardContent({
         setCampaignRoutingMode('ROUND_ROBIN');
         setCampaignUseAccountManager(false);
         setCampaignStrictSkillMatch(false);
+        setCampaignRotationEnabled(false);
+        setCampaignRotationInactivityDays(3);
         setCampaignProductId('');
         setNodes([]);
         setEdges([]);
@@ -3616,6 +3633,15 @@ export default function DashboardContent({
               >
                 Perfil Global do Cliente
               </button>
+              <button 
+                onClick={() => setModalActiveTab('historico_sla')}
+                style={{
+                  padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: modalActiveTab === 'historico_sla' ? '2px solid var(--accent)' : '2px solid transparent',
+                  color: modalActiveTab === 'historico_sla' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
+                }}
+              >
+                Histórico (SLA)
+              </button>
             </div>
 
             {modalActiveTab === 'oportunidade' && (
@@ -4281,6 +4307,38 @@ export default function DashboardContent({
               </div>
             )}
 
+            {modalActiveTab === 'historico_sla' && (
+              <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
+                <h4 style={{ color: 'var(--text-primary)', marginBottom: 16 }}>Histórico de Atribuição (Rotatividade de SLA)</h4>
+                {leadAssignmentHistory.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                    Nenhum histórico de repasse para este lead nesta oportunidade.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {leadAssignmentHistory.map((historyItem: any, idx: number) => (
+                      <div key={historyItem.id || idx} style={{ background: 'var(--surface-raised)', padding: 16, borderRadius: 8, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: '#fff', flexShrink: 0 }}>
+                          {historyItem.assignee?.name?.charAt(0).toUpperCase() || '🤖'}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 600 }}>
+                            {historyItem.assignee?.name || 'Sistema (Automático)'}
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                            {historyItem.reason || 'Atribuição inicial ou alteração manual'}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'right' }}>
+                          {new Date(historyItem.assignedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         </div>
       )}
@@ -4916,6 +4974,31 @@ export default function DashboardContent({
                         />
                         <span>Exigir Especialista (Skills Match)</span>
                       </label>
+                    </div>
+
+                    <div style={{ marginTop: 24, padding: 16, background: 'var(--surface-raised)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                      <h4 style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', marginBottom: 12 }}>⏰ Rotatividade Automática de Leads (SLA)</h4>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)' }}>
+                        <input 
+                          type="checkbox"
+                          checked={campaignRotationEnabled}
+                          onChange={(e) => setCampaignRotationEnabled(e.target.checked)}
+                          style={{ width: 16, height: 16, cursor: 'pointer' }}
+                        />
+                        <span>Habilitar Redistribuição por Inatividade</span>
+                      </label>
+                      {campaignRotationEnabled && (
+                        <div style={{ marginTop: 12 }}>
+                          <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Dias de inatividade para perda do Lead:</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={campaignRotationInactivityDays}
+                            onChange={(e) => setCampaignRotationInactivityDays(Number(e.target.value))}
+                            style={{ width: '150px', padding: '8px 12px', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 

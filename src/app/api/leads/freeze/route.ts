@@ -45,6 +45,11 @@ export async function POST(request: Request) {
           freezeReason: reason
         }
       });
+      // Freeze open opportunities
+      await prisma.opportunity.updateMany({
+        where: { customerId: customer.id, status: 'OPEN' },
+        data: { freezeUntil: dateToFreeze }
+      });
     } else {
       customer = await prisma.customer.create({
         data: {
