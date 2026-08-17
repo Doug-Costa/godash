@@ -162,31 +162,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadAdded, pipelines }: NewLea
           </button>
         </div>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: 20 }}>
-          <button 
-            onClick={() => setActiveTab('manual')}
-            style={{
-              padding: '12px 24px', background: 'transparent', border: 'none', 
-              borderBottom: activeTab === 'manual' ? '2px solid var(--accent)' : '2px solid transparent',
-              color: activeTab === 'manual' ? 'var(--accent)' : 'var(--text-secondary)', 
-              fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
-            }}
-          >
-            Entrada Manual
-          </button>
-          <button 
-            onClick={() => setActiveTab('csv')}
-            style={{
-              padding: '12px 24px', background: 'transparent', border: 'none', 
-              borderBottom: activeTab === 'csv' ? '2px solid var(--accent)' : '2px solid transparent',
-              color: activeTab === 'csv' ? 'var(--accent)' : 'var(--text-secondary)', 
-              fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
-            }}
-          >
-            Importação via CSV
-          </button>
-        </div>
+
 
         {/* Body */}
         <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
@@ -253,85 +229,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadAdded, pipelines }: NewLea
             </form>
           )}
 
-          {activeTab === 'csv' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              
-              <div style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
-                <h4 style={{ margin: '0 0 8px 0', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
-                  Instruções do CSV
-                </h4>
-                <p style={{ margin: '0 0 12px 0', fontSize: 12, color: 'var(--text-secondary)' }}>O arquivo CSV deve conter um cabeçalho na primeira linha. As colunas reconhecidas são:</p>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, fontSize: 11, color: 'var(--text-primary)', padding: '4px 8px' }}>nome</span>
-                  <span style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, fontSize: 11, color: 'var(--text-primary)', padding: '4px 8px' }}>email</span>
-                  <span style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, fontSize: 11, color: 'var(--text-primary)', padding: '4px 8px' }}>telefone</span>
-                  <span style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, fontSize: 11, color: 'var(--text-primary)', padding: '4px 8px' }}>stage</span>
-                </div>
-              </div>
 
-              <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 6, color: 'var(--text-secondary)', fontWeight: 600, fontSize: 12 }}>Funil de Destino</label>
-                <select 
-                  value={csvPipelineId}
-                  onChange={e => setCsvPipelineId(e.target.value)}
-                  style={{ width: '100%', padding: '10px 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none', cursor: 'pointer', boxSizing: 'border-box' }}
-                >
-                  {pipelines.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{
-                border: '2px dashed var(--border)', borderRadius: 12, padding: '32px 16px', textAlign: 'center',
-                background: 'var(--surface-raised)', transition: 'all 0.2s', display: 'flex', flexDirection: 'column', alignItems: 'center'
-              }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 12 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <p style={{ margin: '0 0 16px 0', fontSize: 13, color: 'var(--text-secondary)' }}>
-                  {csvFile ? csvFile.name : 'Arraste seu arquivo CSV ou clique para selecionar'}
-                </p>
-                <label className="btn-action btn-action-outline" style={{ padding: '8px 16px', borderRadius: 8, cursor: 'pointer', background: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border)', fontWeight: 600, fontSize: 12 }}>
-                  Selecionar Arquivo
-                  <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => setCsvFile(e.target.files?.[0] || null)} />
-                </label>
-              </div>
-
-              {uploadResult && (
-                <div style={{
-                  padding: 16, borderRadius: 8, border: '1px solid',
-                  background: uploadResult.failed === 0 ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
-                  borderColor: uploadResult.failed === 0 ? '#4ADE80' : '#F87171',
-                  color: uploadResult.failed === 0 ? '#4ADE80' : '#F87171'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    {uploadResult.failed === 0 ? (
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    )}
-                    <div>
-                      <p style={{ margin: 0, fontWeight: 600, fontSize: 13 }}>Importação Concluída</p>
-                      <p style={{ margin: '4px 0 0 0', fontSize: 11, color: 'var(--text-secondary)' }}>
-                        {uploadResult.success} leads importados com sucesso. {uploadResult.failed} falhas. Total processado: {uploadResult.total}.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-                <button 
-                  onClick={handleCsvUpload}
-                  disabled={!csvFile || isUploading}
-                  className="btn-action btn-action-purple"
-                  style={{ padding: '10px 24px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none', fontWeight: 600 }}
-                >
-                  {isUploading ? 'Importando...' : 'Iniciar Importação'}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
