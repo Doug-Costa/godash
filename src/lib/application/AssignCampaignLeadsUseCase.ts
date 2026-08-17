@@ -192,6 +192,52 @@ export class AssignCampaignLeadsUseCase {
         }
       }
 
+      // Upsert Opportunity
+      if (targetPipelineId) {
+        let opp = await prisma.opportunity.findFirst({
+          where: { customerId: customer.id, pipelineId: targetPipelineId, status: 'OPEN' }
+        });
+
+        if (!opp) {
+          opp = await prisma.opportunity.create({
+            data: {
+              customerId: customer.id,
+              pipelineId: targetPipelineId,
+              stage: 'novo_cadastro',
+              assigneeId,
+              sourceCampaignId: campaignId
+            }
+          });
+        } else {
+          // Fechar historico antigo se o assignee mudou
+          if (opp.assigneeId !== assigneeId) {
+            await prisma.leadAssignmentHistory.updateMany({
+              where: { opportunityId: opp.id, assigneeId: opp.assigneeId, releasedAt: null },
+              data: { releasedAt: new Date(), reason: 'MANUAL_TRANSFER' }
+            });
+          }
+          opp = await prisma.opportunity.update({
+            where: { id: opp.id },
+            data: {
+              stage: 'novo_cadastro',
+              assigneeId,
+              lastSignificantActivityAt: new Date()
+            }
+          });
+        }
+
+        // Criar registro de historico se há assignee
+        if (assigneeId) {
+          await prisma.leadAssignmentHistory.create({
+            data: {
+              opportunityId: opp.id,
+              assigneeId,
+              reason: 'INITIAL'
+            }
+          });
+        }
+      }
+
       // 3. Excluir alertas pendentes anteriores para este customer
       await prisma.task.deleteMany({
         where: {

@@ -3,6 +3,7 @@ import { redisConnection } from './connection';
 import prisma from '../prisma';
 import pool from '../db';
 import { CustomerCreationService } from '../application/CustomerCreationService';
+import { LeadRotationService } from '../services/LeadRotationService';
 
 export const syncWorker = new Worker('CustomerSyncQueue', async (job) => {
   if (job.name === 'sync-customers') {
@@ -165,6 +166,17 @@ export const syncWorker = new Worker('CustomerSyncQueue', async (job) => {
       console.log(`[SyncWorker] Sincronização finalizada. Upserted ${abandonedCount} abandonos e ${expiringCount} expirações.`);
     } catch (error: any) {
       console.error('[SyncWorker] Erro crítico durante a sincronização:', error);
+      throw error;
+    }
+  } else if (job.name === 'rotate-leads') {
+    console.log('[SyncWorker] Iniciando rotatividade automática de leads (SLA)...');
+    try {
+      const { LeadRotationService } = await import('../services/LeadRotationService');
+      const rotationService = new LeadRotationService();
+      const count = await rotationService.processRotations();
+      console.log(`[SyncWorker] Rotatividade concluída. ${count} oportunidades rotacionadas.`);
+    } catch (error: any) {
+      console.error('[SyncWorker] Erro crítico durante rotatividade:', error);
       throw error;
     }
   }

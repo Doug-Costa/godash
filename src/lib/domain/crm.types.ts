@@ -52,7 +52,7 @@ export interface ICrmRepository {
   getManyCustomers(externalPersonIds: number[]): Promise<CrmCustomer[]>;
   updateStage(idOrExtId: string | number | null, newStage: string, journeyId?: string | null): Promise<CrmCustomer>;
   assignLead(idOrExtId: string | number | null, assigneeId: string | null, journeyId?: string | null): Promise<CrmCustomer>;
-  addInteraction(idOrExtId: string | number | null, text: string, authorId: string | null, journeyId?: string | null): Promise<CrmInteraction>;
+  addInteraction(idOrExtId: string | number | null, text: string, authorId: string | null, journeyId?: string | null, type?: string): Promise<CrmInteraction>;
   getInteractions(idOrExtId: string | number | null, journeyId?: string | null): Promise<CrmInteraction[]>;
   
   // DDD actions

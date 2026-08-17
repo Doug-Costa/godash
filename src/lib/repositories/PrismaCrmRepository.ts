@@ -135,6 +135,7 @@ export class PrismaCrmRepository implements ICrmRepository {
         where: { customerId: customer.id, pipelineId: targetPipelineId },
         data: { 
           stage: newStage,
+          lastSignificantActivityAt: new Date(),
           ...(oppStatus && { status: oppStatus })
         }
       });
@@ -215,7 +216,7 @@ export class PrismaCrmRepository implements ICrmRepository {
     };
   }
 
-  async addInteraction(idOrExtId: string | number | null, text: string, authorId: string | null, journeyId?: string | null): Promise<CrmInteraction> {
+  async addInteraction(idOrExtId: string | number | null, text: string, authorId: string | null, journeyId?: string | null, type?: string): Promise<CrmInteraction> {
     const customer = await this.findOrCreateCustomer(idOrExtId, journeyId);
 
     await prisma.customer.update({
@@ -233,8 +234,17 @@ export class PrismaCrmRepository implements ICrmRepository {
         customerId: customer.id,
         text,
         authorId,
+        type: type || undefined,
       },
     });
+
+    const SIGNIFICANT_TYPES = ['CONTACT_ATTEMPT', 'CALL_COMPLETED', 'EMAIL_SENT', 'WHATSAPP_INTERACTION', 'MEETING_SCHEDULED'];
+    if (type && SIGNIFICANT_TYPES.includes(type)) {
+      await prisma.opportunity.updateMany({
+        where: { customerId: customer.id, status: 'OPEN' },
+        data: { lastSignificantActivityAt: new Date() }
+      });
+    }
 
     return {
       id: interaction.id,

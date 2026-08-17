@@ -50,6 +50,9 @@ model User {
   // Import V4 relations
   productAliases      ProductAlias[]
   uploadedBatches     ImportBatch[]
+  
+  // Rotation
+  leadAssignmentHistory LeadAssignmentHistory[]
 }
 
 model Account {
@@ -261,10 +264,14 @@ model Journey {
   updatedAt      DateTime     @updatedAt
 
   // Routing fields
-  routingMode       String         @default("ROUND_ROBIN")
-  useAccountManager Boolean        @default(false)
-  strictSkillMatch  Boolean        @default(false)
-  productId         String?
+  routingMode        String    @default("ROUND_ROBIN") // ROUND_ROBIN, POOL
+  useAccountManager  Boolean   @default(false)
+  strictSkillMatch   Boolean   @default(false)
+  productId          String?
+  
+  // Rotation
+  rotationEnabled        Boolean @default(false)
+  rotationInactivityDays Int     @default(3)
   product           Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   // Account Manager governance (Fase 1)
@@ -633,6 +640,22 @@ model Opportunity {
   tasks          Task[]
   interactions   Interaction[]
   flowExecutions FlowExecution[]
+  
+  // Lead Rotation
+  lastSignificantActivityAt DateTime  @default(now())
+  freezeUntil               DateTime?
+  assignmentHistory         LeadAssignmentHistory[]
+}
+
+model LeadAssignmentHistory {
+  id            String      @id @default(cuid())
+  opportunityId String
+  opportunity   Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  assigneeId    String?
+  assignee      User?       @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  assignedAt    DateTime    @default(now())
+  releasedAt    DateTime?
+  reason        String      // "INITIAL", "SLA_EXPIRED", "MANUAL_TRANSFER"
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
