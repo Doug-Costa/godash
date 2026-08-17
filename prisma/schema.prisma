@@ -46,6 +46,10 @@ model User {
   managedPersons      Person[]    @relation("PersonAccountManager")
   identityReviews     IdentityReview[]
   decidedMerges       MergeEvent[]
+  
+  // Import V4 relations
+  productAliases      ProductAlias[]
+  uploadedBatches     ImportBatch[]
 }
 
 model Account {
@@ -560,6 +564,7 @@ model Product {
   opportunities    Opportunity[]
   customerProducts CustomerProduct[]
   forms            Form[]
+  aliases          ProductAlias[]
 }
 
 model CustomerProduct {
@@ -712,6 +717,47 @@ model SyncLog {
 
   // Quem disparou
   triggeredBy  String @default("CRON") // "CRON" | "MANUAL" | "STARTUP"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Import V4 — Auditoria e Resolução de Catálogo
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ProductAlias {
+  id              String   @id @default(cuid())
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  rawValue        String
+  normalizedValue String   @unique // Normalização (lowercase, trim, sem acentos) para busca primária
+  sourceLabel     String?  // Opcional para tracking de origem da sigla
+  
+  createdBy       String?  // ID do User que autorizou a criação do alias no HITL
+  creator         User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([productId])
+}
+
+model ImportBatch {
+  id             String   @id @default(cuid())
+  fileName       String
+  fileHash       String   @unique // Para impedir duplo upload idêntico 
+  schemaVersion  String   // Ex: "v4-canonical" ou "v4-marketing"
+  
+  uploadedById   String?
+  uploadedBy     User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  
+  status         String   @default("PREFLIGHT") // PREFLIGHT, IMPORTING, COMPLETED, FAILED
+  
+  totalRows      Int      @default(0)
+  successRows    Int      @default(0)
+  warningRows    Int      @default(0)
+  errorRows      Int      @default(0)
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 enum ProductCategory {
