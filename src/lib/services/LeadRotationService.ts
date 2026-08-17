@@ -1,5 +1,7 @@
 import prisma from '../prisma';
 import { RoutingEngineService } from './RoutingEngineService';
+import { DomainEventService } from '@/lib/services/DomainEventService';
+import { DomainEventType, ActorType } from '@/lib/domain/events';
 import { CrmEventDispatcher } from '../domain/crm.events';
 
 export class LeadRotationService {
@@ -98,6 +100,21 @@ export class LeadRotationService {
               opportunityId: op.id,
               assigneeId: newAssigneeId,
               reason: 'ROTATED_DUE_TO_INACTIVITY'
+            }
+          });
+
+          // Dispara o Domain Event
+          DomainEventService.publish({
+            type: DomainEventType.CUSTOMER_ROTATED,
+            personId: op.customer.personId,
+            customerId: op.customerId,
+            opportunityId: op.id,
+            campaignId: campaign.id,
+            actorType: ActorType.SYSTEM,
+            metadata: { 
+              previousAssigneeId, 
+              newAssigneeId, 
+              inactivityDays: campaign.rotationInactivityDays 
             }
           });
 

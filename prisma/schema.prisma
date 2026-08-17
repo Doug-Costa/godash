@@ -783,6 +783,38 @@ model ImportBatch {
   updatedAt      DateTime @updatedAt
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// FASE 1 — Domain Events (Motor de Auditoria e Timeline)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model DomainEvent {
+  id             String   @id @default(cuid())
+  type           String   // Ex: LEAD_CAPTURED, OPPORTUNITY_STAGE_CHANGED
+  
+  // Agrupadores opcionais para filtro
+  personId       String?
+  customerId     String?
+  opportunityId  String?
+  campaignId     String?
+  productId      String?
+  
+  // Quem disparou a ação
+  actorType      String   // Ex: USER, SYSTEM, WORKER, IMPORT
+  actorId        String?  // Id do User se actorType = USER
+  
+  // Correlação (opcional)
+  correlationId  String?
+  causationId    String?
+  
+  metadata       Json?    @default("{}")
+  occurredAt     DateTime @default(now())
+  
+  @@index([personId])
+  @@index([customerId])
+  @@index([opportunityId])
+  @@index([type])
+}
+
 enum ProductCategory {
   CURSO
   CONGRESSO

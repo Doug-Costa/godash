@@ -1,5 +1,7 @@
 import prisma from '../prisma';
 import { RoutingEngineService } from '../services/RoutingEngineService';
+import { DomainEventService } from '@/lib/services/DomainEventService';
+import { DomainEventType, ActorType } from '@/lib/domain/events';
 
 export class AssignCampaignLeadsUseCase {
   async execute(customerIdsOrExternalIds: (string | number)[], campaignId: string, userIds: string[], startDate?: string) {
@@ -208,6 +210,15 @@ export class AssignCampaignLeadsUseCase {
               sourceCampaignId: campaignId
             }
           });
+          DomainEventService.publish({
+            type: DomainEventType.OPPORTUNITY_CREATED,
+            personId: customer.personId,
+            customerId: customer.id,
+            opportunityId: opp.id,
+            campaignId: campaignId,
+            actorType: ActorType.SYSTEM,
+            metadata: { pipelineId: targetPipelineId }
+          });
         } else {
           // Fechar historico antigo se o assignee mudou
           if (opp.assigneeId !== assigneeId) {
@@ -234,6 +245,18 @@ export class AssignCampaignLeadsUseCase {
               assigneeId,
               reason: 'INITIAL'
             }
+          });
+
+          // Dispara Domain Event de Assignment
+          DomainEventService.publish({
+            type: DomainEventType.CUSTOMER_ASSIGNED,
+            personId: customer.personId,
+            customerId: customer.id,
+            opportunityId: opp.id,
+            campaignId: campaignId,
+            actorType: ActorType.SYSTEM,
+            actorId: assigneeId,
+            metadata: { reason: 'INITIAL' }
           });
         }
       }

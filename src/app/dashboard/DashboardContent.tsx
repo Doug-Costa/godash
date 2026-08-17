@@ -87,7 +87,7 @@ export default function DashboardContent({
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
   const [atendimentoFila, setAtendimentoFila] = useState<'alerts' | 'cancelados' | 'expirar' | 'abandonados'>('alerts');
   const [filaCounts, setFilaCounts] = useState({ alerts: 0, cancelados: 0, expirar: 0, abandonados: 0 });
-  const [modalActiveTab, setModalActiveTab] = useState<'oportunidade' | 'perfil' | 'historico_sla'>('oportunidade');
+  const [modalActiveTab, setModalActiveTab] = useState<'oportunidade' | 'perfil' | 'historico_sla' | 'timeline360'>('oportunidade');
   
   const visiblePipelines = pipelines.filter(p => isAdmin || p.name !== 'Nutrição');
   const defaultPipeline = visiblePipelines.find(p => p.name === 'Vendas') || visiblePipelines[0];
@@ -130,6 +130,7 @@ export default function DashboardContent({
   // Modals state
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [leadAssignmentHistory, setLeadAssignmentHistory] = useState<any[]>([]);
+  const [timeline360Events, setTimeline360Events] = useState<any[]>([]);
   const [showTimelineModal, setShowTimelineModal] = useState(false);
   const [showFastAcquisitionModal, setShowFastAcquisitionModal] = useState(false);
   
@@ -673,11 +674,21 @@ export default function DashboardContent({
     setScheduledDate('');
     setShowTimelineModal(true);
     setLeadAssignmentHistory([]);
+    setTimeline360Events([]);
     try {
-      const res = await fetch(`/api/leads/${lead.id}/history`);
-      if (res.ok) {
-        const data = await res.json();
-        setLeadAssignmentHistory(data.data || []);
+      const [resHistory, resEvents] = await Promise.all([
+        fetch(`/api/leads/${lead.id}/history`),
+        fetch(`/api/leads/${lead.id}/events`)
+      ]);
+      
+      if (resHistory.ok) {
+        const dataH = await resHistory.json();
+        setLeadAssignmentHistory(dataH.data || []);
+      }
+      
+      if (resEvents.ok) {
+        const dataE = await resEvents.json();
+        setTimeline360Events(dataE.data || []);
       }
     } catch (e) {
       console.error(e);
@@ -3642,6 +3653,15 @@ export default function DashboardContent({
               >
                 Histórico (SLA)
               </button>
+              <button 
+                onClick={() => setModalActiveTab('timeline360')}
+                style={{
+                  padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: modalActiveTab === 'timeline360' ? '2px solid var(--accent)' : '2px solid transparent',
+                  color: modalActiveTab === 'timeline360' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
+                }}
+              >
+                Timeline 360
+              </button>
             </div>
 
             {modalActiveTab === 'oportunidade' && (
@@ -4334,6 +4354,60 @@ export default function DashboardContent({
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {modalActiveTab === 'timeline360' && (
+              <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
+                <h4 style={{ color: 'var(--text-primary)', marginBottom: 16 }}>Timeline 360 (Auditoria Completa)</h4>
+                {timeline360Events.length === 0 ? (
+                  <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
+                    Nenhum evento registrado ainda para este cliente.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
+                    {/* Vertical line */}
+                    <div style={{ position: 'absolute', left: 24, top: 0, bottom: 0, width: 2, background: 'var(--border)', zIndex: 0 }}></div>
+                    
+                    {timeline360Events.map((ev: any, idx: number) => {
+                      let icon = '📌';
+                      let color = 'var(--text-secondary)';
+                      let title = ev.type;
+                      let desc = '';
+
+                      if (ev.type === 'OPPORTUNITY_CREATED') { icon = '🚀'; color = 'var(--accent)'; title = 'Oportunidade Criada'; desc = `Funil: ${ev.metadata?.pipelineId || 'N/A'}`; }
+                      if (ev.type === 'OPPORTUNITY_STAGE_CHANGED') { icon = '🔄'; color = '#EAB308'; title = 'Mudança de Estágio'; desc = `${ev.metadata?.fromStage || '?'} ➔ ${ev.metadata?.toStage || '?'}`; }
+                      if (ev.type === 'CUSTOMER_ASSIGNED') { icon = '👤'; color = '#3B82F6'; title = 'Operador Atribuído'; desc = ev.metadata?.reason || 'Atribuição Inicial'; }
+                      if (ev.type === 'CUSTOMER_ROTATED') { icon = '⏳'; color = '#EF4444'; title = 'Rodízio por Inatividade (SLA)'; desc = `Inatividade: ${ev.metadata?.inactivityDays || '?'} dias`; }
+
+                      return (
+                        <div key={ev.id || idx} style={{ display: 'flex', gap: 16, position: 'relative', zIndex: 1, paddingBottom: 16 }}>
+                          <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--surface-raised)', border: `2px solid ${color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+                            {icon}
+                          </div>
+                          <div style={{ background: 'var(--surface-raised)', padding: 16, borderRadius: 12, border: '1px solid var(--border)', flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                              <div>
+                                <h5 style={{ color: color, fontSize: 14, margin: 0, fontWeight: 700 }}>{title}</h5>
+                                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                                  Ator: <span style={{ color: 'var(--text-primary)' }}>{ev.actorType}</span> {ev.actorId ? `(${ev.actorId})` : ''}
+                                </div>
+                              </div>
+                              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                {new Date(ev.occurredAt).toLocaleString('pt-BR')}
+                              </div>
+                            </div>
+                            {desc && (
+                              <div style={{ fontSize: 13, color: 'var(--text-primary)', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                                {desc}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

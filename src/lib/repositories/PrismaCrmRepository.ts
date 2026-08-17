@@ -1,4 +1,6 @@
 import prisma from '@/lib/prisma';
+import { DomainEventService } from '@/lib/services/DomainEventService';
+import { DomainEventType, ActorType } from '@/lib/domain/events';
 import { ICrmRepository, CrmCustomer, CrmInteraction, LossReason, LeadTag } from '@/lib/domain/crm.types';
 import { CustomerRevenueService } from '@/lib/application/CustomerRevenueService';
 import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
@@ -147,6 +149,19 @@ export class PrismaCrmRepository implements ICrmRepository {
           console.error('[PrismaCrmRepository] Error recalculating LTV on stage move:', err);
         }
       }
+
+      // Dispara Domain Event
+      DomainEventService.publish({
+        type: DomainEventType.OPPORTUNITY_STAGE_CHANGED,
+        personId: customer.personId,
+        customerId: customer.id,
+        actorType: ActorType.SYSTEM,
+        metadata: {
+          fromStage: customer.stage,
+          toStage: newStage,
+          pipelineId: targetPipelineId
+        }
+      });
     }
 
     return {
