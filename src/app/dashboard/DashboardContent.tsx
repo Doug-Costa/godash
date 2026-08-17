@@ -3629,6 +3629,25 @@ export default function DashboardContent({
                   )}
                   <span>&bull;</span>
                   <span>📅 Cadastrado em: {selectedLead.createdAt ? new Date(selectedLead.createdAt).toLocaleDateString('pt-BR') : 'N/A'}</span>
+                  {selectedLead.isBookPurchase && (
+                    <>
+                      <span>&bull;</span>
+                      <span style={{ 
+                        background: 'rgba(236, 72, 153, 0.12)', 
+                        color: '#EC4899', 
+                        padding: '2px 8px', 
+                        borderRadius: 4, 
+                        fontWeight: 'bold', 
+                        fontSize: '0.75rem',
+                        border: '1px solid rgba(236, 72, 153, 0.3)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        📖 Comprou Livro
+                      </span>
+                    </>
+                  )}
                   {selectedLead.humanTakeover && (
                     <>
                       <span>&bull;</span>
@@ -4320,6 +4339,23 @@ export default function DashboardContent({
                             <div><strong style={{ color: 'var(--text-primary)' }}>Expiração da Assinatura:</strong> {new Date(selectedLead.subscriptionEndDate).toLocaleDateString('pt-BR')}</div>
                           )}
                         </>
+                      )}
+                      {selectedLead.isBookPurchase && (
+                        <div style={{
+                          marginTop: 8,
+                          padding: '8px 12px',
+                          background: 'rgba(236, 72, 153, 0.08)',
+                          border: '1px solid rgba(236, 72, 153, 0.2)',
+                          borderRadius: 6,
+                          color: '#EC4899',
+                          fontWeight: 600,
+                          fontSize: '0.8rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6
+                        }}>
+                          <span>📖</span> Cliente comprou Livro / E-book
+                        </div>
                       )}
                     </div>
                   </div>

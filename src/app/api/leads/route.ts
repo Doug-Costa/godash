@@ -135,9 +135,9 @@ export async function GET(request: Request) {
         FROM purchases pur
         LEFT JOIN purchase_items pi ON pi.purchaseId = pur.id
         LEFT JOIN product_items pit ON pi.productItemId = pit.id
-        LEFT JOIN plans spl ON pit.productId = spl.id
+        LEFT JOIN products pr ON pit.productId = pr.id
         WHERE pur.personId = p.id AND pur.status = 'success'
-          AND (LOWER(spl.title) LIKE '%livro%' OR LOWER(spl.title) LIKE '%ebook%' OR LOWER(spl.title) LIKE '%book%' OR LOWER(spl.title) LIKE '%revista%')
+          AND (pr.productType = 'book' OR LOWER(pr.title) LIKE '%livro%' OR LOWER(pr.title) LIKE '%ebook%' OR LOWER(pr.title) LIKE '%book%')
       ) as hasBookPurchase
     `;
 
