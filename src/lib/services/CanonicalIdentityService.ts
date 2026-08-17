@@ -45,6 +45,72 @@ export class CanonicalIdentityService {
   }
 
   /**
+   * Inspeção read-only da identidade para o Pre-flight (CDP V4).
+   * Diferente de `resolve()`, este método NUNCA executa mutações no banco.
+   * Ele retorna o status e a possível Person encontrada.
+   */
+  static async inspect(input: Omit<ResolveInput, 'rawData'>): Promise<{ status: 'FOUND' | 'NOT_FOUND' | 'AMBIGUOUS'; personId?: string }> {
+    const { source, externalId } = input;
+    const email = this.normalizeEmail(input.email);
+    const phone = this.normalizePhone(input.phone);
+
+    // 1. Tentar encontrar o Alias existente
+    const existingAlias = await prisma.identityAlias.findUnique({
+      where: {
+        source_externalId: { source, externalId }
+      },
+      select: { personId: true }
+    });
+
+    if (existingAlias) {
+      return { status: 'FOUND', personId: existingAlias.personId };
+    }
+
+    // 2. Busca canônica flexível (E-mail OU Telefone)
+    const OR_conditions: any[] = [];
+    if (email) OR_conditions.push({ email });
+    if (phone) OR_conditions.push({ phoneNumber: phone });
+
+    if (OR_conditions.length > 0) {
+      const candidates = await prisma.person.findMany({
+        where: { OR: OR_conditions },
+        select: { id: true },
+        take: 2
+      });
+
+      if (candidates.length === 1) {
+        return { status: 'FOUND', personId: candidates[0].id };
+      }
+      if (candidates.length > 1) {
+        return { status: 'AMBIGUOUS' };
+      }
+    }
+
+    // 3. Busca por Aliases paralelos (se não achou pela Person base)
+    if (OR_conditions.length > 0) {
+      const aliasCandidates = await prisma.identityAlias.findMany({
+        where: {
+          OR: [
+            ...(email ? [{ email }] : []),
+            ...(phone ? [{ phone }] : [])
+          ]
+        },
+        select: { personId: true },
+        distinct: ['personId']
+      });
+
+      if (aliasCandidates.length === 1) {
+        return { status: 'FOUND', personId: aliasCandidates[0].personId };
+      }
+      if (aliasCandidates.length > 1) {
+        return { status: 'AMBIGUOUS' };
+      }
+    }
+
+    return { status: 'NOT_FOUND' };
+  }
+
+  /**
    * Resolve uma única identidade de forma atômica e concorrida-segura.
    * Dominio: Resolução de Identidade Canônica
    * Input: ResolveInput { source, externalId, email, phone, name, rawData }
