@@ -21,18 +21,15 @@ export function NewLeadModal({ isOpen, onClose, onLeadAdded, pipelines }: NewLea
     source: 'MANUAL'
   });
 
-  // CSV Form State
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvPipelineId, setCsvPipelineId] = useState(pipelines.length > 0 ? pipelines[0].id : '');
+  // Conflict State
+  const [conflictData, setConflictData] = useState<{ personName: string; conflicts: any[] } | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<{success: number; failed: number; total: number} | null>(null);
   
   if (!isOpen) return null;
 
-  const handleManualSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const performImport = async () => {
     setIsUploading(true);
-    
     try {
       const res = await fetch('/api/leads/import', {
         method: 'POST',
@@ -47,6 +44,7 @@ export function NewLeadModal({ isOpen, onClose, onLeadAdded, pipelines }: NewLea
         onLeadAdded();
         onClose();
         setManualData({ ...manualData, name: '', email: '', phone: '' });
+        setConflictData(null);
       } else {
         alert('Erro ao adicionar lead');
       }
@@ -58,84 +56,44 @@ export function NewLeadModal({ isOpen, onClose, onLeadAdded, pipelines }: NewLea
     }
   };
 
-  const parseCSV = (text: string): Record<string, string>[] => {
-    const lines = text.split(/\r?\n/);
-    if (lines.length === 0) return [];
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, ''));
-    const results: Record<string, string>[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      
-      const values: string[] = [];
-      let currentVal = '';
-      let inQuotes = false;
-      for (let charIndex = 0; charIndex < line.length; charIndex++) {
-        const char = line[charIndex];
-        if (char === '"' || char === "'") {
-          inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-          values.push(currentVal.trim().replace(/^["']|["']$/g, ''));
-          currentVal = '';
-        } else {
-          currentVal += char;
-        }
-      }
-      values.push(currentVal.trim().replace(/^["']|["']$/g, ''));
-
-      const obj: Record<string, string> = {};
-      headers.forEach((header, index) => {
-        if (header) {
-          obj[header] = values[index] || '';
-        }
+  const handleManualSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsChecking(true);
+    
+    try {
+      const checkRes = await fetch('/api/leads/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: manualData.name,
+          email: manualData.email,
+          phone: manualData.phone
+        })
       });
-      results.push(obj);
-    }
-    return results;
-  };
 
-  const handleCsvUpload = async () => {
-    if (!csvFile) return;
-    setIsUploading(true);
-    setUploadResult(null);
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const text = e.target?.result as string;
-      const parsedData = parseCSV(text);
-
-      try {
-        const res = await fetch('/api/leads/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mode: 'csv',
-            pipelineId: csvPipelineId,
-            source: 'CSV',
-            rows: parsedData
-          })
-        });
-
-        const json = await res.json();
-        if (res.ok) {
-          setUploadResult({
-            success: json.successCount || 0,
-            failed: json.failedCount || 0,
-            total: parsedData.length
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        if (checkData.exists && checkData.conflicts && checkData.conflicts.length > 0) {
+          setConflictData({
+            personName: checkData.personName,
+            conflicts: checkData.conflicts
           });
-          onLeadAdded();
-        } else {
-          alert('Erro ao importar CSV: ' + json.error);
+          setIsChecking(false);
+          return; // Stop here, show conflict UI
         }
-      } catch (err) {
-        console.error(err);
-        alert('Erro na comunicação com o servidor durante a importação.');
-      } finally {
-        setIsUploading(false);
       }
-    };
-    reader.readAsText(csvFile);
+      
+      // If no conflict or error in check, proceed to import
+      await performImport();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao verificar conflitos. Prosseguindo com inserção...');
+      await performImport();
+    } finally {
+      setIsChecking(false);
+    }
   };
+
 
   return (
     <div style={{
@@ -166,7 +124,43 @@ export function NewLeadModal({ isOpen, onClose, onLeadAdded, pipelines }: NewLea
 
         {/* Body */}
         <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
-          {activeTab === 'manual' && (
+          {conflictData ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, background: 'rgba(234, 179, 8, 0.1)', padding: 24, borderRadius: 12, border: '1px solid #EAB308' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#CA8A04' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Conflito Detectado!</h4>
+              </div>
+              <p style={{ margin: 0, fontSize: 14, color: 'var(--text-primary)' }}>
+                O sistema já encontrou o contato <strong>{conflictData.personName}</strong>. 
+                Ele possui as seguintes oportunidades em aberto:
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: 'var(--text-secondary)' }}>
+                {conflictData.conflicts.map((c, i) => (
+                  <li key={i} style={{ marginBottom: 6 }}>
+                    Funil <strong>{c.pipelineName}</strong> (Campanha: {c.journeyName}) - Em atendimento por <strong>{c.assigneeName}</strong>
+                  </li>
+                ))}
+              </ul>
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--text-primary)', fontWeight: 600 }}>
+                Você tem certeza que deseja criar uma nova oportunidade paralela para ele?
+              </p>
+              <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+                <button 
+                  onClick={() => setConflictData(null)}
+                  style={{ flex: 1, padding: '10px 16px', borderRadius: 8, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-primary)', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Cancelar e Voltar
+                </button>
+                <button 
+                  onClick={performImport}
+                  disabled={isUploading}
+                  style={{ flex: 1, padding: '10px 16px', borderRadius: 8, background: '#CA8A04', border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {isUploading ? 'Inserindo...' : 'Forçar Inserção Paralela'}
+                </button>
+              </div>
+            </div>
+          ) : (
             <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <label className="label-sm" style={{ display: 'block', marginBottom: 6, color: 'var(--text-secondary)', fontWeight: 600, fontSize: 12 }}>Nome Completo</label>
@@ -219,11 +213,11 @@ export function NewLeadModal({ isOpen, onClose, onLeadAdded, pipelines }: NewLea
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
                 <button 
                   type="submit" 
-                  disabled={isUploading}
+                  disabled={isChecking || isUploading}
                   className="btn-action btn-action-purple"
                   style={{ padding: '10px 24px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none', fontWeight: 600 }}
                 >
-                  {isUploading ? 'Adicionando...' : 'Adicionar Lead'}
+                  {isChecking ? 'Verificando...' : isUploading ? 'Adicionando...' : 'Adicionar Lead'}
                 </button>
               </div>
             </form>
