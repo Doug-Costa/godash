@@ -161,32 +161,92 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
         </div>
 
         {showManual && (
-          <div className="animate-fadeDown" style={{ background: 'var(--surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            <h4 style={{ color: 'var(--text-primary)', margin: '0 0 12px 0', fontSize: '1rem' }}>Dicionário de Preenchimento</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div className="animate-fadeDown" style={{ background: 'var(--surface)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+            <h4 style={{ color: 'var(--text-primary)', margin: '0 0 16px 0', fontSize: '1.1rem' }}>Dicionário Completo de Preenchimento</h4>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Identidade */}
               <div>
-                <strong style={{ color: 'var(--text-primary)' }}>nome (obrigatório)</strong>
-                <p style={{ margin: '4px 0 0 0' }}>Nome completo do lead. O sistema tentará unir (merge) casos idênticos.</p>
+                <h5 style={{ color: 'var(--accent)', margin: '0 0 8px 0', fontSize: '0.9rem', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>👤 1. Identidade (Quem é?)</h5>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>name</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>Nome completo do lead. Opcional caso tenha email ou telefone.</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>email / phone</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>Chaves principais. O <b>phone</b> deve incluir código do país (ex: 551199999999).</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>document</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>CPF/CNPJ (apenas números). Ajuda na resolução de identidade.</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>external_id</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>ID deste contato na sua plataforma de origem (Hotmart, ERP, etc).</p>
+                  </div>
+                </div>
               </div>
+
+              {/* Fato Comercial */}
               <div>
-                <strong style={{ color: 'var(--text-primary)' }}>email / phone</strong>
-                <p style={{ margin: '4px 0 0 0' }}>Para telefone, utilize o código de área. É crucial para identificar leads repetidos.</p>
+                <h5 style={{ color: 'var(--accent)', margin: '0 0 8px 0', fontSize: '0.9rem', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>📊 2. Evento Comercial (O que aconteceu?)</h5>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>fact_type (obrigatório)</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>Qual é a natureza deste evento? Use: <code style={{color: 'var(--accent)'}}>LEAD_CAPTURE</code>, <code style={{color: 'var(--accent)'}}>OPPORTUNITY</code>, <code style={{color: 'var(--accent)'}}>PURCHASE</code> ou <code style={{color: 'var(--accent)'}}>SUBSCRIPTION</code>.</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>fact_status</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>Status do fato. Exemplos: <code style={{color: 'var(--accent)'}}>OPEN</code>, <code style={{color: 'var(--accent)'}}>WON</code>, <code style={{color: 'var(--accent)'}}>ACTIVE</code>, <code style={{color: 'var(--accent)'}}>CANCELED</code>.</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>product_id / product_name</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>Produto associado. O sistema tentará cruzar com seu catálogo de produtos.</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>value / currency</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>O valor do evento (ex: <code style={{color: 'var(--accent)'}}>1500.50</code>) e a moeda (ex: <code style={{color: 'var(--accent)'}}>BRL</code>, <code style={{color: 'var(--accent)'}}>USD</code>).</p>
+                  </div>
+                </div>
               </div>
+
+              {/* Temporalidade */}
               <div>
-                <strong style={{ color: 'var(--text-primary)' }}>external_id</strong>
-                <p style={{ margin: '4px 0 0 0' }}>ID do contato no seu sistema legado, hotmart, ou ERP (ex: 492011). Essencial para migrações.</p>
+                <h5 style={{ color: 'var(--accent)', margin: '0 0 8px 0', fontSize: '0.9rem', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>⏳ 3. Linha do Tempo (Quando?)</h5>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>occurred_at</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>Data em que o evento ocorreu (ISO 8601: <code style={{color: 'var(--accent)'}}>2026-08-15T14:30:00Z</code>).</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>started_at / ended_at</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>Usados para assinaturas (início da vigência e data de cancelamento).</p>
+                  </div>
+                </div>
               </div>
+
+              {/* Metadados e Tracking */}
               <div>
-                <strong style={{ color: 'var(--text-primary)' }}>product</strong>
-                <p style={{ margin: '4px 0 0 0' }}>Nome ou ID do produto vendido. O sistema tentará associar automaticamente aos seus produtos cadastrados.</p>
-              </div>
-              <div>
-                <strong style={{ color: 'var(--text-primary)' }}>price / currency</strong>
-                <p style={{ margin: '4px 0 0 0' }}>Preço pago e a moeda (BRL, USD, EUR). Se não preencher "currency", assumimos BRL.</p>
-              </div>
-              <div>
-                <strong style={{ color: 'var(--text-primary)' }}>ended_at</strong>
-                <p style={{ margin: '4px 0 0 0' }}>Data de fechamento ou fim do contrato, usado no cálculo de Lifetime Value (LTV).</p>
+                <h5 style={{ color: 'var(--accent)', margin: '0 0 8px 0', fontSize: '0.9rem', borderBottom: '1px solid var(--border)', paddingBottom: '4px' }}>🏷️ 4. Tracking & Atribuição</h5>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>campaign_name / stage</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>Nome da campanha/funil e estágio no CRM onde este lead/venda deve cair.</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>notes</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>Anotações extras para o vendedor ou histórico de atendimento.</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>source_label / source_record_id</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>Para tracking da importação. De onde veio e ID único para evitar duplicidades na mesma carga.</p>
+                  </div>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)' }}>schema_version</strong>
+                    <p style={{ margin: '4px 0 0 0' }}>Usar <code style={{color: 'var(--accent)'}}>v4-canonical</code> (identifica a compatibilidade do modelo).</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
