@@ -45,7 +45,29 @@ export async function GET(request: Request) {
         orderBy: { createdAt: 'desc' }
       });
 
-      return NextResponse.json({ success: true, data: journeys });
+      // Also fetch Visual Flows metrics for CampaignMonitorDashboard
+      const flows = await prisma.flow.findMany({
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          steps: {
+            select: { id: true, type: true, order: true }
+          },
+          _count: {
+            select: { executions: true }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      // Get some execution aggregates if needed
+      const flowExecutions = await prisma.flowExecution.groupBy({
+        by: ['flowId', 'status'],
+        _count: { id: true }
+      });
+
+      return NextResponse.json({ success: true, data: journeys, flows, flowExecutions });
     }
 
     // Specific journey metrics detail
@@ -71,6 +93,10 @@ export async function GET(request: Request) {
       take: 100,
       orderBy: { createdAt: 'desc' }
     });
+
+    // Se for um Flow disfarçado de Journey ou se a UI enviar o flowId aqui, retornamos a flowExecution.
+    // Para simplificar, vou permitir buscar flow metrics passando flowId no futuro, 
+    // mas por hora mantemos a retrocompatibilidade.
 
     return NextResponse.json({
       success: true,

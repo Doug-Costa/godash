@@ -301,6 +301,25 @@ export default function UnifiedLeadsExplorer({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="btn-action"
+              style={{
+                padding: '10px 16px',
+                borderRadius: '10px',
+                border: 'none',
+                background: 'var(--accent)',
+                color: '#fff',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer'
+              }}
+              title="Importar planilha de Leads (V4)"
+            >
+              📥 Importar CSV (V4)
+            </button>
             <input
               type="text"
               placeholder="🔍 Buscar por nome, e-mail ou telefone..."
@@ -667,15 +686,6 @@ export default function UnifiedLeadsExplorer({
           </div>
 
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="btn-action"
-              style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}
-              title="Importar planilha de Leads"
-            >
-              📥 Importar Leads
-            </button>
-
             <button
               onClick={handleExportCSV}
               className="btn-action"
