@@ -15,6 +15,7 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
+  const [showManual, setShowManual] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -30,6 +31,7 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
       setSuccessMsg(null);
       setLoading(false);
       setCommitting(false);
+      setShowManual(false);
     }
   }, [isOpen]);
 
@@ -142,7 +144,13 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
             <h5 style={{ color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: '0.95rem' }}>Baixe nosso CSV Demo (Padrão)</h5>
             <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Utilize nossa planilha formatada para evitar erros.</p>
           </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              onClick={() => setShowManual(!showManual)}
+              style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+            >
+              📖 Dicionário de Dados {showManual ? '▲' : '▼'}
+            </button>
             <a href="/api/leads/import/template?type=canonical" style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', color: 'var(--text-primary)', textDecoration: 'none', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
               📄 Template Completo
             </a>
@@ -151,6 +159,38 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
             </a>
           </div>
         </div>
+
+        {showManual && (
+          <div className="animate-fadeDown" style={{ background: 'var(--surface)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+            <h4 style={{ color: 'var(--text-primary)', margin: '0 0 12px 0', fontSize: '1rem' }}>Dicionário de Preenchimento</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <strong style={{ color: 'var(--text-primary)' }}>nome (obrigatório)</strong>
+                <p style={{ margin: '4px 0 0 0' }}>Nome completo do lead. O sistema tentará unir (merge) casos idênticos.</p>
+              </div>
+              <div>
+                <strong style={{ color: 'var(--text-primary)' }}>email / phone</strong>
+                <p style={{ margin: '4px 0 0 0' }}>Para telefone, utilize o código de área. É crucial para identificar leads repetidos.</p>
+              </div>
+              <div>
+                <strong style={{ color: 'var(--text-primary)' }}>external_id</strong>
+                <p style={{ margin: '4px 0 0 0' }}>ID do contato no seu sistema legado, hotmart, ou ERP (ex: 492011). Essencial para migrações.</p>
+              </div>
+              <div>
+                <strong style={{ color: 'var(--text-primary)' }}>product</strong>
+                <p style={{ margin: '4px 0 0 0' }}>Nome ou ID do produto vendido. O sistema tentará associar automaticamente aos seus produtos cadastrados.</p>
+              </div>
+              <div>
+                <strong style={{ color: 'var(--text-primary)' }}>price / currency</strong>
+                <p style={{ margin: '4px 0 0 0' }}>Preço pago e a moeda (BRL, USD, EUR). Se não preencher "currency", assumimos BRL.</p>
+              </div>
+              <div>
+                <strong style={{ color: 'var(--text-primary)' }}>ended_at</strong>
+                <p style={{ margin: '4px 0 0 0' }}>Data de fechamento ou fim do contrato, usado no cálculo de Lifetime Value (LTV).</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {error && <div style={{ background: 'var(--red-glow)', color: 'var(--red)', padding: '12px 16px', borderRadius: '8px', fontSize: '0.9rem', border: '1px solid rgba(220, 38, 38, 0.2)' }}>⚠️ {error}</div>}
         {successMsg && <div style={{ background: 'var(--green-glow)', color: 'var(--green)', padding: '12px 16px', borderRadius: '8px', fontSize: '0.9rem', border: '1px solid rgba(22, 163, 74, 0.2)' }}>✅ {successMsg}</div>}
