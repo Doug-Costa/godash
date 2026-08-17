@@ -114,9 +114,9 @@ export async function GET(request: Request) {
 
     if (search) {
       prismaWhere.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search, mode: 'insensitive' } }
+        { person: { fullName: { contains: search } } },
+        { person: { email: { contains: search } } },
+        { person: { phoneNumber: { contains: search } } }
       ];
     }
 
