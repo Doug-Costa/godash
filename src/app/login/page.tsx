@@ -181,27 +181,6 @@ export default function LoginPage() {
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
-
-        <div
-          style={{
-            marginTop: '24px',
-            padding: '12px',
-            background: 'rgba(147, 51, 234, 0.08)',
-            border: '1px dashed rgba(147, 51, 234, 0.25)',
-            borderRadius: '8px',
-            textAlign: 'center',
-          }}
-        >
-          <p style={{ fontSize: '0.8rem', color: '#c084fc', margin: 0, fontWeight: 600 }}>
-            🔑 Primeiro acesso / Credenciais padrão:
-          </p>
-          <p style={{ fontSize: '0.75rem', color: '#d8b4fe', margin: '4px 0 0' }}>
-            E-mail: <code>admin@dentalgo.com</code>
-          </p>
-          <p style={{ fontSize: '0.75rem', color: '#d8b4fe', margin: '2px 0 0' }}>
-            Senha: <code>admin123</code>
-          </p>
-        </div>
       </div>
     </div>
   );
