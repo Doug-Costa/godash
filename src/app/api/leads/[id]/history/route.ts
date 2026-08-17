@@ -2,14 +2,15 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await auth();
     if (!session || !session.user?.id) {
       return new Response('Unauthorized', { status: 401 });
     }
 
-    const externalPersonId = parseInt(params.id, 10);
+    const { id } = await params;
+    const externalPersonId = parseInt(id, 10);
     if (isNaN(externalPersonId)) {
       return NextResponse.json({ success: false, error: 'ID inválido' }, { status: 400 });
     }
