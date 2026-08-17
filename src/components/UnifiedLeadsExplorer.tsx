@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import ImportCSVModal from './ImportCSVModal';
 
 interface Agent {
   id: string;
@@ -73,6 +74,10 @@ export default function UnifiedLeadsExplorer({
   const [selectedTargetAssigneeId, setSelectedTargetAssigneeId] = useState<string>('');
   const [isSubmittingBulk, setIsSubmittingBulk] = useState<boolean>(false);
 
+  // Import Modal State
+  const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [refreshKey, setRefreshKey] = useState<number>(0);
+
   // Fetch Plans, Forms, Journeys on Mount
   useEffect(() => {
     async function loadOptions() {
@@ -104,7 +109,7 @@ export default function UnifiedLeadsExplorer({
     loadOptions();
   }, []);
 
-  // Fetch Leads when filters or page change
+  // Fetch Leads when filters, page, or refreshKey change
   useEffect(() => {
     async function fetchLeads() {
       setLoading(true);
@@ -139,7 +144,7 @@ export default function UnifiedLeadsExplorer({
       }
     }
     fetchLeads();
-  }, [source, planId, subscriptionStatus, productId, journeyId, assigneeId, stage, startDate, endDate, search, page]);
+  }, [source, planId, subscriptionStatus, productId, journeyId, assigneeId, stage, startDate, endDate, search, page, refreshKey]);
 
   // Handle Select All / Toggle Single Lead
   const toggleSelectAll = () => {
@@ -257,6 +262,12 @@ export default function UnifiedLeadsExplorer({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleImportSuccess = () => {
+    // Refresh leads table
+    setPage(1);
+    setRefreshKey(k => k + 1);
   };
 
   const getStatusBadge = (status: string) => {
@@ -657,6 +668,23 @@ export default function UnifiedLeadsExplorer({
 
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
+              onClick={() => setShowImportModal(true)}
+              className="btn-action"
+              style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}
+              title="Importar planilha de Leads"
+            >
+              📥 Importar Leads
+            </button>
+
+            <button
+              onClick={handleExportCSV}
+              className="btn-action"
+              style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+              title="Exportar tela atual para CSV"
+            >
+              ⬇️ Exportar
+            </button>
+            <button
               disabled={page <= 1}
               onClick={() => setPage(p => Math.max(1, p - 1))}
               style={{
@@ -687,6 +715,13 @@ export default function UnifiedLeadsExplorer({
           </div>
         </div>
       </div>
+
+      {/* Import CSV Modal */}
+      <ImportCSVModal 
+        isOpen={showImportModal} 
+        onClose={() => setShowImportModal(false)} 
+        onSuccess={handleImportSuccess}
+      />
     </div>
   );
 }
