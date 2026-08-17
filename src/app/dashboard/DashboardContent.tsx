@@ -1920,6 +1920,32 @@ export default function DashboardContent({
                             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
                               <strong>Plano:</strong> {lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}
                             </div>
+                            {(lead.subscriptionStartDate || lead.subscriptionEndDate) && (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, display: 'flex', gap: 4, alignItems: 'center' }}>
+                                <span>📅</span>
+                                {lead.subscriptionStartDate && (
+                                  <span>{new Date(lead.subscriptionStartDate).toLocaleDateString('pt-BR')}</span>
+                                )}
+                                <span>a</span>
+                                {lead.subscriptionEndDate ? (
+                                  <span>{new Date(lead.subscriptionEndDate).toLocaleDateString('pt-BR')}</span>
+                                ) : (
+                                  <span>Sem expiração</span>
+                                )}
+                              </div>
+                            )}
+                            {lead.customerProducts && lead.customerProducts.length > 0 && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 6, padding: '4px 6px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: 6, border: '1px dashed var(--border)' }}>
+                                {lead.customerProducts.map((cp: any) => (
+                                  <div key={cp.id} style={{ fontSize: 9, color: 'var(--text-secondary)' }}>
+                                    {cp.type === 'course' || cp.category === 'SERVICE' ? '🎓' : '📦'} <strong>{cp.name}</strong>:
+                                    <div style={{ color: 'var(--text-muted)', display: 'inline-block', marginLeft: 4 }}>
+                                      {cp.startDate ? new Date(cp.startDate).toLocaleDateString('pt-BR') : 'N/A'} a {cp.endDate ? new Date(cp.endDate).toLocaleDateString('pt-BR') : 'Sem expiração'}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', wordBreak: 'break-all', marginBottom: 4 }}>
                               📧 {lead.email || 'Sem e-mail'}
                             </div>
@@ -2065,7 +2091,23 @@ export default function DashboardContent({
                           </td>
                           <td><span className="stat-mono" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{lead.email}</span></td>
                           <td><span className="stat-mono" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{lead.phoneNumber || 'Sem fone'}</span></td>
-                          <td>{lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}</td>
+                          <td>
+                            <div>{lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}</div>
+                            {(lead.subscriptionStartDate || lead.subscriptionEndDate) && (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 4, alignItems: 'center' }}>
+                                <span>📅</span>
+                                {lead.subscriptionStartDate && (
+                                  <span>{new Date(lead.subscriptionStartDate).toLocaleDateString('pt-BR')}</span>
+                                )}
+                                <span>a</span>
+                                {lead.subscriptionEndDate ? (
+                                  <span>{new Date(lead.subscriptionEndDate).toLocaleDateString('pt-BR')}</span>
+                                ) : (
+                                  <span>Sem expiração</span>
+                                )}
+                              </div>
+                            )}
+                          </td>
                           <td>
                             <span 
                               className="badge" 
@@ -4268,6 +4310,17 @@ export default function DashboardContent({
                       <div><strong style={{ color: 'var(--text-primary)' }}>Telefone:</strong> {selectedLead.phoneNumber || 'N/A'}</div>
                       <div><strong style={{ color: 'var(--text-primary)' }}>Origem:</strong> {selectedLead.source || 'ORGÂNICO'}</div>
                       <div><strong style={{ color: 'var(--text-primary)' }}>Data de Cadastro:</strong> {selectedLead.createdAt ? new Date(selectedLead.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A'}</div>
+                      {selectedLead.plan && (
+                        <>
+                          <div><strong style={{ color: 'var(--text-primary)' }}>Plano Ativo:</strong> {selectedLead.plan.title}</div>
+                          {selectedLead.subscriptionStartDate && (
+                            <div><strong style={{ color: 'var(--text-primary)' }}>Início da Assinatura:</strong> {new Date(selectedLead.subscriptionStartDate).toLocaleDateString('pt-BR')}</div>
+                          )}
+                          {selectedLead.subscriptionEndDate && (
+                            <div><strong style={{ color: 'var(--text-primary)' }}>Expiração da Assinatura:</strong> {new Date(selectedLead.subscriptionEndDate).toLocaleDateString('pt-BR')}</div>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -4306,6 +4359,7 @@ export default function DashboardContent({
                               )}
                               <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 400, marginTop: 4 }}>
                                 {isService ? 'Contratado em' : 'Ativo desde'} {cp.startDate ? new Date(cp.startDate).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR')}
+                                {cp.endDate && ` a ${new Date(cp.endDate).toLocaleDateString('pt-BR')}`}
                                 {cp.status && <span style={{ marginLeft: 6, textTransform: 'uppercase', fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text-muted)' }}>{cp.status}</span>}
                               </div>
                             </div>

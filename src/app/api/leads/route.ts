@@ -126,6 +126,7 @@ export async function GET(request: Request) {
       pl.price as planPrice,
       pl.intervalType as planInterval,
       s.status as subStatus,
+      s.startAt as subStartAt,
       s.canceledAt as subCanceledAt,
       s.expiresIn as subExpiresIn,
       s.isValidUntil as subIsValidUntil,
@@ -634,6 +635,11 @@ export async function GET(request: Request) {
           metadata: metadataByPersonId.get(displayId) || metadataByPersonId.get(c.id) || {},
           scheduledFor: scheduledForByPersonId.get(displayId) || c.scheduledFor || null,
           subscriptionStatus: subBadge,
+          subscriptionStartDate: r?.subStartAt ? new Date(r.subStartAt).toISOString() : (r?.createdAt ? new Date(r.createdAt).toISOString() : null),
+          subscriptionEndDate: r?.planId ? (() => {
+            const expiresDate = r.subIsValidUntil ? new Date(r.subIsValidUntil) : (r.subExpiresIn ? new Date(r.subExpiresIn) : null);
+            return expiresDate ? expiresDate.toISOString() : null;
+          })() : null,
           isBookPurchase: r?.hasBookPurchase === 1 || r?.hasBookPurchase === true || r?.hasBookPurchase === '1',
           humanTakeover: c.humanTakeover || false,
           customerProducts: customerProductsByPersonId.get(displayId) || customerProductsByPersonId.get(c.id) || [],
@@ -710,6 +716,11 @@ export async function GET(request: Request) {
           metadata: metadataByPersonId.get(r.id) || {},
           scheduledFor: scheduledForByPersonId.get(r.id) || state?.scheduledFor || null,
           subscriptionStatus: subBadge,
+          subscriptionStartDate: r.subStartAt ? new Date(r.subStartAt).toISOString() : (r.createdAt ? new Date(r.createdAt).toISOString() : null),
+          subscriptionEndDate: r.planId ? (() => {
+            const expiresDate = r.subIsValidUntil ? new Date(r.subIsValidUntil) : (r.subExpiresIn ? new Date(r.subExpiresIn) : null);
+            return expiresDate ? expiresDate.toISOString() : null;
+          })() : null,
           isBookPurchase: r.hasBookPurchase === 1 || r.hasBookPurchase === true || r.hasBookPurchase === '1',
           isInNurturing: state?.isInNurturing || false,
           leadScore: state?.leadScore || 0,
