@@ -563,6 +563,9 @@ model Product {
   basePrice   Float?    // Base catalog price
   price       Float?
   isActive    Boolean   @default(true)
+  cohort      String?   // Turma/Edição do produto
+  startDate   DateTime? // Data de início do produto/turma
+  endDate     DateTime? // Data de término do produto/turma
   
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -587,6 +590,7 @@ model CustomerProduct {
   status     String    @default("ACTIVE") // ACTIVE, CANCELED, EXPIRED, COMPLETED
   startDate  DateTime?
   endDate    DateTime?
+  validUntil DateTime? // Data limite da ativação (null = vitalício)
   pricePaid  Float?
   saleChannel SaleChannel?
   
@@ -830,9 +834,12 @@ enum ProductSubType {
   APERFEICOAMENTO
   ESPECIALIZACAO
   EXCELENCIA
-  PARCERIA
   PRESENCIAL
   ONLINE
+  FISICO
+  DIGITAL
+  ASSINATURA
+  PARCERIA
   LIVRO_FISICO
   LIVRO_DIGITAL
 }

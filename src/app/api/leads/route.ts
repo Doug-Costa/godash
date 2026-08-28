@@ -87,6 +87,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const month = searchParams.get('month'); // YYYY-MM
   const plan = searchParams.get('plan'); // planId or 'none'
+  const productCategory = searchParams.get('productCategory'); // ProductCategory enum
   const search = searchParams.get('search'); // name/email
   const stage = searchParams.get('stage'); // crm stage
   const assigneeId = searchParams.get('assigneeId'); // agent user id or 'unassigned'
@@ -198,6 +199,15 @@ export async function GET(request: Request) {
       }
       if (hasTag && atendimentoFila !== 'cancelados') {
         crmFilter.tag = tag;
+      }
+      if (productCategory && productCategory !== 'all') {
+        crmFilter.opportunities = {
+          some: {
+            product: {
+              category: productCategory
+            }
+          }
+        };
       }
 
       // Exclude discarded from general queries
@@ -346,7 +356,7 @@ export async function GET(request: Request) {
       postgresQueryFilter.journeyId = { not: null };
     }
 
-    // Fetch corresponding states, interactions, campaign and alerts from Postgres
+    // Fetch corresponding states, interactions, campaign, alerts and opportunities from Postgres
     const customers = await prisma.customer.findMany({
       where: postgresQueryFilter,
       include: {
@@ -361,6 +371,11 @@ export async function GET(request: Request) {
         },
         tasks: {
           where: { status: 'PENDING' }
+        },
+        opportunities: {
+          include: {
+            product: true
+          }
         }
       }
     });
@@ -473,6 +488,13 @@ export async function GET(request: Request) {
         pricePaid: cp.pricePaid,
         startDate: cp.startDate ? cp.startDate.toISOString() : null,
         endDate: cp.endDate ? cp.endDate.toISOString() : null,
+        validUntil: cp.validUntil ? cp.validUntil.toISOString() : null,
+        product: cp.product ? {
+          id: cp.product.id,
+          name: cp.product.name,
+          category: cp.product.category,
+          subType: cp.product.subType
+        } : null
       }));
 
       const mergedProds = [...existingProds];
@@ -566,6 +588,7 @@ export async function GET(request: Request) {
       data = uniqueCustomers.map(c => {
         const r = peopleMap.get(c.externalPersonId);
         const person = (c as any).person; // identidade canônica do Postgres (Fase 1)
+        const activeOpp = c.opportunities?.find((o: any) => o.pipelineId === (pipelineId || c.pipelineId)) || c.opportunities?.[0] || null;
 
         // Fallback: usa dados da Person do Postgres quando MySQL não tem o registro
         // (resolve o problema "Lead #7509")
@@ -642,11 +665,22 @@ export async function GET(request: Request) {
           })() : null,
           isBookPurchase: r?.hasBookPurchase === 1 || r?.hasBookPurchase === true || r?.hasBookPurchase === '1',
           humanTakeover: c.humanTakeover || false,
+          totalLifetimeValue: c.totalLifetimeValue || 0,
           customerProducts: customerProductsByPersonId.get(displayId) || customerProductsByPersonId.get(c.id) || [],
           hasParallelNegotiation: (() => {
             const pipeNames = pipelinesByPersonId.get(displayId);
             return pipeNames ? (pipeNames.has('Vendas') && pipeNames.has('CS')) : false;
-          })()
+          })(),
+          opportunity: activeOpp ? {
+            id: activeOpp.id,
+            productId: activeOpp.productId,
+            product: activeOpp.product ? {
+              id: activeOpp.product.id,
+              name: activeOpp.product.name,
+              category: activeOpp.product.category,
+              subType: activeOpp.product.subType
+            } : null
+          } : null
         };
       }).filter(Boolean);
     } else {
@@ -725,10 +759,24 @@ export async function GET(request: Request) {
           isInNurturing: state?.isInNurturing || false,
           leadScore: state?.leadScore || 0,
           humanTakeover: state?.humanTakeover || false,
+          totalLifetimeValue: state?.totalLifetimeValue || 0,
           customerProducts: customerProductsByPersonId.get(r.id) || [],
           hasParallelNegotiation: (() => {
             const pipeNames = pipelinesByPersonId.get(r.id);
             return pipeNames ? (pipeNames.has('Vendas') && pipeNames.has('CS')) : false;
+          })(),
+          opportunity: (() => {
+            const activeOpp = state?.opportunities?.find((o: any) => o.pipelineId === (pipelineId || state.pipelineId)) || state?.opportunities?.[0] || null;
+            return activeOpp ? {
+              id: activeOpp.id,
+              productId: activeOpp.productId,
+              product: activeOpp.product ? {
+                id: activeOpp.product.id,
+                name: activeOpp.product.name,
+                category: activeOpp.product.category,
+                subType: activeOpp.product.subType
+              } : null
+            } : null;
           })()
         };
       });

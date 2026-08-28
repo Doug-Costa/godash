@@ -87,7 +87,7 @@ export default function DashboardContent({
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
   const [atendimentoFila, setAtendimentoFila] = useState<'alerts' | 'cancelados' | 'expirar' | 'abandonados'>('alerts');
   const [filaCounts, setFilaCounts] = useState({ alerts: 0, cancelados: 0, expirar: 0, abandonados: 0 });
-  const [modalActiveTab, setModalActiveTab] = useState<'oportunidade' | 'perfil' | 'historico_sla' | 'timeline360'>('oportunidade');
+  const [modalActiveTab, setModalActiveTab] = useState<'oportunidade' | 'perfil' | 'produtos_historico' | 'historico_sla' | 'timeline360'>('oportunidade');
   
   const visiblePipelines = pipelines.filter(p => isAdmin || p.name !== 'Nutrição');
   const defaultPipeline = visiblePipelines.find(p => p.name === 'Vendas') || visiblePipelines[0];
@@ -187,6 +187,7 @@ export default function DashboardContent({
   const [agentError, setAgentError] = useState<string | null>(null);
   const [showProductModal, setShowProductModal] = useState(false);
   const [productsList, setProductsList] = useState<any[]>(products);
+  const [editingProduct, setEditingProduct] = useState<any | null>(null);
 
   // Administration Settings states
   const [settingsForm, setSettingsForm] = useState({
@@ -325,7 +326,13 @@ export default function DashboardContent({
       const usePage = viewMode === 'kanban' ? 1 : leadsPage;
 
       let url = `/api/leads?month=${monthParam}&page=${usePage}&limit=${useLimit}`;
-      if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
+      if (filterPlan !== 'all') {
+        if (!isNaN(Number(filterPlan)) || filterPlan === 'none' || filterPlan === 'core_annual' || filterPlan === 'core_recurring') {
+          url += `&plan=${filterPlan}`;
+        } else {
+          url += `&productCategory=${filterPlan}`;
+        }
+      }
       if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
       if (filterStage !== '') url += `&stage=${filterStage}`;
       if (filterAssignee !== 'all') url += `&assigneeId=${filterAssignee}`;
@@ -411,7 +418,9 @@ export default function DashboardContent({
       if (!canceledFilterAllMonths) {
         url += `&month=${filterMonth}`;
       }
-      if (filterPlan !== 'all') url += `&plan=${filterPlan}`;
+      if (filterPlan !== 'all' && (!isNaN(Number(filterPlan)) || filterPlan === 'none' || filterPlan === 'core_annual' || filterPlan === 'core_recurring')) {
+        url += `&plan=${filterPlan}`;
+      }
       if (filterSearch.trim() !== '') url += `&search=${encodeURIComponent(filterSearch)}`;
 
       const res = await fetch(url);
@@ -1482,8 +1491,9 @@ export default function DashboardContent({
 
   const handleSaveProduct = async (productData: any) => {
     try {
+      const isEdit = !!productData.id;
       const res = await fetch('/api/products', {
-        method: 'POST',
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(productData),
       });
@@ -1496,12 +1506,36 @@ export default function DashboardContent({
           const listJson = await listRes.json();
           setProductsList(listJson.data || []);
         }
+        setEditingProduct(null);
       } else {
         alert(`Erro ao cadastrar produto: ${json.error || 'Erro desconhecido'}`);
       }
     } catch (err) {
       console.error('Failed to save product:', err);
       alert('Erro de rede ao salvar o produto.');
+    }
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    if (!confirm('Deseja realmente excluir este produto?')) return;
+    try {
+      const res = await fetch(`/api/products?id=${id}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        // Refresh product list
+        const listRes = await fetch('/api/products');
+        if (listRes.ok) {
+          const listJson = await listRes.json();
+          setProductsList(listJson.data || []);
+        }
+      } else {
+        alert(`Erro ao excluir produto: ${json.error || 'Erro desconhecido'}`);
+      }
+    } catch (err) {
+      console.error('Failed to delete product:', err);
+      alert('Erro de rede ao excluir o produto.');
     }
   };
 
@@ -1693,19 +1727,18 @@ export default function DashboardContent({
             </div>
 
             <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Plano:</label>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Categoria de Produto:</label>
               <select 
                 value={filterPlan} 
                 onChange={(e) => setFilterPlan(e.target.value)}
                 style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
               >
-                <option value="all">Todos os Planos</option>
-                <option value="none">Cadastro Grátis (Sem Plano)</option>
-                <option value="core_annual">Core Anual</option>
-                <option value="core_recurring">Core Recorrente</option>
-                {users?.usersByPlan?.map((p: any) => (
-                  <option key={p.planId} value={p.planId}>{p.planTitle}</option>
-                ))}
+                <option value="all">Todas as Categorias</option>
+                <option value="CURSO">🎓 Curso</option>
+                <option value="CONGRESSO">🎪 Congresso</option>
+                <option value="LIVRO">📘 Livro</option>
+                <option value="SAAS">💻 SaaS</option>
+                <option value="INSTITUCIONAL">🏢 Institucional</option>
               </select>
             </div>
 
@@ -1917,6 +1950,44 @@ export default function DashboardContent({
                                 </span>
                               )}
                             </div>
+                            {/* Product Badge (Checkpoint 3) */}
+                            <div style={{ marginBottom: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {lead.opportunity?.product ? (
+                                <span className="badge" style={{ 
+                                  fontSize: 10, 
+                                  padding: '4px 8px', 
+                                  background: 'var(--surface)', 
+                                  border: '1px solid var(--border)', 
+                                  color: 'var(--text-primary)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  borderRadius: 6
+                                }}>
+                                  {lead.opportunity.product.category === 'CURSO' && '🎓'}
+                                  {lead.opportunity.product.category === 'CONGRESSO' && '🎪'}
+                                  {lead.opportunity.product.category === 'LIVRO' && '📘'}
+                                  {lead.opportunity.product.category === 'SAAS' && '💻'}
+                                  {lead.opportunity.product.category === 'INSTITUCIONAL' && '🏢'}
+                                  <strong>{lead.opportunity.product.category}:</strong> {lead.opportunity.product.name}
+                                </span>
+                              ) : (
+                                <span className="badge" style={{ 
+                                  fontSize: 10, 
+                                  padding: '4px 8px', 
+                                  background: 'rgba(255,255,255,0.03)', 
+                                  border: '1px solid var(--border)', 
+                                  color: 'var(--text-muted)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  borderRadius: 6
+                                }}>
+                                  📦 Produto Não Definido
+                                </span>
+                              )}
+                            </div>
+
                             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
                               <strong>Plano:</strong> {lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}
                             </div>
@@ -3458,7 +3529,7 @@ export default function DashboardContent({
                 <div className="label-sm">Gerencie o catálogo de produtos e preços integrados.</div>
               </div>
               <button 
-                onClick={() => setShowProductModal(true)} 
+                onClick={() => { setEditingProduct(null); setShowProductModal(true); }} 
                 className="btn-action btn-action-purple" 
                 style={{ padding: '6px 12px', fontSize: 12 }}
               >
@@ -3473,12 +3544,13 @@ export default function DashboardContent({
                     <th>Produto</th>
                     <th>Categoria</th>
                     <th style={{ textAlign: 'right' }}>Preço Base</th>
+                    <th style={{ textAlign: 'center', width: '100px' }}>Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {productsList.length === 0 ? (
                     <tr>
-                      <td colSpan={3} style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                      <td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
                         Nenhum produto cadastrado no catálogo.
                       </td>
                     </tr>
@@ -3487,7 +3559,9 @@ export default function DashboardContent({
                       <tr key={prod.id}>
                         <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                           <div>{prod.name}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{prod.subType?.replace('_', ' ')}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            {prod.subType?.replace('_', ' ')} {prod.cohort ? `• Turma: ${prod.cohort}` : ''}
+                          </div>
                         </td>
                         <td>
                           <span className="badge badge-neu" style={{ fontSize: 10, padding: '2px 6px' }}>
@@ -3496,6 +3570,22 @@ export default function DashboardContent({
                         </td>
                         <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)', fontSize: 12 }}>
                           {prod.basePrice ? formatBRL(prod.basePrice * 100) : 'R$ 0,00'}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            onClick={() => { setEditingProduct(prod); setShowProductModal(true); }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', marginRight: '8px' }}
+                            title="Editar"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={() => handleDeleteProduct(prod.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px' }}
+                            title="Excluir"
+                          >
+                            ❌
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -3604,9 +3694,25 @@ export default function DashboardContent({
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
               <div>
-                <h3 style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontSize: '1.4rem', fontWeight: 700 }}>
-                  Ficha de Atendimento Comercial
-                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <h3 style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>
+                    Ficha de Atendimento Comercial
+                  </h3>
+                  <span style={{
+                    background: 'rgba(74, 222, 128, 0.12)',
+                    color: '#4ADE80',
+                    border: '1px solid rgba(74, 222, 128, 0.3)',
+                    padding: '4px 10px',
+                    borderRadius: 8,
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}>
+                    💰 LTV: {selectedLead.totalLifetimeValue !== undefined ? selectedLead.totalLifetimeValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'}
+                  </span>
+                </div>
                 <p className="label-sm" style={{ marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                   <span>👤 {selectedLead.fullName}</span>
                   <span>&bull;</span>
@@ -3704,6 +3810,15 @@ export default function DashboardContent({
                 }}
               >
                 Perfil Global do Cliente
+              </button>
+              <button
+                onClick={() => setModalActiveTab('produtos_historico')}
+                style={{
+                  padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: modalActiveTab === 'produtos_historico' ? '2px solid var(--accent)' : '2px solid transparent',
+                  color: modalActiveTab === 'produtos_historico' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
+                }}
+              >
+                📦 Produtos Ativos & Histórico
               </button>
               <button 
                 onClick={() => setModalActiveTab('historico_sla')}
@@ -4417,6 +4532,109 @@ export default function DashboardContent({
               </div>
             )}
 
+            {modalActiveTab === 'produtos_historico' && (
+              <div style={{ padding: 24, flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+                  <h4 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>
+                    📦 Produtos Ativos & Histórico de Compras
+                  </h4>
+                  <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    Receita Total Recalculada (LTV): <strong style={{ color: '#4ADE80' }}>{selectedLead.totalLifetimeValue !== undefined ? selectedLead.totalLifetimeValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'}</strong>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {(!selectedLead.customerProducts || selectedLead.customerProducts.length === 0) ? (
+                    <div style={{ padding: 32, background: 'rgba(255, 255, 255, 0.01)', border: '1px dashed var(--border)', borderRadius: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+                      Nenhum produto, assinatura ou serviço ativo registrado para este cliente.
+                    </div>
+                  ) : (
+                    selectedLead.customerProducts.map((cp: any) => {
+                      const isSubscription = cp.product?.subType === 'ASSINATURA' || cp.status === 'ACTIVE' || cp.status === 'CANCELED';
+                      const badgeColor = cp.status === 'ACTIVE' ? '#4ADE80' : (cp.status === 'CANCELED' ? '#F87171' : 'var(--text-muted)');
+                      const bgAlpha = cp.status === 'ACTIVE' ? 'rgba(74, 222, 128, 0.08)' : (cp.status === 'CANCELED' ? 'rgba(248, 113, 113, 0.08)' : 'rgba(255,255,255,0.03)');
+
+                      return (
+                        <div 
+                          key={cp.id}
+                          style={{ 
+                            padding: 16, 
+                            background: bgAlpha, 
+                            border: `1px solid ${cp.status === 'ACTIVE' ? 'rgba(74, 222, 128, 0.2)' : 'var(--border)'}`, 
+                            borderRadius: 12,
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 16
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 16 }}>
+                                {cp.product?.category === 'CURSO' && '🎓'}
+                                {cp.product?.category === 'CONGRESSO' && '🎪'}
+                                {cp.product?.category === 'LIVRO' && '📘'}
+                                {cp.product?.category === 'SAAS' && '💻'}
+                                {cp.product?.category === 'INSTITUCIONAL' && '🏢'}
+                                {!cp.product?.category && '📦'}
+                              </span>
+                              <strong style={{ color: 'var(--text-primary)', fontSize: 14 }}>
+                                {cp.product?.name || cp.name || 'Produto Não Cadastrado'}
+                              </strong>
+                              {cp.product?.category && (
+                                <span style={{ fontSize: 10, background: 'var(--surface)', border: '1px solid var(--border)', padding: '2px 6px', borderRadius: 4, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                                  {cp.product.category}
+                                </span>
+                              )}
+                              {isSubscription && cp.status && (
+                                <span style={{ 
+                                  fontSize: 9, 
+                                  background: badgeColor + '22', 
+                                  color: badgeColor, 
+                                  border: `1px solid ${badgeColor}44`,
+                                  padding: '2px 6px', 
+                                  borderRadius: 4, 
+                                  fontWeight: 700,
+                                  textTransform: 'uppercase' 
+                                }}>
+                                  {cp.status}
+                                </span>
+                              )}
+                            </div>
+                            
+                            <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 12, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                              <span>
+                                📅 <strong>Adquirido em:</strong> {cp.startDate ? new Date(cp.startDate).toLocaleDateString('pt-BR') : 'N/A'}
+                              </span>
+                              {cp.validUntil && (
+                                <span>
+                                  ⏳ <strong>Válido até:</strong> {new Date(cp.validUntil).toLocaleDateString('pt-BR')}
+                                </span>
+                              )}
+                              {cp.endDate && (
+                                <span>
+                                  ⏳ <strong>Fim do Contrato:</strong> {new Date(cp.endDate).toLocaleDateString('pt-BR')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Valor Pago:</div>
+                            <strong style={{ fontSize: 15, color: 'var(--text-primary)' }}>
+                              {cp.pricePaid !== undefined && cp.pricePaid !== null 
+                                ? cp.pricePaid.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
+                                : 'R$ 0,00'}
+                            </strong>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
             {modalActiveTab === 'historico_sla' && (
               <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
                 <h4 style={{ color: 'var(--text-primary)', marginBottom: 16 }}>Histórico de Atribuição (Rotatividade de SLA)</h4>
@@ -4512,8 +4730,9 @@ export default function DashboardContent({
       {/* ====================================================================== */}
       <ProductFormModal
         isOpen={showProductModal}
-        onClose={() => setShowProductModal(false)}
+        onClose={() => { setShowProductModal(false); setEditingProduct(null); }}
         onSave={handleSaveProduct}
+        editingProduct={editingProduct}
       />
 
       {/* ====================================================================== */}

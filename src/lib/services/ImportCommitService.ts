@@ -8,7 +8,17 @@ export class ImportCommitService {
    * Recebe a lista de linhas aprovadas do Preflight (onde status === 'READY')
    * e as persiste de forma canônica no banco de dados.
    */
-  static async commit(batchInfo: { fileName: string; schemaVersion: string; uploadedById: string }, rows: RowPreflightResult[]) {
+  static async commit(
+    batchInfo: { 
+      fileName: string; 
+      schemaVersion: string; 
+      uploadedById: string; 
+      importDestination?: string; 
+      productId?: string; 
+      pipelineId?: string;
+    }, 
+    rows: RowPreflightResult[]
+  ) {
     // 1. Cria a auditoria do lote
     const fileHash = `hash_${Date.now()}`; // Na vida real, poderíamos receber o hash MD5 do arquivo
     const batch = await prisma.importBatch.create({
@@ -32,7 +42,13 @@ export class ImportCommitService {
       }
 
       try {
-        await this.commitRow(row, batchInfo.uploadedById);
+        await this.commitRow(
+          row, 
+          batchInfo.uploadedById, 
+          batchInfo.importDestination, 
+          batchInfo.productId, 
+          batchInfo.pipelineId
+        );
         successRows++;
       } catch (error) {
         console.error(`[ImportCommit] Erro ao comitar linha ${row.index}:`, error);
@@ -53,7 +69,13 @@ export class ImportCommitService {
     return { successRows, errorRows, batchId: batch.id };
   }
 
-  private static async commitRow(row: RowPreflightResult, authorId: string) {
+  private static async commitRow(
+    row: RowPreflightResult, 
+    authorId: string, 
+    importDestination?: string, 
+    productId?: string, 
+    pipelineId?: string
+  ) {
     const data = row.parsedData;
     if (!data) throw new Error("Linha não tem parsedData.");
 
@@ -88,37 +110,58 @@ export class ImportCommitService {
     }
 
     // 3. Fatos Comerciais
-    if (data.fact_type === 'PURCHASE' && row.resolvedProductId) {
-      await CustomerRevenueService.registerPurchase({
-        customerId: customer.id,
-        productId: row.resolvedProductId,
-        pricePaid: data.value ?? 0, // Fallback se não for passado, embora o preflight alerte
-        authorId,
-        source
-      });
-    } else if (data.fact_type === 'OPPORTUNITY' || data.fact_type === 'LEAD_CAPTURE') {
-      // Se tiver produto vinculado, salva na oportunidade
-      if (row.resolvedProductId) {
-        await prisma.opportunity.create({
-          data: {
-            customerId: customer.id,
-            pipelineId: 'default', // Ou buscar um pipeline padrão
-            productId: row.resolvedProductId,
-            status: data.fact_status || 'OPEN',
-            value: data.value || 0,
-            assigneeId: authorId
-          }
+    const finalProductId = productId || row.resolvedProductId;
+    const destination = importDestination || (data.fact_type === 'PURCHASE' ? 'FATO' : 'DESEJO');
+
+    if (destination === 'FATO') {
+      if (finalProductId) {
+        await CustomerRevenueService.registerPurchase({
+          customerId: customer.id,
+          productId: finalProductId,
+          pricePaid: data.value ?? 0, // Fallback se não for passado
+          authorId,
+          source
         });
       }
-    } else if (data.fact_type === 'SUBSCRIPTION' && row.resolvedProductId) {
-       await prisma.customerProduct.create({
-         data: {
-           customerId: customer.id,
-           productId: row.resolvedProductId,
-           status: data.fact_status || 'ACTIVE',
-           pricePaid: data.value ?? 0
-         }
-       });
+    } else {
+      // DESEJO
+      const finalPipelineId = pipelineId || 'default';
+      
+      let targetPipelineId = finalPipelineId;
+      if (targetPipelineId === 'default') {
+        const defaultPipe = await prisma.pipeline.findFirst({
+          where: { name: 'Vendas' }
+        }) || await prisma.pipeline.findFirst();
+        targetPipelineId = defaultPipe?.id || '';
+      }
+
+      if (targetPipelineId) {
+        // Se a oportunidade para este pipeline já existe, não duplicamos
+        const existingOpp = await prisma.opportunity.findFirst({
+          where: { customerId: customer.id, pipelineId: targetPipelineId }
+        });
+
+        if (!existingOpp) {
+          // Assegurar que o customer tenha o pipelineId setado se for nulo
+          if (!customer.pipelineId) {
+            await prisma.customer.update({
+              where: { id: customer.id },
+              data: { pipelineId: targetPipelineId }
+            });
+          }
+
+          await prisma.opportunity.create({
+            data: {
+              customerId: customer.id,
+              pipelineId: targetPipelineId,
+              productId: finalProductId || null,
+              status: data.fact_status || 'OPEN',
+              value: data.value || 0,
+              assigneeId: authorId
+            }
+          });
+        }
+      }
     }
   }
 }

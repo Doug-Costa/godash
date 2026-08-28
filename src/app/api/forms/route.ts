@@ -28,6 +28,9 @@ export async function GET() {
         },
         campaign: {
           select: { id: true, name: true }
+        },
+        product: {
+          select: { id: true, name: true }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -48,7 +51,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, redirectUrl, successMessage, styleConfig, pipelineId, stageId, campaignId, fields } = body;
+    const { name, redirectUrl, successMessage, styleConfig, pipelineId, stageId, campaignId, productId, fields } = body;
 
     if (!name || !pipelineId) {
       return NextResponse.json({ success: false, error: 'name e pipelineId são obrigatórios' }, { status: 400 });
@@ -63,6 +66,7 @@ export async function POST(request: Request) {
         pipelineId,
         stageId,
         campaignId,
+        productId: productId || null,
         fields: {
           create: (fields || []).map((f: any, idx: number) => ({
             name: f.name,
@@ -94,7 +98,7 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json();
-    const { id, name, redirectUrl, successMessage, styleConfig, pipelineId, stageId, campaignId, fields } = body;
+    const { id, name, redirectUrl, successMessage, styleConfig, pipelineId, stageId, campaignId, productId, fields } = body;
 
     if (!id || !name || !pipelineId) {
       return NextResponse.json({ success: false, error: 'id, name e pipelineId são obrigatórios' }, { status: 400 });
@@ -115,6 +119,7 @@ export async function PUT(request: Request) {
         pipelineId,
         stageId,
         campaignId,
+        productId: productId || null,
         fields: {
           create: (fields || []).map((f: any, idx: number) => ({
             name: f.name,

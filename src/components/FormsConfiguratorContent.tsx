@@ -46,19 +46,27 @@ interface Form {
   pipelineId: string;
   stageId: string | null;
   campaignId: string | null;
+  productId: string | null;
   fields: FormField[];
   createdAt: string;
   pipeline?: { id: string; name: string };
   campaign?: { id: string; name: string } | null;
+  product?: { id: string; name: string } | null;
+}
+
+interface Product {
+  id: string;
+  name: string;
 }
 
 interface Props {
   currentUser: any;
   pipelines: Pipeline[];
   campaigns: Campaign[];
+  products: Product[];
 }
 
-export default function FormsConfiguratorContent({ currentUser, pipelines, campaigns }: Props) {
+export default function FormsConfiguratorContent({ currentUser, pipelines, campaigns, products = [] }: Props) {
   const [formsList, setFormsList] = useState<Form[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeForm, setActiveForm] = useState<Form | null>(null);
@@ -129,6 +137,7 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
       pipelineId: pipelines[0]?.id || '',
       stageId: 'novo_cadastro',
       campaignId: campaigns[0]?.id || null,
+      productId: null,
       fields: [
         { name: 'name', label: 'Nome Completo', type: 'text', options: [], required: true, order: 0 },
         { name: 'email', label: 'E-mail Comercial', type: 'email', options: [], required: true, order: 1 },
@@ -546,6 +555,20 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                     </select>
                   </div>
                   <div>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Produto Vinculado</label>
+                    <select
+                      value={activeForm?.productId || ''}
+                      onChange={(e) => setActiveForm({ ...activeForm!, productId: e.target.value || null })}
+                      style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
+                    >
+                      <option value="">Nenhum produto</option>
+                      {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
                     <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>URL de Redirecionamento (Pós-envio)</label>
                     <input 
                       type="text" 
@@ -555,16 +578,15 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                       style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Mensagem de Sucesso (Se sem redirecionamento)</label>
-                  <input 
-                    type="text" 
-                    value={activeForm?.successMessage || ''} 
-                    onChange={(e) => setActiveForm({ ...activeForm!, successMessage: e.target.value })}
-                    style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
-                  />
+                  <div>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Mensagem de Sucesso (Se sem redirecionamento)</label>
+                    <input 
+                      type="text" 
+                      value={activeForm?.successMessage || ''} 
+                      onChange={(e) => setActiveForm({ ...activeForm!, successMessage: e.target.value })}
+                      style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
+                    />
+                  </div>
                 </div>
               </div>
 

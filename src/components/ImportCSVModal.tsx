@@ -15,13 +15,28 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
+  const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
+  const [importDestination, setImportDestination] = useState<'DESEJO' | 'FATO'>('DESEJO');
+  const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   const [showManual, setShowManual] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       fetch('/api/products')
         .then(res => res.json())
-        .then(data => setProducts(data))
+        .then(data => setProducts(data.data || data || []))
+        .catch(console.error);
+
+      fetch('/api/pipelines')
+        .then(res => res.json())
+        .then(data => {
+          const list = data.data || data || [];
+          setPipelines(list);
+          if (list.length > 0) {
+            setSelectedPipelineId(list[0].id);
+          }
+        })
         .catch(console.error);
     } else {
       // Reset state when closing
@@ -32,6 +47,9 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
       setLoading(false);
       setCommitting(false);
       setShowManual(false);
+      setImportDestination('DESEJO');
+      setSelectedProductId('');
+      setSelectedPipelineId('');
     }
   }, [isOpen]);
 
@@ -92,7 +110,10 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
         body: JSON.stringify({
           batchInfo: {
             fileName: file.name,
-            schemaVersion: 'v4-canonical'
+            schemaVersion: 'v4-canonical',
+            importDestination,
+            productId: selectedProductId || undefined,
+            pipelineId: selectedPipelineId || undefined
           },
           rows: summary.results
         })
@@ -254,6 +275,77 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
 
         {error && <div style={{ background: 'var(--red-glow)', color: 'var(--red)', padding: '12px 16px', borderRadius: '8px', fontSize: '0.9rem', border: '1px solid rgba(220, 38, 38, 0.2)' }}>⚠️ {error}</div>}
         {successMsg && <div style={{ background: 'var(--green-glow)', color: 'var(--green)', padding: '12px 16px', borderRadius: '8px', fontSize: '0.9rem', border: '1px solid rgba(22, 163, 74, 0.2)' }}>✅ {successMsg}</div>}
+
+        {/* Destination Settings Section (Checkpoint 4) */}
+        <div style={{ background: 'var(--surface-raised)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+          <h4 style={{ color: 'var(--text-primary)', fontSize: '1.05rem', margin: '0 0 12px 0', fontFamily: 'var(--font-display)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>⚙️</span> Configurações de Ingestão (Fato vs Desejo)
+          </h4>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>Destino de Importação:</label>
+              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: 'var(--text-primary)', fontSize: 13 }}>
+                  <input 
+                    type="radio" 
+                    name="importDestination" 
+                    value="DESEJO" 
+                    checked={importDestination === 'DESEJO'}
+                    onChange={() => setImportDestination('DESEJO')}
+                    style={{ accentColor: 'var(--accent)' }}
+                  />
+                  <span>🎯 Leads / Campanhas (Desejo - Vai para o Kanban)</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: 'var(--text-primary)', fontSize: 13 }}>
+                  <input 
+                    type="radio" 
+                    name="importDestination" 
+                    value="FATO" 
+                    checked={importDestination === 'FATO'}
+                    onChange={() => setImportDestination('FATO')}
+                    style={{ accentColor: 'var(--accent)' }}
+                  />
+                  <span>📦 Histórico de Compras (Fato - Não vai para o Kanban)</span>
+                </label>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+              {importDestination === 'DESEJO' && (
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Funil de Destino (Pipeline):</label>
+                  <select
+                    value={selectedPipelineId}
+                    onChange={(e) => setSelectedPipelineId(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none', cursor: 'pointer' }}
+                  >
+                    <option value="">-- Selecione o Funil --</option>
+                    {pipelines.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              <div>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
+                  {importDestination === 'DESEJO' ? 'Vincular ao Produto (Opcional):' : 'Vincular ao Produto Adquirido (Obrigatório):'}
+                </label>
+                <select
+                  value={selectedProductId}
+                  onChange={(e) => setSelectedProductId(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none', cursor: 'pointer' }}
+                >
+                  <option value="">-- Selecione o Produto --</option>
+                  {products.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Upload Section */}
         <div>

@@ -21,10 +21,11 @@ export default async function FormsConfiguratorPage() {
     redirect('/dashboard');
   }
 
-  // Fetch Pipelines and Campaigns to bind to forms
-  const [pipelines, campaigns] = await Promise.all([
+  // Fetch Pipelines, Campaigns, and Products to bind to forms
+  const [pipelines, campaigns, products] = await Promise.all([
     prisma.pipeline.findMany({ orderBy: { name: 'asc' } }),
-    prisma.campaign.findMany({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' } })
+    prisma.campaign.findMany({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' } }),
+    prisma.product.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } })
   ]);
 
   return (
@@ -32,6 +33,7 @@ export default async function FormsConfiguratorPage() {
       currentUser={currentUser} 
       pipelines={pipelines.map(p => ({ id: p.id, name: p.name }))}
       campaigns={campaigns.map(c => ({ id: c.id, name: c.name }))}
+      products={products.map(p => ({ id: p.id, name: p.name }))}
     />
   );
 }

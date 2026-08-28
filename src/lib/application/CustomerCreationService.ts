@@ -22,6 +22,7 @@ export class CustomerCreationService {
     sourceCampaignId?: string;
     pricePaid?: number;
     saleChannel?: SaleChannel;
+    isPurchase?: boolean;
   }) {
     const { 
       externalPersonId, 
@@ -35,7 +36,8 @@ export class CustomerCreationService {
       productId,
       sourceCampaignId,
       pricePaid,
-      saleChannel
+      saleChannel,
+      isPurchase = true
     } = data;
 
     // 1. Resolve Identity (Person-based CDP V4)
@@ -144,7 +146,7 @@ export class CustomerCreationService {
     }
     
     // 2. Register Purchase (CustomerProduct & LTV)
-    if (productId) {
+    if (productId && isPurchase !== false) {
       try {
         const product = await prisma.product.findUnique({
           where: { id: productId }
