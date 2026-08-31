@@ -21,6 +21,8 @@ import CampaignSegmentation, { CampaignRule } from '@/components/CampaignSegment
 import UnifiedLeadsExplorer from '@/components/UnifiedLeadsExplorer';
 import FlowManagerContent from '@/components/FlowManagerContent';
 import FormsConfiguratorContent from '@/components/FormsConfiguratorContent';
+import CustomerProductsTab from '@/components/CustomerProductsTab';
+import ManualSaleModal from '@/components/ManualSaleModal';
 
 const formatBRL = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -135,6 +137,7 @@ export default function DashboardContent({
   const [timeline360Events, setTimeline360Events] = useState<any[]>([]);
   const [showTimelineModal, setShowTimelineModal] = useState(false);
   const [showFastAcquisitionModal, setShowFastAcquisitionModal] = useState(false);
+  const [showManualSaleModal, setShowManualSaleModal] = useState(false);
   
   // Forms state
   const [fastStage, setFastStage] = useState('novo_cadastro');
@@ -1519,6 +1522,58 @@ export default function DashboardContent({
     } catch (err) {
       console.error('Failed to save product:', err);
       alert('Erro de rede ao salvar o produto.');
+    }
+  };
+
+  const handleRegisterManualSale = async (saleData: any) => {
+    if (!selectedLead) return;
+    try {
+      const payload = {
+        ...saleData,
+        customerId: selectedLead.id
+      };
+      
+      const res = await fetch('/api/leads/purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+      if (res.ok && json.success) {
+        // Update selectedLead locally with the new purchase and update LTV
+        setSelectedLead((prev: any) => {
+          if (!prev) return prev;
+          const updatedCustomerProducts = [...(prev.customerProducts || []), json.data];
+          const newPricePaid = json.data.pricePaid || 0;
+          const updatedLTV = (prev.totalLifetimeValue || 0) + newPricePaid;
+          return {
+            ...prev,
+            customerProducts: updatedCustomerProducts,
+            totalLifetimeValue: updatedLTV
+          };
+        });
+
+        // Update leads list locally as well so UI displays correct LTV and products instantly
+        setLeads((prevLeads: any[]) => prevLeads.map(l => {
+          if (l.id === selectedLead.id) {
+            const updatedCustomerProducts = [...(l.customerProducts || []), json.data];
+            const newPricePaid = json.data.pricePaid || 0;
+            const updatedLTV = (l.totalLifetimeValue || 0) + newPricePaid;
+            return {
+              ...l,
+              customerProducts: updatedCustomerProducts,
+              totalLifetimeValue: updatedLTV
+            };
+          }
+          return l;
+        }));
+      } else {
+        alert(`Erro ao registrar venda: ${json.error || 'Erro desconhecido'}`);
+      }
+    } catch (err) {
+      console.error('Failed to register manual sale:', err);
+      alert('Erro de rede ao registrar venda.');
     }
   };
 
@@ -4692,105 +4747,11 @@ export default function DashboardContent({
             )}
 
             {modalActiveTab === 'produtos_historico' && (
-              <div style={{ padding: 24, flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
-                  <h4 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>
-                    📦 Produtos Ativos & Histórico de Compras
-                  </h4>
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                    Receita Total Recalculada (LTV): <strong style={{ color: '#4ADE80' }}>{selectedLead.totalLifetimeValue !== undefined ? selectedLead.totalLifetimeValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'}</strong>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {(!selectedLead.customerProducts || selectedLead.customerProducts.length === 0) ? (
-                    <div style={{ padding: 32, background: 'rgba(255, 255, 255, 0.01)', border: '1px dashed var(--border)', borderRadius: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
-                      Nenhum produto, assinatura ou serviço ativo registrado para este cliente.
-                    </div>
-                  ) : (
-                    selectedLead.customerProducts.map((cp: any) => {
-                      const isSubscription = cp.product?.subType === 'ASSINATURA' || cp.status === 'ACTIVE' || cp.status === 'CANCELED';
-                      const badgeColor = cp.status === 'ACTIVE' ? '#4ADE80' : (cp.status === 'CANCELED' ? '#F87171' : 'var(--text-muted)');
-                      const bgAlpha = cp.status === 'ACTIVE' ? 'rgba(74, 222, 128, 0.08)' : (cp.status === 'CANCELED' ? 'rgba(248, 113, 113, 0.08)' : 'rgba(255,255,255,0.03)');
-
-                      return (
-                        <div 
-                          key={cp.id}
-                          style={{ 
-                            padding: 16, 
-                            background: bgAlpha, 
-                            border: `1px solid ${cp.status === 'ACTIVE' ? 'rgba(74, 222, 128, 0.2)' : 'var(--border)'}`, 
-                            borderRadius: 12,
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: 16
-                          }}
-                        >
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: 16 }}>
-                                {cp.product?.category === 'CURSO' && '🎓'}
-                                {cp.product?.category === 'CONGRESSO' && '🎪'}
-                                {cp.product?.category === 'LIVRO' && '📘'}
-                                {cp.product?.category === 'SAAS' && '💻'}
-                                {cp.product?.category === 'INSTITUCIONAL' && '🏢'}
-                                {!cp.product?.category && '📦'}
-                              </span>
-                              <strong style={{ color: 'var(--text-primary)', fontSize: 14 }}>
-                                {cp.product?.name || cp.name || 'Produto Não Cadastrado'}
-                              </strong>
-                              {cp.product?.category && (
-                                <span style={{ fontSize: 10, background: 'var(--surface)', border: '1px solid var(--border)', padding: '2px 6px', borderRadius: 4, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                                  {cp.product.category}
-                                </span>
-                              )}
-                              {isSubscription && cp.status && (
-                                <span style={{ 
-                                  fontSize: 9, 
-                                  background: badgeColor + '22', 
-                                  color: badgeColor, 
-                                  border: `1px solid ${badgeColor}44`,
-                                  padding: '2px 6px', 
-                                  borderRadius: 4, 
-                                  fontWeight: 700,
-                                  textTransform: 'uppercase' 
-                                }}>
-                                  {cp.status}
-                                </span>
-                              )}
-                            </div>
-                            
-                            <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 12, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-                              <span>
-                                📅 <strong>Adquirido em:</strong> {cp.startDate ? new Date(cp.startDate).toLocaleDateString('pt-BR') : 'N/A'}
-                              </span>
-                              {cp.validUntil && (
-                                <span>
-                                  ⏳ <strong>Válido até:</strong> {new Date(cp.validUntil).toLocaleDateString('pt-BR')}
-                                </span>
-                              )}
-                              {cp.endDate && (
-                                <span>
-                                  ⏳ <strong>Fim do Contrato:</strong> {new Date(cp.endDate).toLocaleDateString('pt-BR')}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Valor Pago:</div>
-                            <strong style={{ fontSize: 15, color: 'var(--text-primary)' }}>
-                              {cp.pricePaid !== undefined && cp.pricePaid !== null 
-                                ? cp.pricePaid.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-                                : 'R$ 0,00'}
-                            </strong>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+              <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
+                <CustomerProductsTab
+                  customerProducts={selectedLead.customerProducts || []}
+                  onRegisterManualSale={() => setShowManualSaleModal(true)}
+                />
               </div>
             )}
 
@@ -4892,6 +4853,16 @@ export default function DashboardContent({
         onClose={() => { setShowProductModal(false); setEditingProduct(null); }}
         onSave={handleSaveProduct}
         editingProduct={editingProduct}
+      />
+
+      {/* ====================================================================== */}
+      {/* MODAL: Registro de Venda Manual */}
+      {/* ====================================================================== */}
+      <ManualSaleModal
+        isOpen={showManualSaleModal}
+        onClose={() => setShowManualSaleModal(false)}
+        onSave={handleRegisterManualSale}
+        products={productsList}
       />
 
       {/* ====================================================================== */}
