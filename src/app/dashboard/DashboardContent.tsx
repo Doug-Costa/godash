@@ -277,6 +277,7 @@ export default function DashboardContent({
 
   const [templatesList, setTemplatesList] = useState<any[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [adminSubTab, setAdminSubTab] = useState<'products' | 'team' | 'integrations' | 'smtp' | 'import'>('products');
 
   // Estados do React Flow para a régua
   const [nodes, setNodes] = useState<any[]>([]);
@@ -3062,541 +3063,676 @@ export default function DashboardContent({
       {/* 4. Gerenciar Equipe (ADMIN Only) */}
       {/* 4. Administração (ADMIN Only) */}
       {activeTab === 'team' && isAdmin && (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }} className="animate-fadeUp">
-          {/* Coluna 1: Configuração de Serviços */}
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div>
-              <div className="label" style={{ marginBottom: 4 }}>⚙️ Configurações do Sistema</div>
-              <div className="label-sm">Configure as conexões externas de SMTP, VoIP e WhatsApp.</div>
+        <div style={{ display: 'flex', gap: 32, minHeight: 'calc(100vh - 140px)', alignItems: 'stretch' }} className="animate-fadeUp">
+          <style>{`
+            .admin-subtab-btn:hover {
+              background: var(--surface-raised) !important;
+              color: var(--text-primary) !important;
+            }
+          `}</style>
+
+          {/* Sidebar Interna de Navegação Administrativa */}
+          <div style={{
+            width: 250,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            borderRight: '1px solid var(--border)',
+            paddingRight: 20,
+            flexShrink: 0
+          }}>
+            <div style={{ padding: '8px 12px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Painel Admin
             </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto', maxHeight: '70vh', paddingRight: 8 }}>
-              {/* Seção SMTP */}
-              <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 12 }}>📧 Servidor SMTP (E-mail RapidFire)</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div>
-                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>SMTP Host:</label>
-                    <input
-                      type="text"
-                      value={settingsForm.smtpHost}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, smtpHost: e.target.value })}
-                      placeholder="smtp.mailtrap.io"
-                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                    />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
-                    <div>
-                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Porta:</label>
-                      <input
-                        type="text"
-                        value={settingsForm.smtpPort}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, smtpPort: e.target.value })}
-                        placeholder="587"
-                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                      />
-                    </div>
-                    <div>
-                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>E-mail Remetente (From):</label>
-                      <input
-                        type="text"
-                        value={settingsForm.smtpFrom}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, smtpFrom: e.target.value })}
-                        placeholder="crm@dentalgo.com"
-                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <div>
-                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>SMTP Usuário:</label>
-                      <input
-                        type="text"
-                        value={settingsForm.smtpUser}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, smtpUser: e.target.value })}
-                        placeholder="user123"
-                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                      />
-                    </div>
-                    <div>
-                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>SMTP Senha:</label>
-                      <input
-                        type="password"
-                        value={settingsForm.smtpPassword}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, smtpPassword: e.target.value })}
-                        placeholder="••••••••"
-                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Seção VoIP */}
-              <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 12 }}>📞 Provedor VoIP (Telefone RapidFire)</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div>
-                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Serviço VoIP Externo:</label>
-                    <select
-                      value={settingsForm.voipProvider}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, voipProvider: e.target.value })}
-                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                    >
-                      <option value="twilio">Twilio VoIP Link</option>
-                      <option value="zenvia">Zenvia Voz</option>
-                      <option value="vonage">Vonage Voice API</option>
-                      <option value="custom">Outro (Integração Direta)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Token/API Key:</label>
-                    <input
-                      type="password"
-                      value={settingsForm.voipApiKey}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, voipApiKey: e.target.value })}
-                      placeholder="sk_live_..."
-                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                    />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <div>
-                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Account SID / ID:</label>
-                      <input
-                        type="text"
-                        value={settingsForm.voipAccountSid}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, voipAccountSid: e.target.value })}
-                        placeholder="AC..."
-                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                      />
-                    </div>
-                    <div>
-                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Linha VoIP / Ramal:</label>
-                      <input
-                        type="text"
-                        value={settingsForm.voipLineNumber}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, voipLineNumber: e.target.value })}
-                        placeholder="+55119999999"
-                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Seção WhatsApp Evolution */}
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 12 }}>💬 WhatsApp Evolution API (Alert Center)</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div>
-                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>URL da API:</label>
-                    <input
-                      type="text"
-                      value={settingsForm.whatsappUrl}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, whatsappUrl: e.target.value })}
-                      placeholder="https://api.evolution.dentalgo.com"
-                      style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                    />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 10 }}>
-                    <div>
-                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>API Key (Token):</label>
-                      <input
-                        type="password"
-                        value={settingsForm.whatsappApiKey}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, whatsappApiKey: e.target.value })}
-                        placeholder="Bearer token..."
-                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                      />
-                    </div>
-                    <div>
-                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Instância:</label>
-                      <input
-                        type="text"
-                        value={settingsForm.whatsappInstance}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, whatsappInstance: e.target.value })}
-                        placeholder="DentalGO_CRM"
-                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={handleSyncCRM}
-                  disabled={isSyncingCRM}
-                  className="btn-action btn-action-outline"
-                  style={{ padding: '8px 16px', fontSize: 13, borderRadius: 8, borderColor: 'var(--accent)', color: 'var(--accent)' }}
-                >
-                  {isSyncingCRM ? 'Sincronizando...' : '🔄 Sincronizar CRM'}
-                </button>
-                {syncFeedback && <span style={{ color: syncFeedback.startsWith('❌') ? '#F87171' : '#4ADE80', fontSize: 11, fontWeight: 600 }}>{syncFeedback}</span>}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                {settingsSavedFeedback && <span style={{ color: '#4ADE80', fontSize: 13, fontWeight: 600 }}>✓ Configurações Salvas!</span>}
-                <button
-                  type="button"
-                  onClick={handleSaveSettings}
-                  disabled={savingSettings}
-                  className="btn-action btn-action-purple"
-                  style={{ padding: '8px 24px', fontSize: 13, borderRadius: 8 }}
-                >
-                  {savingSettings ? 'Salvando...' : '💾 Salvar Configurações'}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Coluna 2: Gerenciar Equipe */}
-          <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <div>
-                <div className="label" style={{ marginBottom: 4 }}>👥 Gerenciar Equipe</div>
-                <div className="label-sm">Cadastre e gerencie acessos de colaboradores.</div>
-              </div>
-              <button onClick={openAddAgent} className="btn-action btn-action-purple" style={{ padding: '6px 12px', fontSize: 12 }}>
-                ➕ Novo Colaborador
-              </button>
-            </div>
-
-            <div className="table-container" style={{ overflowY: 'auto', maxHeight: '70vh' }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Nome</th>
-                    <th>Cargo / Role</th>
-                    <th style={{ textAlign: 'center' }}>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teamList.map((agent) => (
-                    <tr key={agent.id}>
-                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                        <div>{agent.name}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 'normal' }}>{agent.email}</div>
-                      </td>
-                      <td>
-                        <span className={`badge ${agent.role === 'ADMIN' ? 'badge-cyan' : agent.role === 'POST_SALES' ? 'badge-purple' : 'badge-neu'}`} style={{ fontSize: 10, padding: '2px 6px' }}>
-                          {agent.role === 'ADMIN' ? 'Administrador' : agent.role === 'POST_SALES' ? 'Pós-Venda' : 'Agente'}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                          <button 
-                            onClick={() => openEditAgent(agent)}
-                            style={{
-                              padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6,
-                              background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 11,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Editar
-                          </button>
-                          <button 
-                            onClick={() => handleToggleAgentStatus(agent)}
-                            style={{
-                              padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6,
-                              background: 'transparent', color: agent.isActive ? 'var(--red)' : 'var(--green)', fontSize: 11,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            {agent.isActive ? 'Bloquear' : 'Ativar'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* Gerenciamento de Servidores SMTP e Catálogo de Produtos (DentalGO CRM 360) */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', maxWidth: '1200px', gap: 24, marginTop: 24 }} className="animate-fadeUp">
-          {/* Card SMTP */}
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div>
-              <div className="label" style={{ marginBottom: 4 }}>📧 Servidores SMTP do Sistema</div>
-              <div className="label-sm">Cadastre múltiplos servidores SMTP de disparo para as campanhas.</div>
-            </div>
-
-            <form onSubmit={handleSaveSmtp} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface-raised)', padding: 16, borderRadius: 8, border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase' }}>
-                {smtpId ? '✏️ Editar SMTP' : '➕ Novo SMTP'}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
-                <div>
-                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Nome do Servidor:</label>
-                  <input
-                    type="text"
-                    required
-                    value={smtpName}
-                    onChange={(e) => setSmtpName(e.target.value)}
-                    placeholder="Ex: Disparo Mailtrap ou SMTP Locaweb"
-                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                  />
-                </div>
-                <div>
-                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Secure (SSL/TLS):</label>
-                  <select
-                    value={smtpSecure ? 'true' : 'false'}
-                    onChange={(e) => setSmtpSecure(e.target.value === 'true')}
-                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                  >
-                    <option value="false">Não</option>
-                    <option value="true">Sim</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 10 }}>
-                <div>
-                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Host SMTP:</label>
-                  <input
-                    type="text"
-                    required
-                    value={smtpHost}
-                    onChange={(e) => setSmtpHost(e.target.value)}
-                    placeholder="smtp.mailtrap.io"
-                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                  />
-                </div>
-                <div>
-                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Porta:</label>
-                  <input
-                    type="text"
-                    required
-                    value={smtpPort}
-                    onChange={(e) => setSmtpPort(e.target.value)}
-                    placeholder="587"
-                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Usuário SMTP:</label>
-                  <input
-                    type="text"
-                    required
-                    value={smtpUser}
-                    onChange={(e) => setSmtpUser(e.target.value)}
-                    placeholder="remetente@dominio.com"
-                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                  />
-                </div>
-                <div>
-                  <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Senha SMTP:</label>
-                  <input
-                    type="password"
-                    required={!smtpId}
-                    value={smtpPass}
-                    onChange={(e) => setSmtpPass(e.target.value)}
-                    placeholder={smtpId ? '••••••••' : 'Sua senha'}
-                    style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
-                  />
-                </div>
-              </div>
-
-              {smtpTestResult && (
-                <div style={{ fontSize: 11, fontWeight: 600, color: smtpTestResult.startsWith('🟢') ? 'var(--green)' : 'var(--red)', marginTop: 4 }}>
-                  {smtpTestResult}
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
-                {smtpId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSmtpId('');
-                      setSmtpName('');
-                      setSmtpHost('');
-                      setSmtpPort('587');
-                      setSmtpUser('');
-                      setSmtpPass('');
-                      setSmtpSecure(false);
-                      setSmtpTestResult(null);
-                    }}
-                    className="btn-action btn-action-outline"
-                    style={{ fontSize: 11, padding: '6px 12px' }}
-                  >
-                    Cancelar
-                  </button>
-                )}
-                <button
-                  type="button"
-                  disabled={smtpTesting}
-                  onClick={handleTestSmtp}
-                  className="btn-action btn-action-outline"
-                  style={{ fontSize: 11, padding: '6px 12px' }}
-                >
-                  {smtpTesting ? 'Testando...' : '🔌 Testar Conexão'}
-                </button>
-                <button
-                  type="submit"
-                  className="btn-action btn-action-purple"
-                  style={{ fontSize: 11, padding: '6px 16px' }}
-                >
-                  💾 {smtpId ? 'Atualizar' : 'Adicionar'}
-                </button>
-              </div>
-            </form>
-
-            <div className="table-container" style={{ overflowY: 'auto', maxHeight: '35vh', marginTop: 10 }}>
-              {loadingSmtps ? (
-                <div className="skeleton" style={{ height: 60, width: '100%' }}></div>
-              ) : smtpConfigs.length === 0 ? (
-                <div className="label-sm" style={{ padding: 20, textAlign: 'center' }}>Nenhum SMTP cadastrado.</div>
-              ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Nome / Host</th>
-                      <th>Usuário</th>
-                      <th>Status</th>
-                      <th style={{ textAlign: 'center' }}>Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {smtpConfigs.map((config) => (
-                      <tr key={config.id}>
-                        <td style={{ fontWeight: 600 }}>
-                          <div>{config.name}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{config.host}:{config.port}</div>
-                        </td>
-                        <td style={{ fontSize: 11 }}>{config.user}</td>
-                        <td>
-                          {config.active ? (
-                            <span className="badge badge-cyan" style={{ fontSize: 9 }}>Ativo</span>
-                          ) : (
-                            <button
-                              onClick={() => handleActivateSmtp(config.id)}
-                              className="btn-action btn-action-outline"
-                              style={{ fontSize: 9, padding: '2px 6px' }}
-                            >
-                              Ativar
-                            </button>
-                          )}
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                            <button
-                              onClick={() => {
-                                setSmtpId(config.id);
-                                setSmtpName(config.name);
-                                setSmtpHost(config.host);
-                                setSmtpPort(String(config.port));
-                                setSmtpUser(config.user);
-                                setSmtpPass('••••••••');
-                                setSmtpSecure(config.secure);
-                                setSmtpTestResult(null);
-                              }}
-                              style={{ padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 10, cursor: 'pointer' }}
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => handleDeleteSmtp(config.id)}
-                              style={{ padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--red)', fontSize: 10, cursor: 'pointer' }}
-                            >
-                              Excluir
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-
-          {/* Card Catálogo de Produtos */}
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div className="label" style={{ marginBottom: 4 }}>📦 Catálogo de Produtos (RevOps)</div>
-                <div className="label-sm">Gerencie o catálogo de produtos e preços integrados.</div>
-              </div>
-              <button 
-                onClick={() => { setEditingProduct(null); setShowProductModal(true); }} 
-                className="btn-action btn-action-purple" 
-                style={{ padding: '6px 12px', fontSize: 12 }}
+            
+            {[
+              { id: 'products', label: '📦 Catálogo de Produtos', desc: 'Preços e produtos' },
+              { id: 'team', label: '👥 Gestão de Equipe', desc: 'Colaboradores e acessos' },
+              { id: 'integrations', label: '🔌 Integrações', desc: 'VoIP e WhatsApp API' },
+              { id: 'smtp', label: '📧 Servidores SMTP', desc: 'Contas de disparo de email' },
+              { id: 'import', label: '📥 Importação de Dados', desc: 'Carga de CSV (Breve)' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setAdminSubTab(tab.id as any)}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  gap: 2,
+                  padding: '10px 16px',
+                  border: 'none',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  background: adminSubTab === tab.id ? 'var(--accent-glow)' : 'transparent',
+                  color: adminSubTab === tab.id ? 'var(--accent)' : 'var(--text-secondary)',
+                  transition: 'all 0.2s ease-in-out',
+                  borderLeft: adminSubTab === tab.id ? '3px solid var(--accent)' : '3px solid transparent',
+                  width: '100%'
+                }}
+                className="admin-subtab-btn"
               >
-                ➕ Novo Produto
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{tab.label}</span>
+                <span style={{ fontSize: 10, color: adminSubTab === tab.id ? 'var(--accent)' : 'var(--text-muted)', opacity: 0.8 }}>{tab.desc}</span>
               </button>
-            </div>
+            ))}
+          </div>
 
-            <div className="table-container" style={{ overflowY: 'auto', maxHeight: '35vh' }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Produto</th>
-                    <th>Categoria</th>
-                    <th style={{ textAlign: 'right' }}>Preço Base</th>
-                    <th style={{ textAlign: 'center', width: '100px' }}>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {productsList.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                        Nenhum produto cadastrado no catálogo.
-                      </td>
-                    </tr>
-                  ) : (
-                    productsList.map((prod) => (
-                      <tr key={prod.id}>
-                        <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                          <div>{prod.name}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                            {prod.subType?.replace('_', ' ')} {prod.cohort ? `• Turma: ${prod.cohort}` : ''}
-                          </div>
-                        </td>
-                        <td>
-                          <span className="badge badge-neu" style={{ fontSize: 10, padding: '2px 6px' }}>
-                            {prod.category}
-                          </span>
-                        </td>
-                        <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)', fontSize: 12 }}>
-                          {prod.basePrice ? formatBRL(prod.basePrice * 100) : 'R$ 0,00'}
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <button
-                            onClick={() => { setEditingProduct(prod); setShowProductModal(true); }}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', marginRight: '8px' }}
-                            title="Editar"
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            onClick={() => handleDeleteProduct(prod.id)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px' }}
-                            title="Excluir"
-                          >
-                            ❌
-                          </button>
-                        </td>
+          {/* Área de Conteúdo Dinâmico */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 24 }}>
+            
+            {/* 1. Catálogo de Produtos */}
+            {adminSubTab === 'products' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 24, alignItems: 'start' }}>
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div className="label" style={{ marginBottom: 4 }}>📦 Catálogo de Produtos (RevOps)</div>
+                      <div className="label-sm">Gerencie o catálogo de produtos e preços integrados.</div>
+                    </div>
+                    <button 
+                      onClick={() => { setEditingProduct(null); setShowProductModal(true); }} 
+                      className="btn-action btn-action-purple" 
+                      style={{ padding: '6px 12px', fontSize: 12 }}
+                    >
+                      ➕ Novo Produto
+                    </button>
+                  </div>
+
+                  <div className="table-container" style={{ overflowY: 'auto', maxHeight: '65vh' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Produto</th>
+                          <th>Categoria</th>
+                          <th style={{ textAlign: 'right' }}>Preço Base</th>
+                          <th style={{ textAlign: 'center', width: '100px' }}>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {productsList.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                              Nenhum produto cadastrado no catálogo.
+                            </td>
+                          </tr>
+                        ) : (
+                          productsList.map((prod) => (
+                            <tr key={prod.id}>
+                              <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                <div>{prod.name}</div>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                  {prod.subType?.replace('_', ' ')} {prod.cohort ? `• Turma: ${prod.cohort}` : ''}
+                                </div>
+                              </td>
+                              <td>
+                                <span className="badge badge-neu" style={{ fontSize: 10, padding: '2px 6px' }}>
+                                  {prod.category}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)', fontSize: 12 }}>
+                                {prod.basePrice ? formatBRL(prod.basePrice * 100) : 'R$ 0,00'}
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <button
+                                  onClick={() => { setEditingProduct(prod); setShowProductModal(true); }}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', marginRight: '8px' }}
+                                  title="Editar"
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteProduct(prod.id)}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px' }}
+                                  title="Excluir"
+                                >
+                                  ❌
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Placeholder para Futuro Formulário */}
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', border: '2px dashed var(--border)', background: 'transparent', textAlign: 'center', padding: 32, minHeight: 350 }}>
+                  <span style={{ fontSize: 32, marginBottom: 12 }}>✏️</span>
+                  <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Painel de Edição Rápida</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 220 }}>
+                    O formulário integrado de criação/edição rápida de produtos será acoplado nesta área em atualizações futuras.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 2. Gestão de Equipe */}
+            {adminSubTab === 'team' && (
+              <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <div>
+                    <div className="label" style={{ marginBottom: 4 }}>👥 Gerenciar Equipe</div>
+                    <div className="label-sm">Cadastre e gerencie acessos de colaboradores.</div>
+                  </div>
+                  <button onClick={openAddAgent} className="btn-action btn-action-purple" style={{ padding: '6px 12px', fontSize: 12 }}>
+                    ➕ Novo Colaborador
+                  </button>
+                </div>
+
+                <div className="table-container" style={{ overflowY: 'auto', maxHeight: '65vh' }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nome</th>
+                        <th>Cargo / Role</th>
+                        <th style={{ textAlign: 'center' }}>Ações</th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {teamList.map((agent) => (
+                        <tr key={agent.id}>
+                          <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                            <div>{agent.name}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 'normal' }}>{agent.email}</div>
+                          </td>
+                          <td>
+                            <span className={`badge ${agent.role === 'ADMIN' ? 'badge-cyan' : agent.role === 'POST_SALES' ? 'badge-purple' : 'badge-neu'}`} style={{ fontSize: 10, padding: '2px 6px' }}>
+                              {agent.role === 'ADMIN' ? 'Administrador' : agent.role === 'POST_SALES' ? 'Pós-Venda' : 'Agente'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                              <button 
+                                onClick={() => openEditAgent(agent)}
+                                style={{
+                                  padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6,
+                                  background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 11,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Editar
+                              </button>
+                              <button 
+                                onClick={() => handleToggleAgentStatus(agent)}
+                                style={{
+                                  padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6,
+                                  background: 'transparent', color: agent.isActive ? 'var(--red)' : 'var(--green)', fontSize: 11,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {agent.isActive ? 'Bloquear' : 'Ativar'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* 3. Integrações */}
+            {adminSubTab === 'integrations' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, alignItems: 'start' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  {/* Seção VoIP */}
+                  <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)', marginBottom: 4 }}>📞 Provedor VoIP (Telefone RapidFire)</div>
+                      <div className="label-sm">Configure o provedor para ligações telefônicas ativas.</div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Serviço VoIP Externo:</label>
+                        <select
+                          value={settingsForm.voipProvider}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, voipProvider: e.target.value })}
+                          style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                        >
+                          <option value="twilio">Twilio VoIP Link</option>
+                          <option value="zenvia">Zenvia Voz</option>
+                          <option value="vonage">Vonage Voice API</option>
+                          <option value="custom">Outro (Integração Direta)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Token/API Key:</label>
+                        <input
+                          type="password"
+                          value={settingsForm.voipApiKey}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, voipApiKey: e.target.value })}
+                          placeholder="sk_live_..."
+                          style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                        />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <div>
+                          <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Account SID / ID:</label>
+                          <input
+                            type="text"
+                            value={settingsForm.voipAccountSid}
+                            onChange={(e) => setSettingsForm({ ...settingsForm, voipAccountSid: e.target.value })}
+                            placeholder="AC..."
+                            style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                          />
+                        </div>
+                        <div>
+                          <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Linha VoIP / Ramal:</label>
+                          <input
+                            type="text"
+                            value={settingsForm.voipLineNumber}
+                            onChange={(e) => setSettingsForm({ ...settingsForm, voipLineNumber: e.target.value })}
+                            placeholder="+55119999999"
+                            style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Seção WhatsApp Evolution */}
+                  <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)', marginBottom: 4 }}>💬 WhatsApp Evolution API (Alert Center)</div>
+                      <div className="label-sm">Conecte sua API de WhatsApp para automação de mensagens.</div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>URL da API:</label>
+                        <input
+                          type="text"
+                          value={settingsForm.whatsappUrl}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, whatsappUrl: e.target.value })}
+                          placeholder="https://api.evolution.dentalgo.com"
+                          style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                        />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 10 }}>
+                        <div>
+                          <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>API Key (Token):</label>
+                          <input
+                            type="password"
+                            value={settingsForm.whatsappApiKey}
+                            onChange={(e) => setSettingsForm({ ...settingsForm, whatsappApiKey: e.target.value })}
+                            placeholder="Bearer token..."
+                            style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                          />
+                        </div>
+                        <div>
+                          <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Instância:</label>
+                          <input
+                            type="text"
+                            value={settingsForm.whatsappInstance}
+                            onChange={(e) => setSettingsForm({ ...settingsForm, whatsappInstance: e.target.value })}
+                            placeholder="DentalGO_CRM"
+                            style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Painel de Ações de Sincronia / Salvamento */}
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 20, minHeight: 300 }}>
+                  <div>
+                    <div className="label">🔄 Gerenciar Conectores</div>
+                    <div className="label-sm" style={{ marginTop: 8 }}>
+                      Clique abaixo para salvar as configurações atuais dos conectores externos ou para sincronizar de imediato a base com o CRM.
+                    </div>
+                  </div>
+                  
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={handleSyncCRM}
+                        disabled={isSyncingCRM}
+                        className="btn-action btn-action-outline"
+                        style={{ padding: '8px 16px', fontSize: 13, borderRadius: 8, borderColor: 'var(--accent)', color: 'var(--accent)', flex: 1, minWidth: 140 }}
+                      >
+                        {isSyncingCRM ? 'Sincronizando...' : '🔄 Sincronizar CRM'}
+                      </button>
+                      {syncFeedback && (
+                        <div style={{ color: syncFeedback.startsWith('❌') ? '#F87171' : '#4ADE80', fontSize: 11, fontWeight: 600, width: '100%', marginTop: 4 }}>
+                          {syncFeedback}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                      {settingsSavedFeedback && <div style={{ color: '#4ADE80', fontSize: 13, fontWeight: 600 }}>✓ Configurações Salvas com sucesso!</div>}
+                      <button
+                        type="button"
+                        onClick={handleSaveSettings}
+                        disabled={savingSettings}
+                        className="btn-action btn-action-purple"
+                        style={{ padding: '10px 24px', fontSize: 13, borderRadius: 8, width: '100%' }}
+                      >
+                        {savingSettings ? 'Salvando...' : '💾 Salvar Configurações'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 4. Servidores SMTP */}
+            {adminSubTab === 'smtp' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, alignItems: 'start' }}>
+                {/* SMTP Padrão */}
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div>
+                    <div className="label">📧 Servidor SMTP Padrão (E-mail RapidFire)</div>
+                    <div className="label-sm" style={{ marginTop: 4 }}>Configure a conta padrão para envios do sistema.</div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div>
+                      <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>SMTP Host:</label>
+                      <input
+                        type="text"
+                        value={settingsForm.smtpHost}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, smtpHost: e.target.value })}
+                        placeholder="smtp.mailtrap.io"
+                        style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Porta:</label>
+                        <input
+                          type="text"
+                          value={settingsForm.smtpPort}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, smtpPort: e.target.value })}
+                          placeholder="587"
+                          style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                        />
+                      </div>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>E-mail Remetente (From):</label>
+                        <input
+                          type="text"
+                          value={settingsForm.smtpFrom}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, smtpFrom: e.target.value })}
+                          placeholder="crm@dentalgo.com"
+                          style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>SMTP Usuário:</label>
+                        <input
+                          type="text"
+                          value={settingsForm.smtpUser}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, smtpUser: e.target.value })}
+                          placeholder="user123"
+                          style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                        />
+                      </div>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>SMTP Senha:</label>
+                        <input
+                          type="password"
+                          value={settingsForm.smtpPassword}
+                          onChange={(e) => setSettingsForm({ ...settingsForm, smtpPassword: e.target.value })}
+                          placeholder="••••••••"
+                          style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12 }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 12, alignItems: 'center' }}>
+                      {settingsSavedFeedback && <span style={{ color: '#4ADE80', fontSize: 12, fontWeight: 600 }}>✓ Salvo!</span>}
+                      <button
+                        type="button"
+                        onClick={handleSaveSettings}
+                        disabled={savingSettings}
+                        className="btn-action btn-action-purple"
+                        style={{ padding: '8px 20px', fontSize: 12, borderRadius: 8 }}
+                      >
+                        {savingSettings ? 'Salvando...' : '💾 Salvar Padrão'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Multiplos SMTPs */}
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div>
+                    <div className="label">📧 Servidores SMTP do Sistema</div>
+                    <div className="label-sm" style={{ marginTop: 4 }}>Cadastre múltiplos servidores SMTP de disparo para campanhas.</div>
+                  </div>
+
+                  <form onSubmit={handleSaveSmtp} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface-raised)', padding: 16, borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase' }}>
+                      {smtpId ? '✏️ Editar SMTP' : '➕ Novo SMTP'}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Nome do Servidor:</label>
+                        <input
+                          type="text"
+                          required
+                          value={smtpName}
+                          onChange={(e) => setSmtpName(e.target.value)}
+                          placeholder="Ex: Disparo Mailtrap ou SMTP Locaweb"
+                          style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                        />
+                      </div>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Secure (SSL/TLS):</label>
+                        <select
+                          value={smtpSecure ? 'true' : 'false'}
+                          onChange={(e) => setSmtpSecure(e.target.value === 'true')}
+                          style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                        >
+                          <option value="false">Não</option>
+                          <option value="true">Sim</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 10 }}>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Host SMTP:</label>
+                        <input
+                          type="text"
+                          required
+                          value={smtpHost}
+                          onChange={(e) => setSmtpHost(e.target.value)}
+                          placeholder="smtp.mailtrap.io"
+                          style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                        />
+                      </div>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Porta:</label>
+                        <input
+                          type="text"
+                          required
+                          value={smtpPort}
+                          onChange={(e) => setSmtpPort(e.target.value)}
+                          placeholder="587"
+                          style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Usuário SMTP:</label>
+                        <input
+                          type="text"
+                          required
+                          value={smtpUser}
+                          onChange={(e) => setSmtpUser(e.target.value)}
+                          placeholder="remetente@dominio.com"
+                          style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                        />
+                      </div>
+                      <div>
+                        <label className="label-sm" style={{ display: 'block', marginBottom: 2 }}>Senha SMTP:</label>
+                        <input
+                          type="password"
+                          required={!smtpId}
+                          value={smtpPass}
+                          onChange={(e) => setSmtpPass(e.target.value)}
+                          placeholder={smtpId ? '••••••••' : 'Sua senha'}
+                          style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                        />
+                      </div>
+                    </div>
+
+                    {smtpTestResult && (
+                      <div style={{ fontSize: 11, fontWeight: 600, color: smtpTestResult.startsWith('🟢') ? 'var(--green)' : 'var(--red)', marginTop: 4 }}>
+                        {smtpTestResult}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 6 }}>
+                      {smtpId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSmtpId('');
+                            setSmtpName('');
+                            setSmtpHost('');
+                            setSmtpPort('587');
+                            setSmtpUser('');
+                            setSmtpPass('');
+                            setSmtpSecure(false);
+                            setSmtpTestResult(null);
+                          }}
+                          className="btn-action btn-action-outline"
+                          style={{ fontSize: 11, padding: '6px 12px' }}
+                        >
+                          Cancelar
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={smtpTesting}
+                        onClick={handleTestSmtp}
+                        className="btn-action btn-action-outline"
+                        style={{ fontSize: 11, padding: '6px 12px' }}
+                      >
+                        {smtpTesting ? 'Testando...' : '🔌 Testar Conexão'}
+                      </button>
+                      <button
+                        type="submit"
+                        className="btn-action btn-action-purple"
+                        style={{ fontSize: 11, padding: '6px 16px' }}
+                      >
+                        💾 {smtpId ? 'Atualizar' : 'Adicionar'}
+                      </button>
+                    </div>
+                  </form>
+
+                  <div className="table-container" style={{ overflowY: 'auto', maxHeight: '30vh', marginTop: 10 }}>
+                    {loadingSmtps ? (
+                      <div className="skeleton" style={{ height: 60, width: '100%' }}></div>
+                    ) : smtpConfigs.length === 0 ? (
+                      <div className="label-sm" style={{ padding: 20, textAlign: 'center' }}>Nenhum SMTP cadastrado.</div>
+                    ) : (
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Nome / Host</th>
+                            <th>Usuário</th>
+                            <th>Status</th>
+                            <th style={{ textAlign: 'center' }}>Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {smtpConfigs.map((config) => (
+                            <tr key={config.id}>
+                              <td style={{ fontWeight: 600 }}>
+                                <div>{config.name}</div>
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{config.host}:{config.port}</div>
+                              </td>
+                              <td style={{ fontSize: 11 }}>{config.user}</td>
+                              <td>
+                                {config.active ? (
+                                  <span className="badge badge-cyan" style={{ fontSize: 9 }}>Ativo</span>
+                                ) : (
+                                  <button
+                                    onClick={() => handleActivateSmtp(config.id)}
+                                    className="btn-action btn-action-outline"
+                                    style={{ fontSize: 9, padding: '2px 6px' }}
+                                  >
+                                    Ativar
+                                  </button>
+                                )}
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                                  <button
+                                    onClick={() => {
+                                      setSmtpId(config.id);
+                                      setSmtpName(config.name);
+                                      setSmtpHost(config.host);
+                                      setSmtpPort(String(config.port));
+                                      setSmtpUser(config.user);
+                                      setSmtpPass('••••••••');
+                                      setSmtpSecure(config.secure);
+                                      setSmtpTestResult(null);
+                                    }}
+                                    style={{ padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontSize: 10, cursor: 'pointer' }}
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteSmtp(config.id)}
+                                    style={{ padding: '3px 6px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--red)', fontSize: 10, cursor: 'pointer' }}
+                                  >
+                                    Excluir
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 5. Importação de Dados */}
+            {adminSubTab === 'import' && (
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, minHeight: 400, textAlign: 'center', border: '2px dashed var(--border)', background: 'transparent' }}>
+                <span style={{ fontSize: 48, marginBottom: 16 }}>📥</span>
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>Importação de Leads & Clientes</h3>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 450, marginBottom: 24 }}>
+                  Esta aba está preparada para o futuro módulo de Upload de CSV. Nele, você poderá carregar planilhas de leads para disparos de campanhas e inteligência em lote de forma simplificada.
+                </p>
+                <div style={{
+                  padding: '24px 48px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  background: 'var(--surface-raised)',
+                  color: 'var(--text-muted)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}>
+                  🔌 Upload desativado temporariamente
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
-      </>
-    )}
+      )}
 
       {/* ====================================================================== */}
       {/* MODAL 1: Ação Rápida (Fast Acquisition) */}
