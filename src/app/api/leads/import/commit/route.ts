@@ -19,8 +19,11 @@ export async function POST(request: Request) {
     const result = await ImportCommitService.commit(
       {
         fileName: batchInfo.fileName,
-        schemaVersion: batchInfo.schemaVersion,
-        uploadedById: session.user.id
+        schemaVersion: batchInfo.schemaVersion || 'V4',
+        uploadedById: session.user.id,
+        importDestination: batchInfo.importDestination,
+        productId: batchInfo.productId,
+        pipelineId: batchInfo.pipelineId
       },
       rows
     );

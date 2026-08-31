@@ -178,13 +178,23 @@ export class JourneyTransitionService {
       });
     }
 
-    // 2. Re-associate interactions and tasks from campaign customer to generic customer
+    // 2. Re-associate interactions, tasks, opportunities and customerProducts from campaign customer to generic customer
     await prisma.interaction.updateMany({
       where: { customerId: campaignCustomerId },
       data: { customerId: genericCustomer.id }
     });
 
     await prisma.task.updateMany({
+      where: { customerId: campaignCustomerId },
+      data: { customerId: genericCustomer.id }
+    });
+
+    await prisma.opportunity.updateMany({
+      where: { customerId: campaignCustomerId },
+      data: { customerId: genericCustomer.id }
+    });
+
+    await prisma.customerProduct.updateMany({
       where: { customerId: campaignCustomerId },
       data: { customerId: genericCustomer.id }
     });

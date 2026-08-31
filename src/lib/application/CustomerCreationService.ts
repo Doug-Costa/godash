@@ -156,7 +156,10 @@ export class CustomerCreationService {
           await CustomerRevenueService.registerPurchase({
             customerId,
             productId,
-            pricePaid: finalPricePaid
+            pricePaid: finalPricePaid,
+            authorId,
+            source,
+            saleChannel
           });
         }
       } catch (err) {

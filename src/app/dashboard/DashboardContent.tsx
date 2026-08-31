@@ -23,6 +23,8 @@ import FlowManagerContent from '@/components/FlowManagerContent';
 import FormsConfiguratorContent from '@/components/FormsConfiguratorContent';
 import CustomerProductsTab from '@/components/CustomerProductsTab';
 import ManualSaleModal from '@/components/ManualSaleModal';
+import CommercialRevOpsDashboard from '@/components/CommercialRevOpsDashboard';
+import AdminImportTab from '@/components/AdminImportTab';
 
 const formatBRL = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -2732,15 +2734,8 @@ export default function DashboardContent({
               </div>
             </>
           ) : (
-            <div className="card animate-fadeUp" style={{ padding: '48px 32px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border)', background: 'var(--surface-raised)', borderRadius: 16, marginBottom: 24 }}>
-              <div style={{ fontSize: 40, marginBottom: 16 }}>💰</div>
-              <h3 style={{ color: 'var(--text-primary)', marginBottom: 8, fontSize: 18 }}>Saúde Comercial (RevOps)</h3>
-              <p style={{ maxWidth: 500, margin: '0 auto 24px', fontSize: 13, color: 'var(--text-secondary)' }}>
-                Este painel exibirá o pipeline de vendas unificado, taxas de conversão de oportunidades, LTV acumulado real (Curva ABC) e performance dos vendedores baseado no PostgreSQL.
-              </p>
-              <div style={{ display: 'inline-block', padding: '8px 16px', borderRadius: 20, background: 'rgba(96, 165, 250, 0.1)', border: '1px solid #60A5FA', color: '#60A5FA', fontSize: 12, fontWeight: 600 }}>
-                🚧 Módulo em Desenvolvimento
-              </div>
+            <div style={{ marginBottom: 24 }}>
+              <CommercialRevOpsDashboard />
             </div>
           )}
 
@@ -3767,27 +3762,13 @@ export default function DashboardContent({
 
             {/* 5. Importação de Dados */}
             {adminSubTab === 'import' && (
-              <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, minHeight: 400, textAlign: 'center', border: '2px dashed var(--border)', background: 'transparent' }}>
-                <span style={{ fontSize: 48, marginBottom: 16 }}>📥</span>
-                <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>Importação de Leads & Clientes</h3>
-                <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 450, marginBottom: 24 }}>
-                  Esta aba está preparada para o futuro módulo de Upload de CSV. Nele, você poderá carregar planilhas de leads para disparos de campanhas e inteligência em lote de forma simplificada.
-                </p>
-                <div style={{
-                  padding: '24px 48px',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  background: 'var(--surface-raised)',
-                  color: 'var(--text-muted)',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8
-                }}>
-                  🔌 Upload desativado temporariamente
-                </div>
-              </div>
+              <AdminImportTab
+                products={productsList}
+                pipelines={pipelines}
+                onImportCompleted={() => {
+                  fetchLeads();
+                }}
+              />
             )}
 
           </div>

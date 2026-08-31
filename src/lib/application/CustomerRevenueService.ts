@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { SaleChannel } from '@prisma/client';
 
 export class CustomerRevenueService {
   /**
@@ -42,20 +43,58 @@ export class CustomerRevenueService {
     pricePaid: number;
     startDate?: Date;
     endDate?: Date;
-  }): Promise<void> {
-    const { customerId, productId, pricePaid, startDate = new Date(), endDate } = params;
+    validUntil?: Date | null;
+    authorId?: string;
+    source?: string;
+    saleChannel?: SaleChannel;
+  }) {
+    const { customerId, productId, pricePaid, startDate = new Date(), endDate, validUntil, authorId, source, saleChannel } = params;
 
-    await prisma.customerProduct.create({
+    let resolvedSaleChannel: SaleChannel | undefined = saleChannel;
+    if (!resolvedSaleChannel && source) {
+      if (source.toLowerCase().includes('form') || source.toLowerCase().includes('capture')) {
+        resolvedSaleChannel = SaleChannel.INBOUND_FORM;
+      } else if (source.toLowerCase().includes('balcao') || source.toLowerCase().includes('manual') || source.toLowerCase().includes('tele')) {
+        resolvedSaleChannel = SaleChannel.TELEVENDAS;
+      } else if (source.toLowerCase().includes('evento')) {
+        resolvedSaleChannel = SaleChannel.EVENTO_PRESENCIAL;
+      } else if (source.toLowerCase().includes('site') || source.toLowerCase().includes('web')) {
+        resolvedSaleChannel = SaleChannel.SITE;
+      }
+    }
+
+    const cp = await prisma.customerProduct.create({
       data: {
         customerId,
         productId,
         pricePaid,
         startDate,
         endDate,
+        validUntil: validUntil !== undefined ? validUntil : null,
+        saleChannel: resolvedSaleChannel || null,
         status: 'ACTIVE'
+      },
+      include: {
+        product: true
       }
     });
 
     await this.recalculateLTV(customerId);
+
+    // Log interaction
+    try {
+      await prisma.interaction.create({
+        data: {
+          customerId,
+          type: 'SYSTEM',
+          text: `Produto "${cp.product?.name || productId}" registrado (${source || 'N/A'}). Valor: R$ ${(pricePaid || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+          authorId: authorId || null
+        }
+      });
+    } catch (e) {
+      console.error('Error logging purchase interaction:', e);
+    }
+
+    return cp;
   }
 }

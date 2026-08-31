@@ -317,6 +317,11 @@ export class IdentityMatchingService {
             data: { customerId: conflictingCust.id }
           });
 
+          await tx.customerProduct.updateMany({
+            where: { customerId: sourceCust.id },
+            data: { customerId: conflictingCust.id }
+          });
+
           // Deletar o Customer redundante da source
           await tx.customer.delete({
             where: { id: sourceCust.id }
