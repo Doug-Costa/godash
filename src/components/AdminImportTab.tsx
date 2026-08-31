@@ -2,6 +2,25 @@
 
 import React, { useState, useEffect } from 'react';
 import { PreflightSummary, RowPreflightResult } from '@/lib/services/ImportPreflightService';
+import type { CsvCanonicalField, CsvColumnMapping, CsvSchemaInspection } from '@/lib/services/CsvSchemaMappingService';
+
+const CANONICAL_FIELD_OPTIONS: { value: CsvCanonicalField; label: string }[] = [
+  { value: 'IGNORE', label: 'Ignorar (não importar)' },
+  { value: 'name', label: 'Nome da pessoa' },
+  { value: 'email', label: 'E-mail' },
+  { value: 'phone', label: 'Telefone / WhatsApp' },
+  { value: 'external_id', label: 'ID externo da pessoa' },
+  { value: 'source_record_id', label: 'ID da matrícula/registro' },
+  { value: 'product_id', label: 'Código do produto/curso' },
+  { value: 'product_name', label: 'Nome do produto/curso' },
+  { value: 'fact_status', label: 'Status da matrícula/fato' },
+  { value: 'value', label: 'Valor financeiro' },
+  { value: 'occurred_at', label: 'Data da ocorrência/compra' },
+  { value: 'stage', label: 'Etapa do funil' },
+  { value: 'campaign_name', label: 'Campanha' },
+  { value: 'notes', label: 'Observações' },
+  { value: 'seller', label: 'Vendedor' }
+];
 
 interface Product {
   id: string;
@@ -28,6 +47,9 @@ export default function AdminImportTab({
   const [file, setFile] = useState<File | null>(null);
   const [summary, setSummary] = useState<PreflightSummary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [schemaInspection, setSchemaInspection] = useState<CsvSchemaInspection | null>(null);
+  const [columnMapping, setColumnMapping] = useState<CsvColumnMapping>({});
   const [committing, setCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -51,19 +73,60 @@ export default function AdminImportTab({
     }
   }, [pipelines, selectedPipelineId]);
 
+  const inspectFileSchema = async (selectedFile: File) => {
+    setSchemaLoading(true);
+    setError(null);
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    try {
+      const response = await fetch('/api/leads/import/schema', { method: 'POST', body: formData });
+      if (!response.ok) throw new Error(await response.text() || 'Falha ao identificar o layout do CSV.');
+      const inspection: CsvSchemaInspection = await response.json();
+      setSchemaInspection(inspection);
+      setColumnMapping(Object.fromEntries(
+        inspection.columns.map(column => [column.header, column.suggestedTarget])
+      ));
+    } catch (err: any) {
+      setSchemaInspection(null);
+      setColumnMapping({});
+      setError(err.message);
+    } finally {
+      setSchemaLoading(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+      const selectedFile = e.target.files[0];
+      setFile(selectedFile);
       setSummary(null);
+      setSchemaInspection(null);
+      setColumnMapping({});
       setError(null);
       setSuccessMsg(null);
       setTablePage(1);
+      void inspectFileSchema(selectedFile);
     }
   };
 
   const handleAnalyzePreflight = async () => {
     if (!file) {
       alert('Selecione um arquivo CSV para analisar.');
+      return;
+    }
+
+    if (!schemaInspection) {
+      setError('Aguarde a inspeção do layout antes de executar o Preflight.');
+      return;
+    }
+
+    const mappedTargets = new Set<CsvCanonicalField>(Object.values(columnMapping));
+    if (!['name', 'email', 'phone', 'external_id'].some(field => mappedTargets.has(field as CsvCanonicalField))) {
+      setError('Mapeie ao menos Nome, E-mail, Telefone ou ID externo para resolver a identidade.');
+      return;
+    }
+    if (importDestination === 'FATO' && !selectedProductId && !mappedTargets.has('product_id') && !mappedTargets.has('product_name')) {
+      setError('Carga FATO exige Produto/Curso no CSV ou um Produto Padrão selecionado.');
       return;
     }
 
@@ -74,6 +137,7 @@ export default function AdminImportTab({
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('mapping', JSON.stringify(columnMapping));
 
     try {
       const res = await fetch('/api/leads/import/preflight', {
@@ -364,15 +428,84 @@ export default function AdminImportTab({
           </p>
         </div>
 
-        {file && !summary && (
+        {file && schemaLoading && (
+          <div style={{ padding: 14, borderRadius: 10, background: 'var(--surface-raised)', color: 'var(--text-muted)', fontSize: 12 }}>
+            ⏳ Detectando delimitador, cabeçalho e significado das colunas...
+          </div>
+        )}
+
+        {file && schemaInspection && !summary && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: 13, color: 'var(--text-primary)' }}>4. Confirme o Mapeamento Canônico</h4>
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted)' }}>
+                  Cabeçalho na linha {schemaInspection.headerRow} · delimitador {schemaInspection.delimiter === '\t' ? 'TAB' : `“${schemaInspection.delimiter}”`} · {schemaInspection.totalColumns} colunas
+                </p>
+              </div>
+              <div style={{ padding: '6px 10px', borderRadius: 8, background: 'rgba(251, 191, 36, 0.12)', color: '#FBBF24', fontSize: 11 }}>
+                Colunas em “Ignorar” não criam campos nem dados no cliente.
+              </div>
+            </div>
+
+            <div className="table-container" style={{ maxHeight: 420, overflow: 'auto' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Coluna recebida</th>
+                    <th>Amostras</th>
+                    <th>Destino canônico</th>
+                    <th>Diagnóstico</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {schemaInspection.columns.map(column => {
+                    const target = columnMapping[column.header] || 'IGNORE';
+                    return (
+                      <tr key={column.header}>
+                        <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{column.header}</td>
+                        <td style={{ fontSize: 11, color: 'var(--text-muted)', maxWidth: 300 }}>
+                          {column.samples.length > 0 ? column.samples.join(' · ') : '—'}
+                        </td>
+                        <td>
+                          <select
+                            value={target}
+                            onChange={event => setColumnMapping(current => ({
+                              ...current,
+                              [column.header]: event.target.value as CsvCanonicalField
+                            }))}
+                            style={{
+                              width: '100%', minWidth: 210, padding: '7px 10px', borderRadius: 7,
+                              border: `1px solid ${target === 'IGNORE' ? 'var(--border)' : 'var(--accent)'}`,
+                              background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: 12
+                            }}
+                          >
+                            {CANONICAL_FIELD_OPTIONS.map(option => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ fontSize: 11, color: target === 'IGNORE' ? '#FBBF24' : '#4ADE80' }}>
+                          {target === 'IGNORE' ? `Ignorada: ${column.reason}` : column.reason}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {file && schemaInspection && !summary && (
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button
               onClick={handleAnalyzePreflight}
-              disabled={loading}
+              disabled={loading || schemaLoading}
               className="btn-action btn-action-purple"
               style={{ padding: '10px 24px', fontSize: 13, background: 'var(--accent)', borderColor: 'var(--accent)', color: '#000' }}
             >
-              {loading ? '⏳ Analisando Motor V4...' : '🔍 Analisar Arquivo (Preflight Read-Only)'}
+              {loading ? '⏳ Analisando Motor V4...' : '🔍 Confirmar Mapeamento e Executar Preflight'}
             </button>
           </div>
         )}

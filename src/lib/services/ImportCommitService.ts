@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import { CanonicalIdentityService } from './CanonicalIdentityService';
 import { CustomerRevenueService } from './CustomerRevenueService';
 import { RowPreflightResult } from './ImportPreflightService';
+import { createHash } from 'node:crypto';
 
 export class ImportCommitService {
   /**
@@ -19,18 +20,44 @@ export class ImportCommitService {
     }, 
     rows: RowPreflightResult[]
   ) {
-    // 1. Cria a auditoria do lote
-    const fileHash = `hash_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const batch = await prisma.importBatch.create({
-      data: {
-        fileName: batchInfo.fileName,
-        fileHash,
-        schemaVersion: batchInfo.schemaVersion || 'V4',
-        uploadedById: batchInfo.uploadedById,
-        status: 'IMPORTING',
-        totalRows: rows.length
-      }
-    });
+    // 1. Hash determinístico: impede que um duplo clique/reupload replique compras.
+    const fileHash = createHash('sha256').update(JSON.stringify({
+      fileName: batchInfo.fileName,
+      destination: batchInfo.importDestination,
+      productId: batchInfo.productId,
+      rows: rows.map(row => ({
+        sourceRecordId: row.parsedData?.source_record_id,
+        externalPersonId: row.parsedData?.externalPersonId,
+        productId: row.resolvedProductId || row.parsedData?.product_id,
+        status: row.parsedData?.enrollmentStatus
+      }))
+    })).digest('hex');
+
+    const previousBatch = await prisma.importBatch.findUnique({ where: { fileHash } });
+    if (previousBatch?.status === 'COMPLETED') {
+      return {
+        successRows: previousBatch.successRows,
+        errorRows: previousBatch.errorRows,
+        batchId: previousBatch.id,
+        alreadyImported: true
+      };
+    }
+
+    const batch = previousBatch
+      ? await prisma.importBatch.update({
+          where: { id: previousBatch.id },
+          data: { status: 'IMPORTING', totalRows: rows.length, successRows: 0, errorRows: 0 }
+        })
+      : await prisma.importBatch.create({
+          data: {
+            fileName: batchInfo.fileName,
+            fileHash,
+            schemaVersion: batchInfo.schemaVersion || 'V4',
+            uploadedById: batchInfo.uploadedById,
+            status: 'IMPORTING',
+            totalRows: rows.length
+          }
+        });
 
     let successRows = 0;
     let errorRows = 0;
@@ -113,10 +140,11 @@ export class ImportCommitService {
       : [];
 
     const classifiedSpecialty = row.classifiedSpecialty || data.specialty;
+    const confirmedSpecialty = data.enrollmentStatus === 'CANCELED' ? undefined : classifiedSpecialty;
 
     if (!customer) {
-      const initialSpecialties = (importDestination === 'FATO' && classifiedSpecialty)
-        ? [classifiedSpecialty]
+      const initialSpecialties = (importDestination === 'FATO' && confirmedSpecialty)
+        ? [confirmedSpecialty]
         : [];
       const initialInterests = (importDestination !== 'FATO' && classifiedSpecialty)
         ? [classifiedSpecialty]
@@ -129,10 +157,10 @@ export class ImportCommitService {
           source,
           stage: data.stage || 'novo_cadastro',
           metadata: {
-            ...row.originalData,
             specialties: initialSpecialties,
             interests: initialInterests,
-            sellerContract: data.sellerContract || undefined
+            sellerContract: data.sellerContract || undefined,
+            importSourceRecordId: data.source_record_id || undefined
           }
         }
       });
@@ -141,8 +169,8 @@ export class ImportCommitService {
       let updatedSpecialties = existingSpecialties;
       let updatedInterests = existingInterests;
 
-      if (importDestination === 'FATO' && classifiedSpecialty && !existingSpecialties.includes(classifiedSpecialty)) {
-        updatedSpecialties = [...existingSpecialties, classifiedSpecialty];
+      if (importDestination === 'FATO' && confirmedSpecialty && !existingSpecialties.includes(confirmedSpecialty)) {
+        updatedSpecialties = [...existingSpecialties, confirmedSpecialty];
       } else if (importDestination !== 'FATO' && classifiedSpecialty && !existingInterests.includes(classifiedSpecialty)) {
         updatedInterests = [...existingInterests, classifiedSpecialty];
       }
@@ -154,10 +182,10 @@ export class ImportCommitService {
           externalPersonId: customer.externalPersonId || data.externalPersonId || null,
           metadata: {
             ...currentMetadata,
-            ...row.originalData,
             specialties: updatedSpecialties,
             interests: updatedInterests,
-            sellerContract: data.sellerContract || currentMetadata.sellerContract
+            sellerContract: data.sellerContract || currentMetadata.sellerContract,
+            importSourceRecordId: data.source_record_id || currentMetadata.importSourceRecordId
           }
         }
       });
@@ -169,14 +197,34 @@ export class ImportCommitService {
 
     if (destination === 'FATO') {
       if (finalProductId) {
-        await CustomerRevenueService.registerPurchase({
-          customerId: customer.id,
-          productId: finalProductId,
-          pricePaid: data.value ?? 0,
-          authorId,
-          source: data.sellerContract ? `Importação CSV (Vendedor: ${data.sellerContract})` : source,
-          startDate: new Date()
+        const startDateValue = data.started_at || data.occurred_at;
+        const parsedStartDate = startDateValue ? new Date(startDateValue) : new Date();
+        const startDate = Number.isNaN(parsedStartDate.getTime()) ? new Date() : parsedStartDate;
+        const purchaseStatus = data.enrollmentStatus === 'CANCELED'
+          ? 'CANCELED'
+          : data.enrollmentStatus === 'COMPLETED' ? 'COMPLETED' : 'ACTIVE';
+
+        const existingPurchase = await prisma.customerProduct.findFirst({
+          where: { customerId: customer.id, productId: finalProductId, startDate }
         });
+
+        if (existingPurchase) {
+          await prisma.customerProduct.update({
+            where: { id: existingPurchase.id },
+            data: { status: purchaseStatus, pricePaid: data.value ?? existingPurchase.pricePaid ?? 0 }
+          });
+          await CustomerRevenueService.recalculateLTV(customer.id);
+        } else {
+          await CustomerRevenueService.registerPurchase({
+            customerId: customer.id,
+            productId: finalProductId,
+            pricePaid: data.value ?? 0,
+            authorId,
+            source: data.sellerContract ? `Importação CSV (Vendedor: ${data.sellerContract})` : source,
+            startDate,
+            status: purchaseStatus
+          });
+        }
       }
     } else {
       // DESEJO

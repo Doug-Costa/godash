@@ -47,8 +47,9 @@ export class CustomerRevenueService {
     authorId?: string;
     source?: string;
     saleChannel?: SaleChannel;
+    status?: 'ACTIVE' | 'CANCELED' | 'COMPLETED' | 'EXPIRED';
   }) {
-    const { customerId, productId, pricePaid, startDate = new Date(), endDate, validUntil, authorId, source, saleChannel } = params;
+    const { customerId, productId, pricePaid, startDate = new Date(), endDate, validUntil, authorId, source, saleChannel, status = 'ACTIVE' } = params;
 
     let resolvedSaleChannel: SaleChannel | undefined = saleChannel;
     if (!resolvedSaleChannel && source) {
@@ -72,7 +73,7 @@ export class CustomerRevenueService {
         endDate,
         validUntil: validUntil !== undefined ? validUntil : null,
         saleChannel: resolvedSaleChannel || null,
-        status: 'ACTIVE'
+        status
       },
       include: {
         product: true

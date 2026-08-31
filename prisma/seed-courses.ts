@@ -310,7 +310,17 @@ const COURSES_DATA: CourseSeed[] = [
   }
 ];
 
-function normalizeString(str: string): string {
+function normalizeWithSpaces(str: string): string {
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeCompact(str: string): string {
   return str
     .toLowerCase()
     .normalize('NFD')
@@ -356,25 +366,29 @@ async function main() {
     ];
 
     for (const rawAlias of allAliases) {
-      const normalizedValue = normalizeString(rawAlias);
-      if (!normalizedValue) continue;
+      const normSpaces = normalizeWithSpaces(rawAlias);
+      const normCompact = normalizeCompact(rawAlias);
 
-      try {
-        await prisma.productAlias.upsert({
-          where: { normalizedValue },
-          update: {
-            productId: product.id,
-            rawValue: rawAlias
-          },
-          create: {
-            productId: product.id,
-            rawValue: rawAlias,
-            normalizedValue
-          }
-        });
-        aliasCount++;
-      } catch (err) {
-        // Ignora duplicados no mesmo lote
+      const targets = [normSpaces, normCompact].filter(Boolean);
+
+      for (const normalizedValue of targets) {
+        try {
+          await prisma.productAlias.upsert({
+            where: { normalizedValue },
+            update: {
+              productId: product.id,
+              rawValue: rawAlias
+            },
+            create: {
+              productId: product.id,
+              rawValue: rawAlias,
+              normalizedValue
+            }
+          });
+          aliasCount++;
+        } catch (err) {
+          // Ignora duplicados no mesmo lote
+        }
       }
     }
   }

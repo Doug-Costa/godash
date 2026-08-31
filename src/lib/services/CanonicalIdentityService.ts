@@ -161,6 +161,46 @@ export class CanonicalIdentityService {
       return person;
     }
 
+    // O preflight pode ter encontrado uma Person existente por e-mail/telefone mesmo
+    // quando o alias desta fonte ainda não existe. Vincule a nova origem à identidade
+    // canônica em vez de criar uma Person duplicada no commit.
+    const identityMatch = await this.inspect({ source, externalId, email, phone, name });
+    if (identityMatch.status === 'FOUND' && identityMatch.personId) {
+      try {
+        const linkedAlias = await prisma.identityAlias.create({
+          data: {
+            source,
+            externalId,
+            email,
+            phone,
+            name,
+            rawData: rawData ? (typeof rawData === 'string' ? JSON.parse(rawData) : rawData) : null,
+            personId: identityMatch.personId
+          },
+          include: { person: true }
+        });
+
+        const updates: { email?: string; phoneNumber?: string; fullName?: string } = {};
+        if (!linkedAlias.person.email && email) updates.email = email;
+        if (!linkedAlias.person.phoneNumber && phone) updates.phoneNumber = phone;
+        if (!linkedAlias.person.fullName && name) updates.fullName = name;
+
+        if (Object.keys(updates).length > 0) {
+          return prisma.person.update({ where: { id: linkedAlias.personId }, data: updates });
+        }
+        return linkedAlias.person;
+      } catch (error: any) {
+        if (error.code === 'P2002') {
+          const winner = await prisma.identityAlias.findUnique({
+            where: { source_externalId: { source, externalId } },
+            include: { person: true }
+          });
+          if (winner) return winner.person;
+        }
+        throw error;
+      }
+    }
+
     // 2. Criação Atômica com tratamento de concorrência extrema
     try {
       // O Prisma executa isso como um nested write atômico dentro de uma transação implícita
