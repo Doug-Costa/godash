@@ -29,6 +29,9 @@ until npx prisma db push --accept-data-loss || [ $RETRIES -eq $MAX_RETRIES ]; do
   RETRIES=$((RETRIES + 1))
 done
 
+echo "🌱 Semeando Cursos e Aliases Oficiais..."
+npx tsx prisma/seed-courses.ts || echo "Seed de cursos finalizado ou já existente."
+
 echo "🚀 Starting Next.js Standalone Server..."
 node server.js &
 PID_SERVER=$!
