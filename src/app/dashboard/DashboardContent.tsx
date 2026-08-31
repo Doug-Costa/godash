@@ -19,6 +19,8 @@ import { NewLeadModal } from '@/components/ui/NewLeadModal';
 import ProductFormModal from '@/components/ProductFormModal';
 import CampaignSegmentation, { CampaignRule } from '@/components/CampaignSegmentation';
 import UnifiedLeadsExplorer from '@/components/UnifiedLeadsExplorer';
+import FlowManagerContent from '@/components/FlowManagerContent';
+import FormsConfiguratorContent from '@/components/FormsConfiguratorContent';
 
 const formatBRL = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -78,7 +80,7 @@ export default function DashboardContent({
   };
 
   // State Management
-  const [activeTab, setActiveTab] = useState<'financeiro' | 'kanban' | 'leads' | 'team' | 'cancelados' | 'alerts' | 'campanhas' | 'atendimento'>(
+  const [activeTab, setActiveTab] = useState<'financeiro' | 'kanban' | 'leads' | 'team' | 'cancelados' | 'alerts' | 'campanhas' | 'atendimento' | 'flow-manager' | 'marketing-forms'>(
     isAdmin ? 'financeiro' : 'atendimento'
   );
   const [subTabFinanceiro, setSubTabFinanceiro] = useState<'product' | 'comercial'>('product');
@@ -507,6 +509,9 @@ export default function DashboardContent({
     if (activeTab === 'campanhas') {
       fetchCampaigns();
       fetchKpis();
+    }
+    if (activeTab === 'marketing-forms') {
+      fetchCampaigns();
     }
     if (activeTab === 'team') {
       fetchSettings();
@@ -2423,11 +2428,11 @@ export default function DashboardContent({
 
           {(isAdmin || currentUser?.role === 'POST_SALES') && (
             <button 
-              onClick={() => window.location.href = '/dashboard/flow-manager'}
+              onClick={() => setActiveTab('flow-manager')}
               style={{
                 padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                background: 'transparent',
-                color: 'var(--text-secondary)',
+                background: activeTab === 'flow-manager' ? 'var(--accent-glow)' : 'transparent',
+                color: activeTab === 'flow-manager' ? 'var(--accent)' : 'var(--text-secondary)',
                 transition: 'all 0.2s'
               }}
             >
@@ -2437,11 +2442,11 @@ export default function DashboardContent({
 
           {isAdmin && (
             <button 
-              onClick={() => window.location.href = '/dashboard/marketing/forms'}
+              onClick={() => setActiveTab('marketing-forms')}
               style={{
                 padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                background: 'transparent',
-                color: 'var(--text-secondary)',
+                background: activeTab === 'marketing-forms' ? 'var(--accent-glow)' : 'transparent',
+                color: activeTab === 'marketing-forms' ? 'var(--accent)' : 'var(--text-secondary)',
                 transition: 'all 0.2s'
               }}
             >
@@ -3731,6 +3736,24 @@ export default function DashboardContent({
             )}
 
           </div>
+        </div>
+      )}
+
+      {activeTab === 'flow-manager' && (isAdmin || currentUser?.role === 'POST_SALES') && (
+        <div className="animate-fadeUp">
+          <FlowManagerContent currentUser={currentUser} initialPipelines={pipelines} initialProducts={products} isTab={true} />
+        </div>
+      )}
+
+      {activeTab === 'marketing-forms' && isAdmin && (
+        <div className="animate-fadeUp">
+          <FormsConfiguratorContent 
+            currentUser={currentUser} 
+            pipelines={pipelines.map(p => ({ id: p.id, name: p.name }))}
+            campaigns={campaignsData.map(c => ({ id: c.id, name: c.name }))}
+            products={products.map(p => ({ id: p.id, name: p.name }))}
+            isTab={true}
+          />
         </div>
       )}
 

@@ -64,9 +64,10 @@ interface Props {
   pipelines: Pipeline[];
   campaigns: Campaign[];
   products: Product[];
+  isTab?: boolean;
 }
 
-export default function FormsConfiguratorContent({ currentUser, pipelines, campaigns, products = [] }: Props) {
+export default function FormsConfiguratorContent({ currentUser, pipelines, campaigns, products = [], isTab = false }: Props) {
   const [formsList, setFormsList] = useState<Form[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeForm, setActiveForm] = useState<Form | null>(null);
@@ -420,28 +421,30 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
   };
 
   return (
-    <div className="layout-root" style={{ background: 'var(--background)', minHeight: '100vh', display: 'flex', flexDirection: 'column', color: 'var(--text-primary)' }}>
+    <div className={isTab ? "" : "layout-root"} style={isTab ? { display: 'flex', flexDirection: 'column', color: 'var(--text-primary)', flex: 1, padding: 0, gap: 24 } : { background: 'var(--background)', minHeight: '100vh', display: 'flex', flexDirection: 'column', color: 'var(--text-primary)' }}>
       {/* HEADER */}
-      <header style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button 
-            onClick={() => window.location.href = '/dashboard'}
-            style={{ padding: '8px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
-          >
-            ◀ Voltar ao Dashboard
-          </button>
-          <span style={{ fontSize: 18, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
-            📋 Marketing Hub & Form Builder
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <ThemeToggle />
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{currentUser.name} (Admin)</div>
-        </div>
-      </header>
+      {!isTab && (
+        <header style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button 
+              onClick={() => window.location.href = '/dashboard'}
+              style={{ padding: '8px 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+            >
+              ◀ Voltar ao Dashboard
+            </button>
+            <span style={{ fontSize: 18, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>
+              📋 Marketing Hub & Form Builder
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <ThemeToggle />
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{currentUser.name} (Admin)</div>
+          </div>
+        </header>
+      )}
 
       {/* WORKSPACE */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>

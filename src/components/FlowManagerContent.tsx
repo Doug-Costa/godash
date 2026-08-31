@@ -16,9 +16,10 @@ interface FlowManagerContentProps {
   } | null;
   initialPipelines?: any[];
   initialProducts?: any[];
+  isTab?: boolean;
 }
 
-export default function FlowManagerContent({ currentUser, initialPipelines = [], initialProducts = [] }: FlowManagerContentProps) {
+export default function FlowManagerContent({ currentUser, initialPipelines = [], initialProducts = [], isTab = false }: FlowManagerContentProps) {
   const isAdmin = currentUser?.role === 'ADMIN';
 
   // Tabs: 'marketing' | 'commercial' | 'cs' | 'nurturing'
@@ -297,7 +298,7 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
   const tabFlows = getTabFlows();
 
   return (
-    <div className="dashboard-layout" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div className="dashboard-layout" style={{ padding: isTab ? 0 : 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
       {/* Header Panel */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)', padding: '16px 24px', borderRadius: 12, border: '1px solid var(--border)' }}>
         <div>
@@ -323,14 +324,16 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
           >
             📊 {currentView === 'dashboard' ? 'Ver Reguas / Fluxos' : 'Dashboard de Disparos'}
           </button>
-          <ThemeToggle />
-          <button 
-            onClick={() => window.location.href = '/dashboard'}
-            className="btn-action btn-action-outline"
-            style={{ padding: '8px 16px', fontSize: 13 }}
-          >
-            ◀️ Ir para o Kanban
-          </button>
+          {!isTab && <ThemeToggle />}
+          {!isTab && (
+            <button 
+              onClick={() => window.location.href = '/dashboard'}
+              className="btn-action btn-action-outline"
+              style={{ padding: '8px 16px', fontSize: 13 }}
+            >
+              ◀️ Ir para o Kanban
+            </button>
+          )}
         </div>
       </div>
 
