@@ -1,5 +1,5 @@
 import prisma from '../prisma';
-import { ProductCategory, ProductSubType, SaleChannel } from '@prisma/client';
+import { ProductCategory, ProductSubType } from '@prisma/client';
 
 export interface SegmentationFilter {
   purchasedProducts?: {
@@ -14,6 +14,9 @@ export interface SegmentationFilter {
     subType?: ProductSubType;
     startDateGe?: Date;
   }[];
+  specialties?: string[];
+  notSpecialties?: string[];
+  interests?: string[];
   pipelineId?: string;
   stage?: string;
   tags?: string[];
@@ -22,7 +25,8 @@ export interface SegmentationFilter {
 export class CampaignSegmentationService {
   /**
    * Filtra e retorna a lista de Customers (leads/clientes) com base em regras
-   * lógicas complexas cruzando tabelas relacionais do Prisma (some, none).
+   * lógicas complexas cruzando tabelas relacionais do Prisma (some, none),
+   * histórico de compras (FATO), desejos comerciais (DESEJO) e especialidades.
    */
   async segmentLeads(filter: SegmentationFilter) {
     const whereClause: any = {};
@@ -107,11 +111,70 @@ export class CampaignSegmentationService {
       }
     }
 
+    // 6. Cruzamento por Especialidade Confirmada (FATO / Ex-Aluno)
+    if (filter.specialties && filter.specialties.length > 0) {
+      for (const spec of filter.specialties) {
+        andConditions.push({
+          OR: [
+            {
+              customerProducts: {
+                some: {
+                  product: { specialty: spec }
+                }
+              }
+            },
+            {
+              metadata: {
+                path: ['specialties'],
+                array_contains: spec
+              }
+            }
+          ]
+        });
+      }
+    }
+
+    // 7. Cruzamento "NÃO tem a Especialidade Z" (Para Cross-Sell inteligente)
+    if (filter.notSpecialties && filter.notSpecialties.length > 0) {
+      for (const notSpec of filter.notSpecialties) {
+        andConditions.push({
+          customerProducts: {
+            none: {
+              product: { specialty: notSpec }
+            }
+          }
+        });
+      }
+    }
+
+    // 8. Cruzamento por Área de Interesse / Desejo (DESEJO / Oportunidade)
+    if (filter.interests && filter.interests.length > 0) {
+      for (const int of filter.interests) {
+        andConditions.push({
+          OR: [
+            {
+              opportunities: {
+                some: {
+                  product: { specialty: int }
+                }
+              }
+            },
+            {
+              metadata: {
+                path: ['interests'],
+                array_contains: int
+              }
+            }
+          ]
+        });
+      }
+    }
+
     if (andConditions.length > 0) {
       whereClause.AND = andConditions;
     }
 
-    // Retorna os clientes correspondentes com seus produtos e dados básicos
+    // Retorna os clientes correspondentes com seus produtos, especialidades e dados básicos
     return prisma.customer.findMany({
       where: whereClause,
       include: {

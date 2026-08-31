@@ -564,6 +564,7 @@ model Product {
   price       Float?
   isActive    Boolean   @default(true)
   cohort      String?   // Turma/Edição do produto
+  specialty   String?   // Especialidade Odontológica / Área de Conhecimento
   startDate   DateTime? // Data de início do produto/turma
   endDate     DateTime? // Data de término do produto/turma
   

@@ -5,7 +5,7 @@ import { RowPreflightResult } from './ImportPreflightService';
 
 export class ImportCommitService {
   /**
-   * Recebe a lista de linhas aprovadas do Preflight (onde status === 'READY')
+   * Recebe a lista de linhas aprovadas do Preflight (onde status === 'READY' ou 'WARNING')
    * e as persiste de forma canônica no banco de dados.
    */
   static async commit(
@@ -20,12 +20,12 @@ export class ImportCommitService {
     rows: RowPreflightResult[]
   ) {
     // 1. Cria a auditoria do lote
-    const fileHash = `hash_${Date.now()}`; // Na vida real, poderíamos receber o hash MD5 do arquivo
+    const fileHash = `hash_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const batch = await prisma.importBatch.create({
       data: {
         fileName: batchInfo.fileName,
         fileHash,
-        schemaVersion: batchInfo.schemaVersion,
+        schemaVersion: batchInfo.schemaVersion || 'V4',
         uploadedById: batchInfo.uploadedById,
         status: 'IMPORTING',
         totalRows: rows.length
@@ -36,7 +36,7 @@ export class ImportCommitService {
     let errorRows = 0;
 
     for (const row of rows) {
-      if (row.status !== 'READY') {
+      if (row.status !== 'READY' && row.status !== 'WARNING') {
         errorRows++;
         continue;
       }
@@ -80,9 +80,11 @@ export class ImportCommitService {
     if (!data) throw new Error("Linha não tem parsedData.");
 
     const source = data.source_label || 'CSV_IMPORT';
-    const externalId = data.source_record_id || `row_${row.index}_${Date.now()}`;
+    const externalId = data.externalPersonId 
+      ? String(data.externalPersonId) 
+      : (data.source_record_id || `row_${row.index}_${Date.now()}`);
 
-    // 1. Identidade Canônica (Person) - Agora executamos a mutação
+    // 1. Identidade Canônica (Person)
     const person = await CanonicalIdentityService.resolve({
       source,
       externalId,
@@ -93,18 +95,70 @@ export class ImportCommitService {
     });
 
     // 2. Contexto Comercial (Customer)
-    // Busca se a pessoa já tem um Customer sem pipeline específico ou se é novo
     let customer = await prisma.customer.findFirst({
-      where: { personId: person.id }
+      where: {
+        OR: [
+          { personId: person.id },
+          ...(data.externalPersonId ? [{ externalPersonId: data.externalPersonId }] : [])
+        ]
+      }
     });
 
+    const currentMetadata = (customer?.metadata as Record<string, any>) || {};
+    const existingSpecialties: string[] = Array.isArray(currentMetadata.specialties) 
+      ? currentMetadata.specialties 
+      : (currentMetadata.specialty ? [currentMetadata.specialty] : []);
+    const existingInterests: string[] = Array.isArray(currentMetadata.interests) 
+      ? currentMetadata.interests 
+      : [];
+
+    const classifiedSpecialty = row.classifiedSpecialty || data.specialty;
+
     if (!customer) {
+      const initialSpecialties = (importDestination === 'FATO' && classifiedSpecialty)
+        ? [classifiedSpecialty]
+        : [];
+      const initialInterests = (importDestination !== 'FATO' && classifiedSpecialty)
+        ? [classifiedSpecialty]
+        : [];
+
       customer = await prisma.customer.create({
         data: {
           personId: person.id,
+          externalPersonId: data.externalPersonId || null,
           source,
           stage: data.stage || 'novo_cadastro',
-          metadata: row.originalData
+          metadata: {
+            ...row.originalData,
+            specialties: initialSpecialties,
+            interests: initialInterests,
+            sellerContract: data.sellerContract || undefined
+          }
+        }
+      });
+    } else {
+      // Atualiza metadados com as novas especialidades/interesses sem sobrescrever as anteriores
+      let updatedSpecialties = existingSpecialties;
+      let updatedInterests = existingInterests;
+
+      if (importDestination === 'FATO' && classifiedSpecialty && !existingSpecialties.includes(classifiedSpecialty)) {
+        updatedSpecialties = [...existingSpecialties, classifiedSpecialty];
+      } else if (importDestination !== 'FATO' && classifiedSpecialty && !existingInterests.includes(classifiedSpecialty)) {
+        updatedInterests = [...existingInterests, classifiedSpecialty];
+      }
+
+      await prisma.customer.update({
+        where: { id: customer.id },
+        data: {
+          personId: customer.personId || person.id,
+          externalPersonId: customer.externalPersonId || data.externalPersonId || null,
+          metadata: {
+            ...currentMetadata,
+            ...row.originalData,
+            specialties: updatedSpecialties,
+            interests: updatedInterests,
+            sellerContract: data.sellerContract || currentMetadata.sellerContract
+          }
         }
       });
     }
@@ -118,9 +172,10 @@ export class ImportCommitService {
         await CustomerRevenueService.registerPurchase({
           customerId: customer.id,
           productId: finalProductId,
-          pricePaid: data.value ?? 0, // Fallback se não for passado
+          pricePaid: data.value ?? 0,
           authorId,
-          source
+          source: data.sellerContract ? `Importação CSV (Vendedor: ${data.sellerContract})` : source,
+          startDate: new Date()
         });
       }
     } else {
@@ -136,13 +191,11 @@ export class ImportCommitService {
       }
 
       if (targetPipelineId) {
-        // Se a oportunidade para este pipeline já existe, não duplicamos
         const existingOpp = await prisma.opportunity.findFirst({
           where: { customerId: customer.id, pipelineId: targetPipelineId }
         });
 
         if (!existingOpp) {
-          // Assegurar que o customer tenha o pipelineId setado se for nulo
           if (!customer.pipelineId) {
             await prisma.customer.update({
               where: { id: customer.id },
@@ -155,7 +208,7 @@ export class ImportCommitService {
               customerId: customer.id,
               pipelineId: targetPipelineId,
               productId: finalProductId || null,
-              status: data.fact_status || 'OPEN',
+              status: data.enrollmentStatus === 'CANCELED' ? 'LOST' : 'OPEN',
               value: data.value || 0,
               assigneeId: authorId
             }

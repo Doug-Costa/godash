@@ -25,6 +25,7 @@ import CustomerProductsTab from '@/components/CustomerProductsTab';
 import ManualSaleModal from '@/components/ManualSaleModal';
 import CommercialRevOpsDashboard from '@/components/CommercialRevOpsDashboard';
 import AdminImportTab from '@/components/AdminImportTab';
+import { SpecialtyClassifierService } from '@/lib/services/SpecialtyClassifierService';
 
 const formatBRL = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -152,7 +153,8 @@ export default function DashboardContent({
 
   // Dynamic metadata states
   const [metaInstagram, setMetaInstagram] = useState('');
-  const [metaSpecialty, setMetaSpecialty] = useState('');
+  const [metaSpecialties, setMetaSpecialties] = useState<string[]>([]);
+  const [metaInterests, setMetaInterests] = useState<string[]>([]);
   const [isSavingMeta, setIsSavingMeta] = useState(false);
   const [metaSaved, setMetaSaved] = useState(false);
   const [isEditingInst, setIsEditingInst] = useState(false);
@@ -174,14 +176,34 @@ export default function DashboardContent({
     if (selectedLead) {
       const meta = selectedLead.metadata || {};
       setMetaInstagram(meta.instagram || '');
-      setMetaSpecialty(meta.specialty || '');
+      
+      const specs: string[] = Array.isArray(meta.specialties)
+        ? [...meta.specialties]
+        : (meta.specialty ? [meta.specialty] : []);
+      const ints: string[] = Array.isArray(meta.interests)
+        ? [...meta.interests]
+        : (meta.interest ? [meta.interest] : []);
+
+      // Auto-extract specialties from customerProducts bought
+      if (selectedLead.customerProducts && Array.isArray(selectedLead.customerProducts)) {
+        for (const cp of selectedLead.customerProducts) {
+          const spec = cp.product?.specialty;
+          if (spec && !specs.includes(spec)) {
+            specs.push(spec);
+          }
+        }
+      }
+
+      setMetaSpecialties(specs);
+      setMetaInterests(ints);
       setActiveRapidFireTab(null);
       setWaPasteText('');
       setEmailSubject('DentalGO - Atendimento Comercial');
       setEmailBodyText('');
     } else {
       setMetaInstagram('');
-      setMetaSpecialty('');
+      setMetaSpecialties([]);
+      setMetaInterests([]);
       setActiveRapidFireTab(null);
     }
   }, [selectedLead]);
@@ -908,11 +930,12 @@ export default function DashboardContent({
     }
   };
 
-  const handleSaveMetadata = async (inst?: string, spec?: string) => {
+  const handleSaveMetadata = async (inst?: string, specs?: string[], ints?: string[]) => {
     if (!selectedLead) return;
     setIsSavingMeta(true);
     const targetInst = inst !== undefined ? inst : metaInstagram;
-    const targetSpec = spec !== undefined ? spec : metaSpecialty;
+    const targetSpecs = specs !== undefined ? specs : metaSpecialties;
+    const targetInts = ints !== undefined ? ints : metaInterests;
     try {
       const res = await fetch('/api/leads', {
         method: 'POST',
@@ -922,7 +945,9 @@ export default function DashboardContent({
           journeyId: selectedLead.journeyId || null,
           metadata: {
             instagram: targetInst,
-            specialty: targetSpec,
+            specialties: targetSpecs,
+            specialty: targetSpecs[0] || '',
+            interests: targetInts
           }
         })
       });
@@ -930,7 +955,12 @@ export default function DashboardContent({
         const json = await res.json();
         setSelectedLead((prev: any) => ({
           ...prev,
-          metadata: json.data.metadata
+          metadata: json.data?.metadata || {
+            ...(prev?.metadata || {}),
+            instagram: targetInst,
+            specialties: targetSpecs,
+            interests: targetInts
+          }
         }));
         setMetaSaved(true);
         setTimeout(() => setMetaSaved(false), 3000);
@@ -4237,7 +4267,7 @@ export default function DashboardContent({
                     onChange={(e) => setMetaInstagram(e.target.value)}
                     onBlur={() => {
                       setIsEditingInst(false);
-                      handleSaveMetadata(metaInstagram, metaSpecialty);
+                      handleSaveMetadata(metaInstagram, metaSpecialties, metaInterests);
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -4295,31 +4325,92 @@ export default function DashboardContent({
                   </div>
                 )}
               </div>
-              <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 6, color: 'var(--text-secondary)' }}>Especialidade / Atuação:</label>
-                <select
-                  value={metaSpecialty}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setMetaSpecialty(val);
-                    handleSaveMetadata(metaInstagram, val);
-                  }}
-                  style={{
-                    width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)',
-                    borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none', cursor: 'pointer'
-                  }}
-                >
-                  <option value="">Selecione a especialidade...</option>
-                  <option value="Ortodontia">Ortodontia</option>
-                  <option value="Implantodontia">Implantodontia</option>
-                  <option value="Odontopediatria">Odontopediatria</option>
-                  <option value="Harmonização Orofacial (HOF)">Harmonização Orofacial (HOF)</option>
-                  <option value="Endodontia">Endodontia</option>
-                  <option value="Periodontia">Periodontia</option>
-                  <option value="Clínico Geral">Clínico Geral</option>
-                  <option value="Prótese Dentária">Prótese Dentária</option>
-                  <option value="Outra">Outra</option>
-                </select>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 6, color: 'var(--text-secondary)' }}>
+                    🎓 Especialidades / Formações:
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                    {metaSpecialties.length === 0 ? (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Nenhuma especialidade confirmada.</span>
+                    ) : (
+                      metaSpecialties.map((spec) => (
+                        <span key={spec} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6,
+                          background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)',
+                          color: '#818CF8', fontSize: 11, fontWeight: 600
+                        }}>
+                          <span>{SpecialtyClassifierService.getSpecialtyIcon(spec)}</span>
+                          <span>{SpecialtyClassifierService.getSpecialtyLabel(spec)}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = metaSpecialties.filter(s => s !== spec);
+                              setMetaSpecialties(updated);
+                              handleSaveMetadata(metaInstagram, updated, metaInterests);
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#818CF8', cursor: 'pointer', fontSize: 12, padding: 0, marginLeft: 2 }}
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      ))
+                    )}
+                  </div>
+
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val && !metaSpecialties.includes(val)) {
+                        const updated = [...metaSpecialties, val];
+                        setMetaSpecialties(updated);
+                        handleSaveMetadata(metaInstagram, updated, metaInterests);
+                      }
+                    }}
+                    style={{
+                      width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)',
+                      borderRadius: 6, color: 'var(--text-primary)', fontSize: 12, outline: 'none', cursor: 'pointer'
+                    }}
+                  >
+                    <option value="">➕ Adicionar especialidade...</option>
+                    {SpecialtyClassifierService.getAllSpecialties().map(s => (
+                      <option key={s.key} value={s.key}>{s.icon} {s.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {metaInterests.length > 0 && (
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4, color: 'var(--text-secondary)' }}>
+                      🎯 Áreas de Interesse / Desejo:
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {metaInterests.map((interest) => (
+                        <span key={interest} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6,
+                          background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251, 191, 36, 0.3)',
+                          color: '#FBBF24', fontSize: 11, fontWeight: 600
+                        }}>
+                          <span>🎯</span>
+                          <span>{SpecialtyClassifierService.getSpecialtyLabel(interest)}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = metaInterests.filter(i => i !== interest);
+                              setMetaInterests(updated);
+                              handleSaveMetadata(metaInstagram, metaSpecialties, updated);
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#FBBF24', cursor: 'pointer', fontSize: 12, padding: 0, marginLeft: 2 }}
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Success Indicator inside card (autosave feedback) */}

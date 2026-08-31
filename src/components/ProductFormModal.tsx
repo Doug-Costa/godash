@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { DENTAL_SPECIALTIES } from '@/lib/services/SpecialtyClassifierService';
 
 // Categorias e subtipos de produtos da taxonomia RevOps
 const PRODUCT_CATEGORIES = ['CURSO', 'CONGRESSO', 'SAAS', 'LIVRO', 'INSTITUCIONAL'];
@@ -31,6 +32,7 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('CURSO');
   const [subType, setSubType] = useState('ONLINE');
+  const [specialty, setSpecialty] = useState('ORTODONTIA');
   const [priceRaw, setPriceRaw] = useState(0);
   const [priceDisplay, setPriceDisplay] = useState('');
   const [pricePaidRaw, setPricePaidRaw] = useState(0);
@@ -47,6 +49,7 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
       setDescription(editingProduct.description || '');
       setCategory(editingProduct.category || 'CURSO');
       setSubType(editingProduct.subType || 'ONLINE');
+      setSpecialty(editingProduct.specialty || 'ORTODONTIA');
       
       const basePr = editingProduct.basePrice || 0;
       setPriceRaw(basePr);
@@ -66,6 +69,7 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
       setDescription('');
       setCategory('CURSO');
       setSubType('ONLINE');
+      setSpecialty('ORTODONTIA');
       setPriceRaw(0);
       setPriceDisplay('');
       setPricePaidRaw(0);
@@ -121,6 +125,7 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
       description: description || null,
       category,
       subType,
+      specialty: specialty || null,
       basePrice: priceRaw,
       price: pricePaidRaw || priceRaw,
       cohort: cohort || null,
@@ -129,7 +134,7 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
       isActive,
     };
 
-    if (editingProduct?.id) {
+    if (editingProduct && editingProduct.id) {
       payload.id = editingProduct.id;
     }
 
@@ -140,33 +145,33 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'var(--overlay)',
-      backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1050
+      backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100
     }}>
-      <div className="card animate-fadeUp" style={{ 
-        width: '100%', maxWidth: '600px', background: 'var(--surface)', padding: 24, 
-        borderRadius: 16, border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)', 
-        boxSizing: 'border-box', maxHeight: '90vh', overflowY: 'auto'
+      <div className="card animate-fadeUp" style={{
+        width: '100%', maxWidth: '620px', maxHeight: '90vh', overflowY: 'auto',
+        background: 'var(--surface)', padding: 24, borderRadius: 16, border: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-card)', boxSizing: 'border-box'
       }}>
         
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
-          <h3 style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-            {editingProduct ? '📝 Editar Produto' : '📦 Novo Produto RevOps'}
+          <h3 style={{ fontFamily: 'var(--font-display)', color: 'var(--text-primary)', fontSize: '1.2rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            📦 {editingProduct ? 'Editar Produto / Curso / Livro' : 'Cadastrar Novo Produto (RevOps)'}
           </h3>
           <button 
-            onClick={onClose} 
+            onClick={onClose}
             style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 4 }}
           >
             &times;
           </button>
         </div>
 
-        {/* Form Body */}
+        {/* Form */}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Nome do Produto:</label>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Nome do Produto / Curso:</label>
               <input
                 type="text"
                 required
@@ -204,15 +209,32 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {/* Specialty, Category & SubType Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Especialidade / Área:</label>
+              <select
+                value={specialty}
+                onChange={(e) => setSpecialty(e.target.value)}
+                style={{
+                  width: '100%', padding: '10px 12px', background: 'var(--surface-raised)',
+                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, outline: 'none'
+                }}
+              >
+                {Object.values(DENTAL_SPECIALTIES).map(spec => (
+                  <option key={spec.key} value={spec.key}>{spec.icon} {spec.label}</option>
+                ))}
+              </select>
+            </div>
+
             <div>
               <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Categoria:</label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 style={{
-                  width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
-                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none'
+                  width: '100%', padding: '10px 12px', background: 'var(--surface-raised)',
+                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, outline: 'none'
                 }}
               >
                 {PRODUCT_CATEGORIES.map(cat => (
@@ -227,12 +249,12 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
                 value={subType}
                 onChange={(e) => setSubType(e.target.value)}
                 style={{
-                  width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
-                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none'
+                  width: '100%', padding: '10px 12px', background: 'var(--surface-raised)',
+                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 12, outline: 'none'
                 }}
               >
-                {PRODUCT_SUB_TYPES.map(sub => (
-                  <option key={sub} value={sub}>{sub.replace('_', ' ')}</option>
+                {PRODUCT_SUB_TYPES.map(st => (
+                  <option key={st} value={st}>{st.replace('_', ' ')}</option>
                 ))}
               </select>
             </div>
@@ -240,12 +262,25 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Preço de Tabela / Base (BRL):</label>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Preço de Tabela (BRL):</label>
               <input
                 type="text"
-                required
                 value={priceDisplay}
                 onChange={(e) => handlePriceChange(e, 'base')}
+                placeholder="R$ 0,00"
+                style={{
+                  width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
+                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--accent)', fontWeight: 600, outline: 'none', fontSize: 13, boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Preço Promocional / Praticado:</label>
+              <input
+                type="text"
+                value={pricePaidDisplay}
+                onChange={(e) => handlePriceChange(e, 'price')}
                 placeholder="R$ 0,00"
                 style={{
                   width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
@@ -253,61 +288,45 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
                 }}
               />
             </div>
-
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Preço de Venda Praticado (BRL):</label>
-              <input
-                type="text"
-                value={pricePaidDisplay}
-                onChange={(e) => handlePriceChange(e, 'price')}
-                placeholder="R$ 0,00 (deixe em branco para usar o preço base)"
-                style={{
-                  width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
-                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--accent)', fontWeight: 600, outline: 'none', fontSize: 13, boxSizing: 'border-box'
-                }}
-              />
-            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Turma / Cohort (Opcional):</label>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Turma / Edição:</label>
               <input
                 type="text"
                 value={cohort}
                 onChange={(e) => setCohort(e.target.value)}
                 placeholder="Ex: Turma 2026.1"
                 style={{
-                  width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
-                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13, boxSizing: 'border-box'
+                  width: '100%', padding: '10px 12px', background: 'var(--surface-raised)',
+                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 12, boxSizing: 'border-box'
                 }}
               />
             </div>
-          </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Início das Aulas (Opcional):</label>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Início das Aulas:</label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 style={{
-                  width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
-                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13, boxSizing: 'border-box'
+                  width: '100%', padding: '10px 12px', background: 'var(--surface-raised)',
+                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 12, boxSizing: 'border-box'
                 }}
               />
             </div>
 
             <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Fim das Aulas (Opcional):</label>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>Término:</label>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 style={{
-                  width: '100%', padding: '10px 14px', background: 'var(--surface-raised)',
-                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13, boxSizing: 'border-box'
+                  width: '100%', padding: '10px 12px', background: 'var(--surface-raised)',
+                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 12, boxSizing: 'border-box'
                 }}
               />
             </div>
@@ -328,10 +347,12 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
               className="btn-action btn-action-purple"
               style={{ padding: '10px 20px', borderRadius: 8, fontSize: 12, background: 'var(--accent)', borderColor: 'var(--accent)', color: '#000' }}
             >
-              {editingProduct ? 'Atualizar Produto' : 'Salvar Produto'}
+              {editingProduct ? 'Salvar Alterações' : 'Criar Produto'}
             </button>
           </div>
+
         </form>
+
       </div>
     </div>
   );

@@ -2,13 +2,19 @@ import Papa from 'papaparse';
 import { CanonicalImportRow, ImportFactType } from '../domain/ImportContract';
 import { CanonicalIdentityService } from './CanonicalIdentityService';
 import { ProductResolverService } from './ProductResolverService';
+import { SpecialtyClassifierService } from './SpecialtyClassifierService';
 
 export type RowPreflightStatus = 'READY' | 'WARNING' | 'ERROR' | 'REVIEW_REQUIRED';
 
 export interface RowPreflightResult {
   index: number;
   originalData: Record<string, any>;
-  parsedData: Partial<CanonicalImportRow> | null;
+  parsedData: Partial<CanonicalImportRow> & {
+    externalPersonId?: number;
+    specialty?: string;
+    enrollmentStatus?: string;
+    sellerContract?: string;
+  } | null;
   status: RowPreflightStatus;
   errors: string[];
   warnings: string[];
@@ -17,6 +23,7 @@ export interface RowPreflightResult {
   catalogStatus: 'FOUND' | 'UNKNOWN' | 'NOT_REQUIRED';
   resolvedProductId?: string;
   resolvedProductName?: string;
+  classifiedSpecialty?: string;
 }
 
 export interface PreflightSummary {
@@ -82,50 +89,119 @@ export class ImportPreflightService {
     };
   }
 
+  private static getField(row: any, ...fieldNames: string[]): string | undefined {
+    for (const fn of fieldNames) {
+      const foundKey = Object.keys(row).find(k => k.trim().toLowerCase() === fn.trim().toLowerCase());
+      if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null) {
+        const val = row[foundKey].toString().trim();
+        if (val) return val;
+      }
+    }
+    return undefined;
+  }
+
   private static async analyzeRow(rawRow: any, index: number): Promise<RowPreflightResult> {
     const errors: string[] = [];
     const warnings: string[] = [];
     let status: RowPreflightStatus = 'READY';
 
-    // Parse básico (mapeando colunas com fallback dinâmico básico)
-    const email = rawRow.email?.toString()?.trim();
-    const phone = rawRow.phone?.toString()?.trim() || rawRow.telefone?.toString()?.trim();
-    const name = rawRow.name?.toString()?.trim() || rawRow.nome?.toString()?.trim();
-    
-    let factTypeStr = rawRow.fact_type?.toString()?.trim()?.toUpperCase() || 'OPPORTUNITY';
-    if (!Object.values(ImportFactType).includes(factTypeStr as ImportFactType)) {
-      errors.push(`Tipo de fato inválido: ${factTypeStr}. Fallback para OPPORTUNITY.`);
-      factTypeStr = 'OPPORTUNITY';
-      status = 'ERROR'; // Se o fato é inválido, não podemos confiar.
+    // 1. Extração Inteligente de Nome e ID Legado (ex: "944472/FRANCIELI RIBEIRO DE BRITO")
+    const clientField = this.getField(rawRow, 'Cliente', 'cliente', 'Aluno', 'aluno');
+    let name = this.getField(rawRow, 'name', 'nome', 'full_name', 'fullName');
+    let externalPersonIdStr = this.getField(rawRow, 'id', 'externalPersonId', 'codigo', 'Código');
+
+    if (clientField && clientField.includes('/')) {
+      const parts = clientField.split('/');
+      if (parts[0] && !isNaN(Number(parts[0].trim()))) {
+        externalPersonIdStr = parts[0].trim();
+      }
+      name = parts.slice(1).join('/').trim();
+    } else if (clientField && !name) {
+      name = clientField;
+    }
+
+    const externalPersonId = externalPersonIdStr && !isNaN(Number(externalPersonIdStr))
+      ? Number(externalPersonIdStr)
+      : undefined;
+
+    // 2. Extração de E-mail (Fiscal, Pessoal ou Canônico)
+    let email = this.getField(rawRow, 'email', 'EMAIL', 'EMAIL_FISCAL', 'Email', 'E-mail');
+    if (email && email.includes(';')) {
+      email = email.split(';')[0].trim();
+    }
+    if (email && !email.includes('@')) {
+      email = undefined; // Limpa e-mails corrompidos
+    }
+
+    // 3. Extração e Sanitização de Telefone
+    let phone = this.getField(rawRow, 'phone', 'telefone', 'Telefone Comercial', 'Telefone Residencial', 'whatsapp', 'Celular');
+    if (phone) {
+      const digits = phone.replace(/\D/g, '');
+      if (digits.length < 8 || /^0+$/.test(digits) || digits === '55555555555') {
+        phone = undefined; // Ignora padrões zerados ou nulos de ERP como (00)00000-0000
+      }
+    }
+
+    // 4. Mapeamento de Produto / Curso / Cód.Curso
+    let productName = this.getField(rawRow, 'product_name', 'produto', 'Curso', 'curso', 'Descrição', 'Descricao');
+    const productId = this.getField(rawRow, 'product_id', 'Cód.Curso', 'Cod.Curso', 'codigo_curso', 'cod_curso');
+
+    if (productName && productName.toUpperCase().startsWith('CURSOS /')) {
+      productName = productName.replace(/^CURSOS\s*\/\s*/i, '').trim();
+    }
+
+    // 5. Mapeamento de Status da Matrícula (ex: 24/ATIVA -> ACTIVE, 37/CANCELADO -> CANCELED)
+    const rawStatus = this.getField(rawRow, 'Status', 'status', 'situacao', 'Situação');
+    let enrollmentStatus = 'ACTIVE';
+    if (rawStatus) {
+      const up = rawStatus.toUpperCase();
+      if (up.includes('CANCEL') || up.includes('37/')) enrollmentStatus = 'CANCELED';
+      else if (up.includes('DESIST') || up.includes('47/')) enrollmentStatus = 'CANCELED';
+      else if (up.includes('ATIVA') || up.includes('24/')) enrollmentStatus = 'ACTIVE';
+      else if (up.includes('CONCLU') || up.includes('FINAL')) enrollmentStatus = 'COMPLETED';
+    }
+
+    // 6. Mapeamento de Vendedor
+    const sellerContract = this.getField(rawRow, 'Vendedor Contrato', 'Vendedor Cliente', 'vendedor', 'seller');
+
+    // 7. Tipo de Fato (PURCHASE vs OPPORTUNITY)
+    let factTypeStr = this.getField(rawRow, 'fact_type', 'tipo_fato')?.toUpperCase();
+    if (!factTypeStr) {
+      if (rawStatus || productId || productName) {
+        factTypeStr = 'PURCHASE';
+      } else {
+        factTypeStr = 'OPPORTUNITY';
+      }
     }
     const factType = factTypeStr as ImportFactType;
 
-    const valueStr = rawRow.value?.toString()?.trim() || rawRow.valor?.toString()?.trim();
+    // 8. Valor Financeiro
+    const valueStr = this.getField(rawRow, 'value', 'valor', 'preco', 'price');
     let value: number | undefined = undefined;
     if (valueStr) {
       const parsedValue = parseFloat(valueStr.replace(',', '.'));
-      if (isNaN(parsedValue)) {
-        errors.push(`Valor financeiro inválido: ${valueStr}`);
-        status = 'ERROR';
-      } else {
+      if (!isNaN(parsedValue)) {
         value = parsedValue;
       }
     }
 
-    const productName = rawRow.product_name?.toString()?.trim() || rawRow.produto?.toString()?.trim();
-    const productId = rawRow.product_id?.toString()?.trim();
+    // 9. Classificação Inteligente de Especialidade
+    const classifiedSpecialty = SpecialtyClassifierService.resolveSpecialty({
+      code: productId,
+      text: productName || clientField
+    });
 
-    // 1. Validar Identidade
+    // 10. Validação de Identidade Canônica V4
     let identityStatus: 'FOUND' | 'NOT_FOUND' | 'AMBIGUOUS' | 'NOT_REQUIRED' = 'NOT_REQUIRED';
     let personId: string | undefined;
 
-    if (!email && !phone) {
-      errors.push('E-mail ou Telefone são obrigatórios para resolução de identidade.');
+    if (!email && !phone && !externalPersonId) {
+      errors.push('E-mail, Telefone ou ID do Cliente são obrigatórios para resolução de identidade.');
       status = 'ERROR';
     } else {
       const identityRes = await CanonicalIdentityService.inspect({
-        source: rawRow.source_label || 'CSV_IMPORT',
-        externalId: rawRow.source_record_id || `row_${index}`,
+        source: this.getField(rawRow, 'source_label') || 'CSV_IMPORT',
+        externalId: externalPersonIdStr || `row_${index}`,
         email,
         phone,
         name
@@ -135,7 +211,7 @@ export class ImportPreflightService {
       personId = identityRes.personId;
 
       if (identityStatus === 'AMBIGUOUS') {
-        errors.push('Identidade ambígua: Encontrados múltiplos perfis para este e-mail/telefone.');
+        errors.push('Identidade ambígua: Encontrados múltiplos perfis para este contato.');
         status = 'ERROR';
       } else if (identityStatus === 'NOT_FOUND') {
         warnings.push('Nova identidade será criada no banco de dados.');
@@ -143,15 +219,14 @@ export class ImportPreflightService {
       }
     }
 
-    // 2. Validar Catálogo
+    // 11. Validação de Catálogo de Produtos
     let catalogStatus: 'FOUND' | 'UNKNOWN' | 'NOT_REQUIRED' = 'NOT_REQUIRED';
     let resolvedProductId: string | undefined;
     let resolvedProductName: string | undefined;
 
-    // Fatos que EXIGEM produto
     if (factType === 'PURCHASE' || factType === 'SUBSCRIPTION') {
       if (!productName && !productId) {
-        errors.push(`Fato do tipo ${factType} exige um product_id ou product_name.`);
+        errors.push(`Fato do tipo ${factType} exige um produto ou código de curso.`);
         status = 'ERROR';
       } else {
         const catalogRes = await ProductResolverService.resolve(productId || productName);
@@ -161,23 +236,26 @@ export class ImportPreflightService {
           resolvedProductId = catalogRes.productId;
           resolvedProductName = catalogRes.productName;
         } else if (catalogStatus === 'UNKNOWN') {
-          // Quando o catálogo é desconhecido e o fato EXIGE produto, a linha vai para HITL (Human In The Loop)
           status = 'REVIEW_REQUIRED';
         }
       }
-    }
-
-    // 3. Regras Específicas do Fato
-    if (factType === 'PURCHASE' && value === undefined) {
-      warnings.push('Fato PURCHASE sem valor financeiro definido. Isso pode distorcer o LTV se não for intencional (ex: cortesia).');
-      if (status === 'READY') status = 'WARNING';
     }
 
     return {
       index,
       originalData: rawRow,
       parsedData: {
-        name, email, phone, fact_type: factType, value, product_name: productName, product_id: productId
+        name,
+        email,
+        phone,
+        fact_type: factType,
+        value,
+        product_name: productName,
+        product_id: productId,
+        externalPersonId,
+        specialty: classifiedSpecialty,
+        enrollmentStatus,
+        sellerContract
       },
       status,
       errors,
@@ -186,7 +264,8 @@ export class ImportPreflightService {
       personId,
       catalogStatus,
       resolvedProductId,
-      resolvedProductName
+      resolvedProductName,
+      classifiedSpecialty
     };
   }
 }
