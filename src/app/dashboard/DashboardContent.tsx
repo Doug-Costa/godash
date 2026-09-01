@@ -3816,7 +3816,9 @@ export default function DashboardContent({
           <FormsConfiguratorContent 
             currentUser={currentUser} 
             pipelines={pipelines.map(p => ({ id: p.id, name: p.name }))}
-            campaigns={campaignsData.map(c => ({ id: c.id, name: c.name }))}
+            campaigns={[]}
+            journeys={campaignsData.map(c => ({ id: c.id, name: c.name }))}
+            agents={agents.map(agent => ({ id: agent.id, name: agent.name }))}
             products={products.map(p => ({ id: p.id, name: p.name }))}
             isTab={true}
           />

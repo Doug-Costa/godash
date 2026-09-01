@@ -29,6 +29,12 @@ export async function GET() {
         campaign: {
           select: { id: true, name: true }
         },
+        journey: {
+          select: { id: true, name: true }
+        },
+        fixedAssignee: {
+          select: { id: true, name: true, email: true }
+        },
         product: {
           select: { id: true, name: true }
         }
@@ -51,10 +57,16 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, redirectUrl, successMessage, styleConfig, pipelineId, stageId, campaignId, productId, fields } = body;
+    const { name, redirectUrl, successMessage, styleConfig, pipelineId, stageId, campaignId, journeyId, productId, assignmentMode = 'POOL', fixedAssigneeId, fields } = body;
 
     if (!name || !pipelineId) {
       return NextResponse.json({ success: false, error: 'name e pipelineId são obrigatórios' }, { status: 400 });
+    }
+    if (!['POOL', 'ROUND_ROBIN', 'FIXED'].includes(assignmentMode)) {
+      return NextResponse.json({ success: false, error: 'Modo de distribuição inválido.' }, { status: 400 });
+    }
+    if (assignmentMode === 'FIXED' && !fixedAssigneeId) {
+      return NextResponse.json({ success: false, error: 'Selecione o operador fixo.' }, { status: 400 });
     }
 
     const form = await prisma.form.create({
@@ -66,6 +78,9 @@ export async function POST(request: Request) {
         pipelineId,
         stageId,
         campaignId,
+        journeyId: journeyId || null,
+        assignmentMode,
+        fixedAssigneeId: assignmentMode === 'FIXED' ? fixedAssigneeId : null,
         productId: productId || null,
         fields: {
           create: (fields || []).map((f: any, idx: number) => ({
@@ -98,10 +113,16 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json();
-    const { id, name, redirectUrl, successMessage, styleConfig, pipelineId, stageId, campaignId, productId, fields } = body;
+    const { id, name, redirectUrl, successMessage, styleConfig, pipelineId, stageId, campaignId, journeyId, productId, assignmentMode = 'POOL', fixedAssigneeId, fields } = body;
 
     if (!id || !name || !pipelineId) {
       return NextResponse.json({ success: false, error: 'id, name e pipelineId são obrigatórios' }, { status: 400 });
+    }
+    if (!['POOL', 'ROUND_ROBIN', 'FIXED'].includes(assignmentMode)) {
+      return NextResponse.json({ success: false, error: 'Modo de distribuição inválido.' }, { status: 400 });
+    }
+    if (assignmentMode === 'FIXED' && !fixedAssigneeId) {
+      return NextResponse.json({ success: false, error: 'Selecione o operador fixo.' }, { status: 400 });
     }
 
     // Delete existing fields first to replace them entirely
@@ -119,6 +140,9 @@ export async function PUT(request: Request) {
         pipelineId,
         stageId,
         campaignId,
+        journeyId: journeyId || null,
+        assignmentMode,
+        fixedAssigneeId: assignmentMode === 'FIXED' ? fixedAssigneeId : null,
         productId: productId || null,
         fields: {
           create: (fields || []).map((f: any, idx: number) => ({

@@ -53,6 +53,7 @@ model User {
   
   // Rotation
   leadAssignmentHistory LeadAssignmentHistory[]
+  assignedForms         Form[] @relation("FormFixedAssignee")
 }
 
 model Account {
@@ -310,6 +311,7 @@ model Journey {
   tasks          Task[]
   automations    Automation[]
   recipients     RecipientLog[]
+  forms          Form[]
 }
 
 model Pipeline {
@@ -695,6 +697,15 @@ model Form {
   
   campaignId     String?
   campaign       Campaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  // Entrada comercial: todo formulário é DESEJO. A jornada é opcional.
+  journeyId      String?
+  journey        Journey?    @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+
+  // POOL = sem operador; ROUND_ROBIN = motor de roteamento; FIXED = operador escolhido.
+  assignmentMode  String     @default("POOL")
+  fixedAssigneeId String?
+  fixedAssignee   User?      @relation("FormFixedAssignee", fields: [fixedAssigneeId], references: [id], onDelete: SetNull)
   
   productId      String?
   product        Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -703,6 +714,9 @@ model Form {
   
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
+
+  @@index([journeyId])
+  @@index([fixedAssigneeId])
 }
 
 model FormField {

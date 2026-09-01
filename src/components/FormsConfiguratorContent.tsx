@@ -13,6 +13,16 @@ interface Campaign {
   name: string;
 }
 
+interface Journey {
+  id: string;
+  name: string;
+}
+
+interface Agent {
+  id: string;
+  name: string;
+}
+
 interface FormField {
   id?: string;
   name: string;
@@ -46,11 +56,15 @@ interface Form {
   pipelineId: string;
   stageId: string | null;
   campaignId: string | null;
+  journeyId: string | null;
   productId: string | null;
+  assignmentMode: 'POOL' | 'ROUND_ROBIN' | 'FIXED';
+  fixedAssigneeId: string | null;
   fields: FormField[];
   createdAt: string;
   pipeline?: { id: string; name: string };
   campaign?: { id: string; name: string } | null;
+  journey?: { id: string; name: string } | null;
   product?: { id: string; name: string } | null;
 }
 
@@ -63,11 +77,13 @@ interface Props {
   currentUser: any;
   pipelines: Pipeline[];
   campaigns: Campaign[];
+  journeys?: Journey[];
+  agents?: Agent[];
   products: Product[];
   isTab?: boolean;
 }
 
-export default function FormsConfiguratorContent({ currentUser, pipelines, campaigns, products = [], isTab = false }: Props) {
+export default function FormsConfiguratorContent({ currentUser, pipelines, campaigns = [], journeys = [], agents = [], products = [], isTab = false }: Props) {
   const [formsList, setFormsList] = useState<Form[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeForm, setActiveForm] = useState<Form | null>(null);
@@ -137,8 +153,11 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
       },
       pipelineId: pipelines[0]?.id || '',
       stageId: 'novo_cadastro',
-      campaignId: campaigns[0]?.id || null,
+      campaignId: null,
+      journeyId: null,
       productId: null,
+      assignmentMode: 'POOL',
+      fixedAssigneeId: null,
       fields: [
         { name: 'name', label: 'Nome Completo', type: 'text', options: [], required: true, order: 0 },
         { name: 'email', label: 'E-mail Comercial', type: 'email', options: [], required: true, order: 1 },
@@ -205,6 +224,10 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
   const handleSave = async () => {
     if (!activeForm || !activeForm.name || !activeForm.pipelineId) {
       alert('Nome e Funil de destino são obrigatórios.');
+      return;
+    }
+    if (activeForm.assignmentMode === 'FIXED' && !activeForm.fixedAssigneeId) {
+      alert('Selecione o operador fixo.');
       return;
     }
 
@@ -371,7 +394,9 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
         utm_term: urlParams.get('utm_term'),
         utm_content: urlParams.get('utm_content'),
         fbc: document.cookie.match(/_fbc=([^;]+)/)?.[1],
-        fbp: document.cookie.match(/_fbp=([^;]+)/)?.[1]
+        fbp: document.cookie.match(/_fbp=([^;]+)/)?.[1],
+        page_url: window.location.href,
+        referrer: document.referrer || null
       };
       
       const formData = new FormData(form);
@@ -520,6 +545,10 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                   />
                 </div>
 
+                <div style={{ padding: 12, borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent)', color: 'var(--text-primary)', fontSize: 12 }}>
+                  <strong>Tipo fixo: Oportunidade / Desejo.</strong> O envio cria interesse comercial no produto, nunca compra, matrícula ou LTV.
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
                     <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Funil de Destino (Kanban)</label>
@@ -547,7 +576,7 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
-                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Campanha Relacionada</label>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Campanha de Origem (atribuição)</label>
                     <select
                       value={activeForm?.campaignId || ''}
                       onChange={(e) => setActiveForm({ ...activeForm!, campaignId: e.target.value || null })}
@@ -568,6 +597,49 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                       {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Distribuição para Operador</label>
+                    <select
+                      value={activeForm?.assignmentMode || 'POOL'}
+                      onChange={(e) => setActiveForm({
+                        ...activeForm!,
+                        assignmentMode: e.target.value as Form['assignmentMode'],
+                        fixedAssigneeId: e.target.value === 'FIXED' ? activeForm?.fixedAssigneeId || null : null
+                      })}
+                      style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
+                    >
+                      <option value="POOL">Pool / sem operador</option>
+                      <option value="ROUND_ROBIN">Round-robin automático</option>
+                      <option value="FIXED">Operador fixo</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Operador Fixo</label>
+                    <select
+                      value={activeForm?.fixedAssigneeId || ''}
+                      disabled={activeForm?.assignmentMode !== 'FIXED'}
+                      onChange={(e) => setActiveForm({ ...activeForm!, fixedAssigneeId: e.target.value || null })}
+                      style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', opacity: activeForm?.assignmentMode === 'FIXED' ? 1 : 0.55 }}
+                    >
+                      <option value="">Selecione...</option>
+                      {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Jornada / Fluxo Automático (opcional)</label>
+                  <select
+                    value={activeForm?.journeyId || ''}
+                    onChange={(e) => setActiveForm({ ...activeForm!, journeyId: e.target.value || null })}
+                    style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
+                  >
+                    <option value="">Nenhuma jornada — somente funil</option>
+                    {journeys.map(journey => <option key={journey.id} value={journey.id}>{journey.name}</option>)}
+                  </select>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>

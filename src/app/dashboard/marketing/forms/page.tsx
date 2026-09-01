@@ -22,10 +22,12 @@ export default async function FormsConfiguratorPage() {
   }
 
   // Fetch Pipelines, Campaigns, and Products to bind to forms
-  const [pipelines, campaigns, products] = await Promise.all([
+  const [pipelines, campaigns, journeys, products, agents] = await Promise.all([
     prisma.pipeline.findMany({ orderBy: { name: 'asc' } }),
     prisma.campaign.findMany({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' } }),
-    prisma.product.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } })
+    prisma.journey.findMany({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' } }),
+    prisma.product.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } }),
+    prisma.user.findMany({ where: { isActive: true, role: 'AGENT' }, orderBy: { name: 'asc' } })
   ]);
 
   return (
@@ -33,6 +35,8 @@ export default async function FormsConfiguratorPage() {
       currentUser={currentUser} 
       pipelines={pipelines.map(p => ({ id: p.id, name: p.name }))}
       campaigns={campaigns.map(c => ({ id: c.id, name: c.name }))}
+      journeys={journeys.map(j => ({ id: j.id, name: j.name }))}
+      agents={agents.map(agent => ({ id: agent.id, name: agent.name || agent.email || 'Operador' }))}
       products={products.map(p => ({ id: p.id, name: p.name }))}
     />
   );

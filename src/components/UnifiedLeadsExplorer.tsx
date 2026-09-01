@@ -49,6 +49,7 @@ export default function UnifiedLeadsExplorer({
   const [planId, setPlanId] = useState<string>('all');
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('all');
   const [productId, setProductId] = useState<string>('all');
+  const [relationshipType, setRelationshipType] = useState<string>('all');
   const [journeyId, setJourneyId] = useState<string>('all');
   const [assigneeId, setAssigneeId] = useState<string>('all');
   const [stage, setStage] = useState<string>('all');
@@ -121,6 +122,7 @@ export default function UnifiedLeadsExplorer({
           planId,
           subscriptionStatus,
           productId,
+          relationshipType,
           journeyId,
           assigneeId,
           stage,
@@ -146,7 +148,7 @@ export default function UnifiedLeadsExplorer({
       }
     }
     fetchLeads();
-  }, [source, planId, subscriptionStatus, productId, journeyId, assigneeId, stage, startDate, endDate, search, page, refreshKey]);
+  }, [source, planId, subscriptionStatus, productId, relationshipType, journeyId, assigneeId, stage, startDate, endDate, search, page, refreshKey]);
 
   // Handle Select All / Toggle Single Lead
   const toggleSelectAll = () => {
@@ -238,7 +240,7 @@ export default function UnifiedLeadsExplorer({
     const selectedLeadsList = leads.filter(l => selectedLeadIds.includes(l.id));
     if (selectedLeadsList.length === 0) return;
 
-    const headers = ['Nome', 'Email', 'Telefone', 'Origem', 'Plano', 'Produtos', 'Status Plano', 'Jornada', 'Operador', 'Data Cadastro'];
+    const headers = ['Nome', 'Email', 'Telefone', 'Relação', 'Origem', 'Formulário', 'Canal', 'UTM Campaign', 'Plano', 'Produtos', 'Status Plano', 'Jornada', 'Operador', 'Data Cadastro'];
     const csvRows = [headers.join(',')];
 
     for (const l of selectedLeadsList) {
@@ -246,7 +248,11 @@ export default function UnifiedLeadsExplorer({
         `"${(l.name || '').replace(/"/g, '""')}"`,
         `"${(l.email || '').replace(/"/g, '""')}"`,
         `"${(l.phone || '').replace(/"/g, '""')}"`,
+        `"${(l.relationshipType || '').replace(/"/g, '""')}"`,
         `"${(l.source || '').replace(/"/g, '""')}"`,
+        `"${(l.formName || '').replace(/"/g, '""')}"`,
+        `"${([l.attributionChannel, l.attributionPlatform].filter(Boolean).join(' / ') || '').replace(/"/g, '""')}"`,
+        `"${(l.utmCampaign || '').replace(/"/g, '""')}"`,
         `"${(l.planTitle || '').replace(/"/g, '""')}"`,
         `"${((l.products || []).map((product: any) => product.name).join('; ') || '').replace(/"/g, '""')}"`,
         `"${(l.subscriptionStatus || '').replace(/"/g, '""')}"`,
@@ -284,6 +290,18 @@ export default function UnifiedLeadsExplorer({
       default:
         return <span style={{ padding: '4px 10px', borderRadius: '12px', background: 'var(--surface-raised)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.8rem', border: '1px solid var(--border)' }}>🛒 Sem Plano</span>;
     }
+  };
+
+  const getRelationshipBadge = (type: string) => {
+    const definitions: Record<string, { label: string; color: string; background: string }> = {
+      LEAD: { label: '🎯 Lead', color: '#A78BFA', background: 'rgba(167, 139, 250, 0.15)' },
+      CUSTOMER: { label: '💳 Cliente', color: '#4ADE80', background: 'rgba(74, 222, 128, 0.15)' },
+      CUSTOMER_AND_LEAD: { label: '🔄 Cliente + Lead', color: '#38BDF8', background: 'rgba(56, 189, 248, 0.15)' },
+      FORMER_CUSTOMER: { label: '⏸ Ex-cliente', color: '#FBBF24', background: 'rgba(251, 191, 36, 0.15)' },
+      CONTACT: { label: '⚪ Contato', color: 'var(--text-secondary)', background: 'var(--surface-raised)' }
+    };
+    const definition = definitions[type] || definitions.CONTACT;
+    return <span style={{ padding: '4px 9px', borderRadius: 8, fontSize: '0.72rem', fontWeight: 700, color: definition.color, background: definition.background, whiteSpace: 'nowrap' }}>{definition.label}</span>;
   };
 
   return (
@@ -343,6 +361,23 @@ export default function UnifiedLeadsExplorer({
 
         {/* Multi-Filter Controls */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginTop: '8px' }}>
+          {/* Relação comercial */}
+          <div>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Relação Comercial</label>
+            <select
+              value={relationshipType}
+              onChange={(e) => { setRelationshipType(e.target.value); setPage(1); }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+            >
+              <option value="all">Todos: Leads e Clientes</option>
+              <option value="LEAD">🎯 Somente Leads</option>
+              <option value="CUSTOMER">💳 Somente Clientes</option>
+              <option value="CUSTOMER_AND_LEAD">🔄 Clientes com nova oportunidade</option>
+              <option value="FORMER_CUSTOMER">⏸ Ex-clientes / cancelados</option>
+              <option value="CONTACT">⚪ Apenas contatos</option>
+            </select>
+          </div>
+
           {/* Origem */}
           <div>
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Origem do Lead</label>
@@ -585,6 +620,7 @@ export default function UnifiedLeadsExplorer({
                   />
                 </th>
                 <th style={{ padding: '14px 16px' }}>Cliente / Lead</th>
+                <th style={{ padding: '14px 16px' }}>Relação</th>
                 <th style={{ padding: '14px 16px' }}>E-mail</th>
                 <th style={{ padding: '14px 16px' }}>Telefone / WhatsApp</th>
                 <th style={{ padding: '14px 16px' }}>Origem</th>
@@ -628,6 +664,9 @@ export default function UnifiedLeadsExplorer({
                         </span>
                         {lead.name || 'Lead Sem Nome'}
                       </div>
+                    </td>
+                    <td style={{ padding: '14px 16px' }}>
+                      {getRelationshipBadge(lead.relationshipType)}
                     </td>
                     <td style={{ padding: '14px 16px', color: 'var(--text-primary)', fontSize: '0.85rem' }}>
                       {lead.email ? (
@@ -674,6 +713,12 @@ export default function UnifiedLeadsExplorer({
                       <span style={{ fontSize: '0.8rem', padding: '3px 8px', borderRadius: '6px', background: 'var(--surface-raised)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
                         {lead.source}
                       </span>
+                      {(lead.formName || lead.attributionChannel) && (
+                        <div style={{ marginTop: 5, fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                          {lead.formName || 'Formulário'}
+                          {lead.attributionChannel ? ` · ${lead.attributionChannel}${lead.attributionPlatform ? ` / ${lead.attributionPlatform}` : ''}` : ''}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '14px 16px', fontWeight: 500, color: 'var(--text-primary)' }}>
                       {lead.planTitle}
@@ -692,7 +737,7 @@ export default function UnifiedLeadsExplorer({
                                 border: `1px solid ${product.status === 'CANCELED' ? 'rgba(248, 113, 113, 0.25)' : 'var(--border)'}`
                               }}
                             >
-                              {product.name}{product.status === 'CANCELED' ? ' (cancelado)' : ''}
+                              {product.name}{product.status === 'CANCELED' ? ' (cancelado)' : product.status === 'INTEREST' ? ' (interesse)' : ''}
                             </span>
                           ))}
                           {lead.products.length > 3 && (

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
+import { CustomerRelationshipService } from '@/lib/services/CustomerRelationshipService';
 
 export async function GET(request: Request) {
   try {
@@ -15,6 +16,7 @@ export async function GET(request: Request) {
     const planId = searchParams.get('planId') || 'all';
     const subscriptionStatus = searchParams.get('subscriptionStatus') || 'all';
     const productId = searchParams.get('productId') || 'all';
+    const relationshipType = searchParams.get('relationshipType') || 'all';
     const journeyId = searchParams.get('journeyId') || 'all';
     const assigneeId = searchParams.get('assigneeId') || 'all';
     const stage = searchParams.get('stage') || 'all';
@@ -136,9 +138,10 @@ export async function GET(request: Request) {
     // Produtos/cursos pertencem ao catálogo canônico do Postgres e são
     // independentes dos planos legados do DentalGO/MySQL.
     if (productId !== 'all') {
-      prismaWhere.customerProducts = productId === 'no_product'
-        ? { none: {} }
-        : { some: { productId } };
+      const productCondition = productId === 'no_product'
+        ? { AND: [{ customerProducts: { none: {} } }, { opportunities: { none: { productId: { not: null } } } }] }
+        : { OR: [{ customerProducts: { some: { productId } } }, { opportunities: { some: { productId } } }] };
+      prismaWhere.AND = [...(prismaWhere.AND || []), productCondition];
     }
 
     // Filter Prisma Customers when planId or subscriptionStatus is specified
@@ -199,6 +202,14 @@ export async function GET(request: Request) {
         journey: { select: { id: true, name: true } },
         customerProducts: {
           include: { product: { select: { id: true, name: true, category: true } } }
+        },
+        opportunities: {
+          include: {
+            product: { select: { id: true, name: true } },
+            pipeline: { select: { id: true, name: true } },
+            sourceCampaign: { select: { id: true, name: true } }
+          },
+          orderBy: { updatedAt: 'desc' }
         }
       },
       orderBy: { createdAt: 'desc' },
@@ -258,6 +269,8 @@ export async function GET(request: Request) {
         courses: [],
         products: [],
         productIds: [],
+        opportunities: [],
+        relationshipType: CustomerRelationshipService.classify({ subscriptionStatus: mLead.subscriptionStatus }),
         journeyId: null,
         journeyName: 'Fora de Campanha',
         assigneeId: null,
@@ -280,10 +293,29 @@ export async function GET(request: Request) {
       })) || [];
       const courses = customerProducts.map((product: any) => product.name);
       const saasPlan = customerProducts.find((product: any) => product.category === 'SAAS');
+      const opportunities = c.opportunities || [];
+      const opportunityProducts = opportunities
+        .filter((opportunity: any) => opportunity.product)
+        .map((opportunity: any) => ({
+          id: opportunity.product.id,
+          name: opportunity.product.name,
+          category: 'INTEREST',
+          status: opportunity.status === 'OPEN' ? 'INTEREST' : opportunity.status
+        }));
       const existingProducts = existing.products || [];
       const mergedProducts = Array.from(
-        new Map([...existingProducts, ...customerProducts].map((product: any) => [product.id, product])).values()
+        new Map([...existingProducts, ...opportunityProducts, ...customerProducts].map((product: any) => [product.id, product])).values()
       );
+      const relationshipType = CustomerRelationshipService.classify({
+        productStatuses: customerProducts.map((product: any) => product.status),
+        opportunityStatuses: opportunities.map((opportunity: any) => opportunity.status),
+        subscriptionStatus: existing.subscriptionStatus
+      });
+      const formOpportunity = opportunities.find((opportunity: any) => {
+        const metadata = opportunity.metadata as Record<string, unknown> | null;
+        return metadata?.formId;
+      });
+      const formMetadata = (formOpportunity?.metadata as Record<string, any>) || {};
 
       combinedLeadsMap.set(key, {
         id: c.id,
@@ -297,6 +329,23 @@ export async function GET(request: Request) {
         courses: Array.from(new Set([...(existing.courses || []), ...courses])),
         products: mergedProducts,
         productIds: mergedProducts.map((product: any) => product.id),
+        opportunities: opportunities.map((opportunity: any) => ({
+          id: opportunity.id,
+          status: opportunity.status,
+          stage: opportunity.stage,
+          productId: opportunity.productId,
+          productName: opportunity.product?.name || null,
+          pipelineName: opportunity.pipeline?.name || null
+        })),
+        relationshipType,
+        formId: formMetadata.formId || null,
+        formName: formMetadata.formName || null,
+        attributionChannel: formMetadata.attributionChannel || c.acquisitionChannel || null,
+        attributionPlatform: formMetadata.attributionPlatform || null,
+        utmSource: formOpportunity?.utmSource || null,
+        utmMedium: formOpportunity?.utmMedium || null,
+        utmCampaign: formOpportunity?.utmCampaign || null,
+        marketingCampaignName: formOpportunity?.sourceCampaign?.name || null,
         journeyId: c.journeyId || existing.journeyId || null,
         journeyName: c.journey?.name || existing.journeyName || 'Fora de Campanha',
         assigneeId: c.assigneeId || existing.assigneeId || null,
@@ -310,7 +359,7 @@ export async function GET(request: Request) {
       if (productId === 'all') return true;
       if (productId === 'no_product') return !lead.productIds || lead.productIds.length === 0;
       return Array.isArray(lead.productIds) && lead.productIds.includes(productId);
-    });
+    }).filter(lead => relationshipType === 'all' || lead.relationshipType === relationshipType);
     allMergedLeads.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     const total = allMergedLeads.length;

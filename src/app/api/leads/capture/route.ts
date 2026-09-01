@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { CustomerCreationService } from '@/lib/application/CustomerCreationService';
 import { SaleChannel } from '@prisma/client';
+import { LeadAttributionService } from '@/lib/services/LeadAttributionService';
+import { RoutingEngineService } from '@/lib/services/RoutingEngineService';
+import { AssignCampaignLeadsUseCase } from '@/lib/application/AssignCampaignLeadsUseCase';
 
 // Helper function to return headers supporting CORS
 function corsResponse(data: any, status = 200) {
@@ -42,6 +45,8 @@ export async function POST(request: Request) {
       utm_content, 
       fbc, 
       fbp, 
+      page_url,
+      referrer,
       ...customFields 
     } = body;
 
@@ -52,7 +57,7 @@ export async function POST(request: Request) {
     // 1. Fetch Form settings
     const formConfig = await prisma.form.findUnique({
       where: { id: formId },
-      include: { product: true }
+      include: { product: true, pipeline: true, journey: true }
     });
 
     if (!formConfig) {
@@ -60,10 +65,22 @@ export async function POST(request: Request) {
     }
 
     // 2. Perform Customer creation / Identity Resolution
+    const attribution = LeadAttributionService.classify({
+      utmSource: utm_source,
+      utmMedium: utm_medium,
+      utmCampaign: utm_campaign,
+      pageUrl: page_url,
+      referrer
+    });
+
     const metadata = {
       fullName: name || 'Sem Nome',
       email: email || '',
       phoneNumber: phone || '',
+      lastFormId: formConfig.id,
+      lastFormName: formConfig.name,
+      attributionChannel: attribution.channel,
+      attributionPlatform: attribution.platform,
       ...customFields
     };
 
@@ -74,14 +91,53 @@ export async function POST(request: Request) {
       metadata,
       productId: formConfig.productId || undefined,
       pricePaid: formConfig.product?.price || formConfig.product?.basePrice || undefined,
-      saleChannel: SaleChannel.INBOUND_FORM
+      saleChannel: SaleChannel.INBOUND_FORM,
+      isPurchase: false
     });
 
     if (!customer) {
       throw new Error('Falha ao processar ou unificar o lead.');
     }
 
-    // 3. Update Opportunity UTM and campaign relations
+    // 3. Distribuição e jornada opcional. Formulário sempre cria DESEJO.
+    let assignedToId: string | null = null;
+    if (formConfig.journeyId) {
+      const activeAgents = formConfig.assignmentMode === 'ROUND_ROBIN'
+        ? await prisma.user.findMany({ where: { isActive: true, role: 'AGENT' }, select: { id: true } })
+        : [];
+      const assignment = await new AssignCampaignLeadsUseCase().execute(
+        [customer.id],
+        formConfig.journeyId,
+        activeAgents.map(agent => agent.id),
+        undefined,
+        { mode: formConfig.assignmentMode as 'POOL' | 'ROUND_ROBIN' | 'FIXED', fixedAssigneeId: formConfig.fixedAssigneeId }
+      );
+      assignedToId = assignment[0]?.assigneeId || null;
+    } else if (formConfig.assignmentMode === 'FIXED') {
+      assignedToId = formConfig.fixedAssigneeId || null;
+    } else if (formConfig.assignmentMode === 'ROUND_ROBIN') {
+      assignedToId = await new RoutingEngineService().determineAssignee(
+        customer.id,
+        {
+          routingMode: 'ROUND_ROBIN',
+          useAccountManager: formConfig.pipeline.useAccountManager,
+          strictSkillMatch: formConfig.pipeline.strictSkillMatch,
+          productId: formConfig.productId
+        },
+        'AGENT'
+      );
+    }
+
+    await prisma.customer.update({
+      where: { id: customer.id },
+      data: {
+        ...(assignedToId ? { assigneeId: assignedToId } : {}),
+        leadSource: `FORM:${formConfig.id}`,
+        acquisitionChannel: attribution.channel
+      }
+    });
+
+    // 4. Atualiza a oportunidade do funil do formulário com atribuição e marketing.
     const activeOpp = await prisma.opportunity.findFirst({
       where: { customerId: customer.id, pipelineId: formConfig.pipelineId },
     });
@@ -99,13 +155,34 @@ export async function POST(request: Request) {
           productId: formConfig.productId || undefined,
           pricePaid: formConfig.product?.price || formConfig.product?.basePrice || undefined,
           value: formConfig.product?.price || formConfig.product?.basePrice || undefined,
-          saleChannel: SaleChannel.INBOUND_FORM
+          saleChannel: SaleChannel.INBOUND_FORM,
+          assigneeId: assignedToId,
+          metadata: {
+            formId: formConfig.id,
+            formName: formConfig.name,
+            pageUrl: page_url || null,
+            referrer: referrer || null,
+            attributionChannel: attribution.channel,
+            attributionPlatform: attribution.platform,
+            fbc: fbc || null,
+            fbp: fbp || null
+          }
         }
       });
+      if (assignedToId) {
+        const openAssignment = await prisma.leadAssignmentHistory.findFirst({
+          where: { opportunityId: activeOpp.id, assigneeId: assignedToId, releasedAt: null }
+        });
+        if (!openAssignment) {
+          await prisma.leadAssignmentHistory.create({
+            data: { opportunityId: activeOpp.id, assigneeId: assignedToId, reason: 'FORM_CAPTURE' }
+          });
+        }
+      }
       console.log(`[Capture API] Updated Opportunity ${activeOpp.id} with UTM tracking metadata`);
     }
 
-    // 4. TODO: Disparar evento para Conversions API da Meta (CAPI) se fbc/fbp estiverem presentes
+    // 5. TODO: Disparar evento para Conversions API da Meta (CAPI) se fbc/fbp estiverem presentes
     if (fbc || fbp) {
       await triggerMetaConversionsAPI({
         email,

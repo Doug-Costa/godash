@@ -4,7 +4,13 @@ import { DomainEventService } from '@/lib/services/DomainEventService';
 import { DomainEventType, ActorType } from '@/lib/domain/events';
 
 export class AssignCampaignLeadsUseCase {
-  async execute(customerIdsOrExternalIds: (string | number)[], campaignId: string, userIds: string[], startDate?: string) {
+  async execute(
+    customerIdsOrExternalIds: (string | number)[],
+    campaignId: string,
+    userIds: string[],
+    startDate?: string,
+    routingOverride?: { mode: 'POOL' | 'ROUND_ROBIN' | 'FIXED'; fixedAssigneeId?: string | null }
+  ) {
     // 1. Buscar a jornada (incluindo as automações/passos do fluxo para pré-geração de alertas)
     const journey = await prisma.journey.findUnique({
       where: { id: campaignId },
@@ -15,7 +21,12 @@ export class AssignCampaignLeadsUseCase {
       throw new Error('Campanha/Jornada não encontrada.');
     }
 
-    if (journey.routingMode !== 'POOL' && userIds.length === 0) {
+    const effectiveRoutingMode = routingOverride?.mode === 'POOL' ? 'POOL' : (routingOverride ? 'ROUND_ROBIN' : journey.routingMode);
+    const effectiveUserIds = routingOverride?.mode === 'FIXED' && routingOverride.fixedAssigneeId
+      ? [routingOverride.fixedAssigneeId]
+      : userIds;
+
+    if (effectiveRoutingMode !== 'POOL' && effectiveUserIds.length === 0) {
       throw new Error('Pelo menos um operador deve ser selecionado para a distribuição da campanha.');
     }
 
@@ -31,7 +42,7 @@ export class AssignCampaignLeadsUseCase {
 
     // Contador de atribuições por operador para aplicar o limitador diário
     const operatorAssignments: Record<string, number> = {};
-    for (const uid of userIds) {
+    for (const uid of effectiveUserIds) {
       operatorAssignments[uid] = 0;
     }
 
@@ -56,14 +67,14 @@ export class AssignCampaignLeadsUseCase {
       const assigneeId = await routingEngine.determineAssignee(
         currentId,
         {
-          routingMode: journey.routingMode,
+          routingMode: effectiveRoutingMode,
           useAccountManager: journey.useAccountManager,
           strictSkillMatch: journey.strictSkillMatch,
           productId: journey.productId
         },
         'AGENT',
         i,
-        userIds
+        effectiveUserIds
       );
 
       let countForAgent = 0;
