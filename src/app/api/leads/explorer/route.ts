@@ -129,8 +129,16 @@ export async function GET(request: Request) {
       } else if (source.includes('Form')) {
         prismaWhere.source = { contains: 'Form', mode: 'insensitive' };
       } else if (source === 'CSV') {
-        prismaWhere.source = 'CSV';
+        prismaWhere.source = { contains: 'CSV', mode: 'insensitive' };
       }
+    }
+
+    // Produtos/cursos pertencem ao catálogo canônico do Postgres e são
+    // independentes dos planos legados do DentalGO/MySQL.
+    if (productId !== 'all') {
+      prismaWhere.customerProducts = productId === 'no_product'
+        ? { none: {} }
+        : { some: { productId } };
     }
 
     // Filter Prisma Customers when planId or subscriptionStatus is specified
@@ -190,7 +198,7 @@ export async function GET(request: Request) {
         assignee: { select: { id: true, name: true, email: true } },
         journey: { select: { id: true, name: true } },
         customerProducts: {
-          include: { product: { select: { id: true, name: true } } }
+          include: { product: { select: { id: true, name: true, category: true } } }
         }
       },
       orderBy: { createdAt: 'desc' },
@@ -248,6 +256,8 @@ export async function GET(request: Request) {
         planTitle: mLead.planTitle,
         subscriptionStatus: mLead.subscriptionStatus,
         courses: [],
+        products: [],
+        productIds: [],
         journeyId: null,
         journeyName: 'Fora de Campanha',
         assigneeId: null,
@@ -262,9 +272,18 @@ export async function GET(request: Request) {
       const key = c.externalPersonId ? `ext_${c.externalPersonId}` : c.id;
       const existing = combinedLeadsMap.get(key) || {};
 
-      const courses = c.customerProducts?.map((cp: any) => cp.product.name) || [];
-      const planFromPrisma = c.customerProducts?.[0]?.product?.name;
-      const statusFromPrisma = c.customerProducts?.[0]?.status?.toLowerCase();
+      const customerProducts = c.customerProducts?.map((cp: any) => ({
+        id: cp.product.id,
+        name: cp.product.name,
+        category: cp.product.category,
+        status: cp.status
+      })) || [];
+      const courses = customerProducts.map((product: any) => product.name);
+      const saasPlan = customerProducts.find((product: any) => product.category === 'SAAS');
+      const existingProducts = existing.products || [];
+      const mergedProducts = Array.from(
+        new Map([...existingProducts, ...customerProducts].map((product: any) => [product.id, product])).values()
+      );
 
       combinedLeadsMap.set(key, {
         id: c.id,
@@ -273,9 +292,11 @@ export async function GET(request: Request) {
         email: existing.email || c.person?.email || '',
         phone: existing.phone || c.person?.phoneNumber || '',
         source: existing.source || c.source || 'Form Capture / CDP',
-        planTitle: existing.planTitle || planFromPrisma || 'Sem Plano / Pendente',
-        subscriptionStatus: existing.subscriptionStatus || statusFromPrisma || 'no_plan',
+        planTitle: existing.planTitle || saasPlan?.name || 'Sem Plano / Pendente',
+        subscriptionStatus: existing.subscriptionStatus || saasPlan?.status?.toLowerCase() || 'no_plan',
         courses: Array.from(new Set([...(existing.courses || []), ...courses])),
+        products: mergedProducts,
+        productIds: mergedProducts.map((product: any) => product.id),
         journeyId: c.journeyId || existing.journeyId || null,
         journeyName: c.journey?.name || existing.journeyName || 'Fora de Campanha',
         assigneeId: c.assigneeId || existing.assigneeId || null,
@@ -285,7 +306,11 @@ export async function GET(request: Request) {
       });
     }
 
-    const allMergedLeads = Array.from(combinedLeadsMap.values());
+    const allMergedLeads = Array.from(combinedLeadsMap.values()).filter(lead => {
+      if (productId === 'all') return true;
+      if (productId === 'no_product') return !lead.productIds || lead.productIds.length === 0;
+      return Array.isArray(lead.productIds) && lead.productIds.includes(productId);
+    });
     allMergedLeads.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     const total = allMergedLeads.length;

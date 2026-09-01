@@ -238,7 +238,7 @@ export default function UnifiedLeadsExplorer({
     const selectedLeadsList = leads.filter(l => selectedLeadIds.includes(l.id));
     if (selectedLeadsList.length === 0) return;
 
-    const headers = ['Nome', 'Email', 'Telefone', 'Origem', 'Plano', 'Status Plano', 'Jornada', 'Operador', 'Data Cadastro'];
+    const headers = ['Nome', 'Email', 'Telefone', 'Origem', 'Plano', 'Produtos', 'Status Plano', 'Jornada', 'Operador', 'Data Cadastro'];
     const csvRows = [headers.join(',')];
 
     for (const l of selectedLeadsList) {
@@ -248,6 +248,7 @@ export default function UnifiedLeadsExplorer({
         `"${(l.phone || '').replace(/"/g, '""')}"`,
         `"${(l.source || '').replace(/"/g, '""')}"`,
         `"${(l.planTitle || '').replace(/"/g, '""')}"`,
+        `"${((l.products || []).map((product: any) => product.name).join('; ') || '').replace(/"/g, '""')}"`,
         `"${(l.subscriptionStatus || '').replace(/"/g, '""')}"`,
         `"${(l.journeyName || '').replace(/"/g, '""')}"`,
         `"${(l.assigneeName || '').replace(/"/g, '""')}"`,
@@ -371,6 +372,22 @@ export default function UnifiedLeadsExplorer({
               <option value="no_plan">🛒 Sem Plano (Carrinho Abandonado)</option>
               {plans.map(p => (
                 <option key={p.id} value={p.id}>💵 {p.title}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Produto / Curso */}
+          <div>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Produto / Curso</label>
+            <select
+              value={productId}
+              onChange={(e) => { setProductId(e.target.value); setPage(1); }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+            >
+              <option value="all">📦 Todos os Produtos</option>
+              <option value="no_product">⚪ Sem Produto Vinculado</option>
+              {products.map(product => (
+                <option key={product.id} value={product.id}>🎓 {product.name}</option>
               ))}
             </select>
           </div>
@@ -572,6 +589,7 @@ export default function UnifiedLeadsExplorer({
                 <th style={{ padding: '14px 16px' }}>Telefone / WhatsApp</th>
                 <th style={{ padding: '14px 16px' }}>Origem</th>
                 <th style={{ padding: '14px 16px' }}>Plano DentalGO</th>
+                <th style={{ padding: '14px 16px' }}>Produtos / Cursos</th>
                 <th style={{ padding: '14px 16px' }}>Status Assinatura</th>
                 <th style={{ padding: '14px 16px' }}>Jornada Ativa</th>
                 <th style={{ padding: '14px 16px' }}>Atendente</th>
@@ -659,6 +677,33 @@ export default function UnifiedLeadsExplorer({
                     </td>
                     <td style={{ padding: '14px 16px', fontWeight: 500, color: 'var(--text-primary)' }}>
                       {lead.planTitle}
+                    </td>
+                    <td style={{ padding: '14px 16px', minWidth: '220px' }}>
+                      {Array.isArray(lead.products) && lead.products.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                          {lead.products.slice(0, 3).map((product: any) => (
+                            <span
+                              key={product.id}
+                              title={`${product.name} · ${product.status}`}
+                              style={{
+                                padding: '3px 7px', borderRadius: '6px', fontSize: '0.72rem',
+                                background: product.status === 'CANCELED' ? 'rgba(248, 113, 113, 0.12)' : 'var(--accent-glow)',
+                                color: product.status === 'CANCELED' ? '#F87171' : 'var(--accent)',
+                                border: `1px solid ${product.status === 'CANCELED' ? 'rgba(248, 113, 113, 0.25)' : 'var(--border)'}`
+                              }}
+                            >
+                              {product.name}{product.status === 'CANCELED' ? ' (cancelado)' : ''}
+                            </span>
+                          ))}
+                          {lead.products.length > 3 && (
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', alignSelf: 'center' }}>
+                              +{lead.products.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
+                      )}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       {getStatusBadge(lead.subscriptionStatus)}
