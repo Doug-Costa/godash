@@ -21,7 +21,6 @@ import CampaignSegmentation, { CampaignRule } from '@/components/CampaignSegment
 import UnifiedLeadsExplorer from '@/components/UnifiedLeadsExplorer';
 import FlowManagerContent from '@/components/FlowManagerContent';
 import FormsConfiguratorContent from '@/components/FormsConfiguratorContent';
-import CustomerProductsTab from '@/components/CustomerProductsTab';
 import ManualSaleModal from '@/components/ManualSaleModal';
 import CommercialRevOpsDashboard from '@/components/CommercialRevOpsDashboard';
 import AdminImportTab from '@/components/AdminImportTab';
@@ -94,7 +93,7 @@ export default function DashboardContent({
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
   const [atendimentoFila, setAtendimentoFila] = useState<'alerts' | 'cancelados' | 'expirar' | 'abandonados'>('alerts');
   const [filaCounts, setFilaCounts] = useState({ alerts: 0, cancelados: 0, expirar: 0, abandonados: 0 });
-  const [modalActiveTab, setModalActiveTab] = useState<'oportunidade' | 'perfil' | 'produtos_historico' | 'historico_sla' | 'timeline360'>('oportunidade');
+  const [modalActiveTab, setModalActiveTab] = useState<'oportunidade' | 'perfil' | 'timeline360'>('oportunidade');
   
   const visiblePipelines = pipelines.filter(p => isAdmin || p.name !== 'Nutrição');
   const defaultPipeline = visiblePipelines.find(p => p.name === 'Vendas') || visiblePipelines[0];
@@ -138,6 +137,7 @@ export default function DashboardContent({
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [leadAssignmentHistory, setLeadAssignmentHistory] = useState<any[]>([]);
   const [timeline360Events, setTimeline360Events] = useState<any[]>([]);
+  const [historyFilter, setHistoryFilter] = useState<'todos' | 'atendimento' | 'sla'>('todos');
   const [showTimelineModal, setShowTimelineModal] = useState(false);
   const [showFastAcquisitionModal, setShowFastAcquisitionModal] = useState(false);
   const [showManualSaleModal, setShowManualSaleModal] = useState(false);
@@ -737,6 +737,7 @@ export default function DashboardContent({
     setShowTimelineModal(true);
     setLeadAssignmentHistory([]);
     setTimeline360Events([]);
+    setHistoryFilter('todos');
     try {
       const [resHistory, resEvents] = await Promise.all([
         fetch(`/api/leads/${lead.id}/history`),
@@ -2599,6 +2600,32 @@ export default function DashboardContent({
     );
   };
 
+  const unifiedHistoryEvents = [
+    ...timeline360Events.map((event: any) => ({
+      ...event,
+      category: ['CUSTOMER_ASSIGNED', 'CUSTOMER_ROTATED'].includes(event.type) ? 'sla' : 'atendimento'
+    })),
+    ...leadAssignmentHistory.map((item: any) => ({
+      id: `sla-${item.id}`,
+      type: 'SLA_ASSIGNMENT',
+      category: 'sla',
+      occurredAt: item.assignedAt,
+      actorType: item.assignee?.name || 'Sistema',
+      metadata: { reason: item.reason, assigneeName: item.assignee?.name }
+    })),
+    ...((selectedLead?.notes || []).map((item: any) => ({
+      id: `interaction-${item.id}`,
+      type: 'INTERACTION',
+      category: 'atendimento',
+      occurredAt: item.date,
+      actorType: item.authorName || 'Operador',
+      metadata: { text: item.text }
+    })))
+  ]
+    .filter((event: any) => historyFilter === 'todos' || event.category === historyFilter)
+    .sort((a: any, b: any) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+    .filter((event: any, index: number, events: any[]) => events.findIndex(other => other.id === event.id) === index);
+
   return (
     <div style={{ minHeight: '100vh', padding: '24px 24px 64px' }}>
       
@@ -4206,7 +4233,7 @@ export default function DashboardContent({
                   color: modalActiveTab === 'oportunidade' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
                 }}
               >
-                Oportunidade (Kanban)
+                Atendimento
               </button>
               <button
                 onClick={() => setModalActiveTab('perfil')}
@@ -4215,25 +4242,7 @@ export default function DashboardContent({
                   color: modalActiveTab === 'perfil' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
                 }}
               >
-                Perfil Global do Cliente
-              </button>
-              <button
-                onClick={() => setModalActiveTab('produtos_historico')}
-                style={{
-                  padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: modalActiveTab === 'produtos_historico' ? '2px solid var(--accent)' : '2px solid transparent',
-                  color: modalActiveTab === 'produtos_historico' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
-                }}
-              >
-                📦 Produtos Ativos & Histórico
-              </button>
-              <button 
-                onClick={() => setModalActiveTab('historico_sla')}
-                style={{
-                  padding: '12px 24px', background: 'transparent', border: 'none', borderBottom: modalActiveTab === 'historico_sla' ? '2px solid var(--accent)' : '2px solid transparent',
-                  color: modalActiveTab === 'historico_sla' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
-                }}
-              >
-                Histórico (SLA)
+                Cliente 360
               </button>
               <button 
                 onClick={() => setModalActiveTab('timeline360')}
@@ -4242,7 +4251,7 @@ export default function DashboardContent({
                   color: modalActiveTab === 'timeline360' ? 'var(--accent)' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s'
                 }}
               >
-                Timeline 360
+                Histórico
               </button>
             </div>
 
@@ -4899,7 +4908,15 @@ export default function DashboardContent({
 
             {modalActiveTab === 'perfil' && (
               <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
-                <h4 style={{ color: 'var(--text-primary)', marginBottom: 16 }}>Visão Geral do Cliente</h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div>
+                    <h4 style={{ color: 'var(--text-primary)', margin: 0 }}>Cliente 360</h4>
+                    <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>Cadastro, assinatura e tudo que este cliente já adquiriu.</div>
+                  </div>
+                  <button type="button" onClick={() => setShowManualSaleModal(true)} className="btn-action btn-action-purple" style={{ padding: '8px 14px', fontSize: 12 }}>
+                    + Registrar venda
+                  </button>
+                </div>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   {/* Dados Cadastrais */}
@@ -4988,71 +5005,42 @@ export default function DashboardContent({
                   </div>
                 </div>
                 
-                {/* Histórico Global (Future) */}
-                <div style={{ marginTop: 24, background: 'var(--surface-raised)', padding: 20, borderRadius: 12, border: '1px solid var(--border)' }}>
-                  <h5 style={{ color: 'var(--text-secondary)', marginBottom: 12, fontSize: 13 }}>HISTÓRICO GLOBAL DE INTERAÇÕES</h5>
-                  <div style={{ padding: 12, fontSize: 13, color: 'var(--text-muted)' }}>
-                    As interações de todos os funis e campanhas deste cliente aparecerão aqui. (Em desenvolvimento)
-                  </div>
-                </div>
-                
-              </div>
-            )}
-
-            {modalActiveTab === 'produtos_historico' && (
-              <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
-                <CustomerProductsTab
-                  customerProducts={selectedLead.customerProducts || []}
-                  onRegisterManualSale={() => setShowManualSaleModal(true)}
-                />
-              </div>
-            )}
-
-            {modalActiveTab === 'historico_sla' && (
-              <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
-                <h4 style={{ color: 'var(--text-primary)', marginBottom: 16 }}>Histórico de Atribuição (Rotatividade de SLA)</h4>
-                {leadAssignmentHistory.length === 0 ? (
-                  <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Nenhum histórico de repasse para este lead nesta oportunidade.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {leadAssignmentHistory.map((historyItem: any, idx: number) => (
-                      <div key={historyItem.id || idx} style={{ background: 'var(--surface-raised)', padding: 16, borderRadius: 8, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 16 }}>
-                        <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: '#fff', flexShrink: 0 }}>
-                          {historyItem.assignee?.name?.charAt(0).toUpperCase() || '🤖'}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 600 }}>
-                            {historyItem.assignee?.name || 'Sistema (Automático)'}
-                          </div>
-                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                            {historyItem.reason || 'Atribuição inicial ou alteração manual'}
-                          </div>
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'right' }}>
-                          {new Date(historyItem.assignedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
 
             {modalActiveTab === 'timeline360' && (
               <div style={{ padding: 24, flex: 1, overflowY: 'auto' }}>
-                <h4 style={{ color: 'var(--text-primary)', marginBottom: 16 }}>Timeline 360 (Auditoria Completa)</h4>
-                {timeline360Events.length === 0 ? (
+                <div style={{ marginBottom: 16 }}>
+                  <h4 style={{ color: 'var(--text-primary)', margin: 0 }}>Histórico do cliente</h4>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>Conversas, mudanças comerciais e repasses em ordem cronológica.</div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    {([
+                      ['todos', 'Tudo'],
+                      ['atendimento', 'Atendimento'],
+                      ['sla', 'Repasses / SLA']
+                    ] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setHistoryFilter(value)}
+                        className={historyFilter === value ? 'btn-action btn-action-purple' : 'btn-action btn-action-outline'}
+                        style={{ padding: '6px 12px', fontSize: 11 }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {unifiedHistoryEvents.length === 0 ? (
                   <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Nenhum evento registrado ainda para este cliente.
+                    Nada registrado neste filtro.
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
                     {/* Vertical line */}
                     <div style={{ position: 'absolute', left: 24, top: 0, bottom: 0, width: 2, background: 'var(--border)', zIndex: 0 }}></div>
                     
-                    {timeline360Events.map((ev: any, idx: number) => {
+                    {unifiedHistoryEvents.map((ev: any, idx: number) => {
                       let icon = '📌';
                       let color = 'var(--text-secondary)';
                       let title = ev.type;
@@ -5062,6 +5050,8 @@ export default function DashboardContent({
                       if (ev.type === 'OPPORTUNITY_STAGE_CHANGED') { icon = '🔄'; color = '#EAB308'; title = 'Mudança de Estágio'; desc = `${ev.metadata?.fromStage || '?'} ➔ ${ev.metadata?.toStage || '?'}`; }
                       if (ev.type === 'CUSTOMER_ASSIGNED') { icon = '👤'; color = '#3B82F6'; title = 'Operador Atribuído'; desc = ev.metadata?.reason || 'Atribuição Inicial'; }
                       if (ev.type === 'CUSTOMER_ROTATED') { icon = '⏳'; color = '#EF4444'; title = 'Rodízio por Inatividade (SLA)'; desc = `Inatividade: ${ev.metadata?.inactivityDays || '?'} dias`; }
+                      if (ev.type === 'SLA_ASSIGNMENT') { icon = '👤'; color = '#3B82F6'; title = `Responsável: ${ev.metadata?.assigneeName || 'Sistema'}`; desc = ev.metadata?.reason || 'Atribuição ou repasse'; }
+                      if (ev.type === 'INTERACTION') { icon = '💬'; color = '#10B981'; title = 'Interação registrada'; desc = ev.metadata?.text || ''; }
 
                       return (
                         <div key={ev.id || idx} style={{ display: 'flex', gap: 16, position: 'relative', zIndex: 1, paddingBottom: 16 }}>
@@ -5073,7 +5063,7 @@ export default function DashboardContent({
                               <div>
                                 <h5 style={{ color: color, fontSize: 14, margin: 0, fontWeight: 700 }}>{title}</h5>
                                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                                  Ator: <span style={{ color: 'var(--text-primary)' }}>{ev.actorType}</span> {ev.actorId ? `(${ev.actorId})` : ''}
+                                  Por: <span style={{ color: 'var(--text-primary)' }}>{ev.actorType || 'Sistema'}</span>
                                 </div>
                               </div>
                               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
