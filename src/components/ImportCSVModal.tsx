@@ -122,7 +122,9 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
       if (!res.ok) throw new Error(await res.text());
 
       const result = await res.json();
-      setSuccessMsg(`Importação concluída! Sucesso: ${result.successRows}, Erros: ${result.errorRows}`);
+      setSuccessMsg(result.alreadyImported
+        ? `Este lote já estava 100% importado. Registros preservados: ${result.successRows}.`
+        : `Importação processada! Sucesso: ${result.successRows}, Erros: ${result.errorRows}`);
       setSummary(null);
       setFile(null);
       setTimeout(() => {

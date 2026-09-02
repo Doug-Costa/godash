@@ -33,14 +33,9 @@ export class ImportCommitService {
     })).digest('hex');
 
     const previousBatch = await prisma.importBatch.findUnique({ where: { fileHash } });
-    if (previousBatch?.status === 'COMPLETED') {
-      return {
-        successRows: previousBatch.successRows,
-        errorRows: previousBatch.errorRows,
-        batchId: previousBatch.id,
-        alreadyImported: true
-      };
-    }
+    // Reprocessar um lote conhecido é intencional: as operações por linha são
+    // idempotentes e isto recupera identidades que ficaram sem Customer/compra
+    // após uma falha parcial antiga. O hash ainda mantém um único registro de lote.
 
     const batch = previousBatch
       ? await prisma.importBatch.update({
@@ -86,7 +81,7 @@ export class ImportCommitService {
     await prisma.importBatch.update({
       where: { id: batch.id },
       data: {
-        status: errorRows === 0 ? 'COMPLETED' : (successRows > 0 ? 'COMPLETED' : 'FAILED'),
+        status: errorRows === 0 ? 'COMPLETED' : (successRows > 0 ? 'PARTIAL' : 'FAILED'),
         successRows,
         errorRows
       }
