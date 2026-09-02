@@ -18,6 +18,7 @@ export class CanonicalIdentityService {
   static isPlaceholderName(name?: string | null): boolean {
     if (!name) return true;
     const normalized = name.trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return true;
     return /^(dr\.?\s*)?lead(?:\s+dentalgo)?\s*#?\s*[\w-]+$/.test(normalized)
       || ['sem nome', 'n/a', 'nao informado', 'não informado'].includes(normalized);
   }

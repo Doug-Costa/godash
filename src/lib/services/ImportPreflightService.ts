@@ -33,6 +33,9 @@ export interface PreflightSummary {
   warningRows: number;
   errorRows: number;
   reviewRows: number;
+  recognizedContactRows: number;
+  newIdentityRows: number;
+  existingPurchaseRows: number;
   results: RowPreflightResult[];
 }
 
@@ -82,6 +85,9 @@ export class ImportPreflightService {
       warningRows,
       errorRows,
       reviewRows,
+      recognizedContactRows: results.filter(result => result.identityStatus === 'FOUND').length,
+      newIdentityRows: results.filter(result => result.identityStatus === 'NOT_FOUND').length,
+      existingPurchaseRows: results.filter(result => result.warnings.some(warning => warning.startsWith('Compra já existente'))).length,
       results
     };
   }

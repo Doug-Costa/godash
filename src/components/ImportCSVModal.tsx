@@ -394,6 +394,14 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
               </div>
             </div>
 
+            {summary.warningRows > 0 && summary.errorRows === 0 && summary.reviewRows === 0 && (
+              <div style={{ padding: '14px 16px', borderRadius: 10, border: '1px solid rgba(202, 138, 4, 0.35)', background: 'var(--yellow-glow)', color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6 }}>
+                <strong style={{ color: 'var(--text-primary)' }}>O que significam estes avisos?</strong><br />
+                {summary.recognizedContactRows || 0} contato(s) já reconhecido(s), {summary.existingPurchaseRows || 0} compra(s) já existente(s) e {summary.newIdentityRows || 0} nova(s) identidade(s).<br />
+                Avisos não bloqueiam: contatos são unificados e compras iguais são atualizadas sem duplicação.
+              </div>
+            )}
+
             {summary.reviewRows > 0 && (
               <div style={{ background: 'var(--surface-raised)', padding: '20px', borderRadius: '12px', border: '1px solid var(--accent)' }}>
                 <h5 style={{ color: 'var(--accent)', margin: '0 0 8px 0', fontSize: '1rem' }}>Ação Necessária: Produtos Desconhecidos</h5>
@@ -437,7 +445,7 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
                   padding: '12px 24px', borderRadius: '8px', fontWeight: 700, border: 'none', cursor: (committing || summary.reviewRows > 0) ? 'not-allowed' : 'pointer'
                 }}
               >
-                {committing ? 'Importando...' : `Finalizar Importação (${summary.readyRows + summary.warningRows} leads)`}
+                {committing ? 'Importando...' : `Efetivar com segurança (${summary.readyRows + summary.warningRows} linhas)`}
               </button>
             </div>
           </div>
