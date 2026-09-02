@@ -102,10 +102,16 @@ export async function POST(request: Request) {
         const extIds = leadIds.filter((id: string) => id.startsWith('ext_')).map((id: string) => parseInt(id.replace('ext_', ''), 10));
 
         if (cIds.length > 0) {
-          const res = await prisma.customer.updateMany({
-            where: { id: { in: cIds } },
-            data: { assigneeId: assigneeValue }
-          });
+          const [res] = await prisma.$transaction([
+            prisma.customer.updateMany({
+              where: { id: { in: cIds } },
+              data: { assigneeId: assigneeValue }
+            }),
+            prisma.opportunity.updateMany({
+              where: { customerId: { in: cIds }, status: 'OPEN' },
+              data: { assigneeId: assigneeValue }
+            })
+          ]);
           updatedCount += res.count;
         }
 
@@ -116,7 +122,7 @@ export async function POST(request: Request) {
             externalId: String(extId)
           });
 
-          await prisma.customer.upsert({
+          const customer = await prisma.customer.upsert({
             where: { externalPersonId_journeyId: { externalPersonId: extId, journeyId: 'generic' } },
             create: {
               externalPersonId: extId,
@@ -129,6 +135,10 @@ export async function POST(request: Request) {
               personId: person.id,
               assigneeId: assigneeValue
             }
+          });
+          await prisma.opportunity.updateMany({
+            where: { customerId: customer.id, status: 'OPEN' },
+            data: { assigneeId: assigneeValue }
           });
           updatedCount++;
         }
