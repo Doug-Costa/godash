@@ -70,6 +70,34 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, data: journeys, flows, flowExecutions });
     }
 
+    const canonicalCampaign = await prisma.campaign.findUnique({
+      where: { id: journeyId },
+      include: {
+        flow: true,
+        flowVersion: { include: { steps: { orderBy: { order: 'asc' } } } },
+        enrollments: { select: { status: true, isTest: true } },
+        _count: { select: { enrollments: true, opportunities: true } }
+      }
+    });
+    if (canonicalCampaign) {
+      const enrollmentStatus = canonicalCampaign.enrollments.reduce<Record<string, number>>((acc, item) => {
+        const key = item.isTest ? `TEST_${item.status}` : item.status;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+      return NextResponse.json({
+        success: true,
+        data: {
+          campaign: canonicalCampaign,
+          flow: canonicalCampaign.flow,
+          flowVersion: canonicalCampaign.flowVersion,
+          enrollmentStatus,
+          totalEnrollments: canonicalCampaign._count.enrollments,
+          totalOpportunities: canonicalCampaign._count.opportunities
+        }
+      });
+    }
+
     // Specific journey metrics detail
     const journey = await prisma.journey.findUnique({
       where: { id: journeyId },

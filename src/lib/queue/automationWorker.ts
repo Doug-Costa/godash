@@ -8,6 +8,16 @@ import { compileTemplate } from '../services/providers/MailerProvider';
 export const automationWorker = new Worker(
   'automation-queue',
   async (job: Job) => {
+    if (job.name === 'campaign-flow-step') {
+      const { enrollmentId, stepId } = job.data;
+      const { CampaignFlowExecutionService } = await import('../application/CampaignFlowExecutionService');
+      try {
+        return await CampaignFlowExecutionService.process(enrollmentId, stepId);
+      } catch (error: any) {
+        await CampaignFlowExecutionService.fail(enrollmentId, error.message || 'Falha na execução do fluxo.');
+        throw error;
+      }
+    }
     const { customerId, automationId, journeyId, warmupTemplateId } = job.data;
     console.log(`[AutomationWorker] 📥 Processing job ${job.id} for customer ${customerId}`);
 

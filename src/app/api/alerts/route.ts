@@ -356,6 +356,36 @@ export async function POST(request: Request) {
       }) || await prisma.pipeline.findFirst();
       const pipelineId = vendasPipeline?.id || null;
 
+      const campaignOpportunity = await prisma.opportunity.findFirst({
+        where: {
+          status: 'OPEN',
+          assigneeId: null,
+          customer: Number.isFinite(Number(personId))
+            ? { externalPersonId: Number(personId) }
+            : { id: String(personId) }
+        },
+        include: { customer: true },
+        orderBy: { createdAt: 'desc' }
+      });
+      if (campaignOpportunity) {
+        const claimed = await prisma.$transaction(async tx => {
+          await tx.opportunity.update({ where: { id: campaignOpportunity.id }, data: { assigneeId: userId } });
+          const updatedCustomer = await tx.customer.update({ where: { id: campaignOpportunity.customerId }, data: { assigneeId: userId } });
+          await tx.campaignEnrollment.updateMany({
+            where: { opportunityId: campaignOpportunity.id, status: { in: ['PENDING', 'RUNNING', 'PAUSED'] } },
+            data: { assigneeId: userId }
+          });
+          await tx.leadAssignmentHistory.create({
+            data: { opportunityId: campaignOpportunity.id, assigneeId: userId, reason: 'MANUAL_PICKUP' }
+          });
+          await tx.interaction.create({
+            data: { customerId: campaignOpportunity.customerId, opportunityId: campaignOpportunity.id, authorId: userId, text: 'Assumiu manualmente esta oportunidade da fila.' }
+          });
+          return updatedCustomer;
+        });
+        return NextResponse.json({ success: true, data: claimed });
+      }
+
       // CDP V4 - Resolver identidade canônica antes de persistir/atualizar o Customer
       const person = await CanonicalIdentityService.resolve({
         source: 'DENTALGO',

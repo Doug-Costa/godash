@@ -180,7 +180,7 @@ export class CustomerCreationService {
     // 4. Create Opportunity (if pipeline is provided)
     if (pipelineId) {
       const existingOpp = await prisma.opportunity.findFirst({
-        where: { customerId, pipelineId }
+        where: { customerId, pipelineId, productId: productId || null, status: 'OPEN' }
       });
 
       if (!existingOpp) {

@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, description, category, subType, basePrice, price, isActive, cohort, startDate, endDate } = body;
+    const { name, description, category, subType, specialty, basePrice, price, isActive, cohort, startDate, endDate, postSaleCampaignId, nurturingCampaignId } = body;
 
     if (!name || !category || !subType) {
       return NextResponse.json(
@@ -41,12 +41,15 @@ export async function POST(request: Request) {
         description,
         category,
         subType,
+        specialty: specialty || null,
         basePrice: basePrice !== undefined ? Number(basePrice) : null,
         price: price !== undefined ? Number(price) : (basePrice !== undefined ? Number(basePrice) : null),
         isActive: isActive !== undefined ? Boolean(isActive) : true,
         cohort: cohort || null,
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
+        postSaleCampaignId: postSaleCampaignId || null,
+        nurturingCampaignId: nurturingCampaignId || null,
       }
     });
 
@@ -70,7 +73,7 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json();
-    const { id, name, description, category, subType, basePrice, price, isActive, cohort, startDate, endDate } = body;
+    const { id, name, description, category, subType, specialty, basePrice, price, isActive, cohort, startDate, endDate, postSaleCampaignId, nurturingCampaignId } = body;
 
     if (!id || !name || !category || !subType) {
       return NextResponse.json(
@@ -86,12 +89,15 @@ export async function PUT(request: Request) {
         description,
         category,
         subType,
+        specialty: specialty || null,
         basePrice: basePrice !== undefined ? Number(basePrice) : null,
         price: price !== undefined ? Number(price) : (basePrice !== undefined ? Number(basePrice) : null),
         isActive: isActive !== undefined ? Boolean(isActive) : true,
         cohort: cohort || null,
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
+        postSaleCampaignId: postSaleCampaignId || null,
+        nurturingCampaignId: nurturingCampaignId || null,
       }
     });
 

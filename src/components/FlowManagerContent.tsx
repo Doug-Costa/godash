@@ -82,10 +82,18 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
       }
 
       // Fetch Journeys/Flows
-      const journeyRes = await fetch('/api/campaigns');
+      const journeyRes = await fetch('/api/flows');
       if (journeyRes.ok) {
         const journeyData = await journeyRes.json();
-        setFlows(journeyData.data || []);
+        setFlows((journeyData.data || []).map((flow: any) => {
+          const latest = flow.versions?.[0];
+          return {
+            ...flow,
+            flowGraph: latest?.graph ? JSON.stringify(latest.graph) : null,
+            flowSteps: latest?.steps || [],
+            publishedVersion: latest?.version || null
+          };
+        }));
       }
     } catch (err) {
       console.error('Error fetching flow manager data:', err);
@@ -101,21 +109,8 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
   // Classify journeys into the 4 tabs based on their pipeline name or objective
   const getTabFlows = () => {
     return flows.filter(f => {
-      // Find pipeline name
-      const pipe = pipelines.find(p => p.id === f.pipelineId);
-      const pipeName = pipe?.name || '';
-      
-      if (activeTab === 'cs') {
-        return pipeName === 'CS';
-      }
-      if (activeTab === 'nurturing') {
-        return pipeName === 'Nutrição';
-      }
-      if (activeTab === 'commercial') {
-        return pipeName === 'Vendas';
-      }
-      // Marketing defaults to everything else (empty pipeline, other pipelines, etc.)
-      return pipeName !== 'CS' && pipeName !== 'Nutrição' && pipeName !== 'Vendas';
+      const expected = activeTab === 'cs' ? 'POST_SALES' : activeTab === 'nurturing' ? 'NURTURING' : activeTab === 'commercial' ? 'COMMERCIAL' : 'MARKETING';
+      return (f.category || 'MARKETING') === expected;
     });
   };
 
@@ -178,6 +173,20 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
     setSelectedNodeId(id);
   };
 
+  const addControlNode = (stepType: 'STOP' | 'NEXT_FLOW') => {
+    const id = `node-${Date.now()}`;
+    const parentNode = nodes[nodes.length - 1];
+    const newNode = {
+      id,
+      data: { label: stepType === 'STOP' ? '⏹ Encerrar fluxo' : '➡️ Ir para próximo fluxo', stepType, nextFlowId: null, dayOffset: parentNode?.data?.dayOffset || 0 },
+      position: { x: 250, y: parentNode ? parentNode.position.y + 100 : 100 },
+      style: { background: 'var(--surface-raised)', border: '1px solid var(--accent)', borderRadius: 8, color: 'var(--text-primary)', padding: 10, fontSize: 11, width: 190 }
+    };
+    setNodes(prev => [...prev, newNode]);
+    if (parentNode) setEdges(prev => [...prev, { id: `edge-${parentNode.id}-${id}`, source: parentNode.id, target: id, animated: true }]);
+    setSelectedNodeId(id);
+  };
+
   // Open creation flow
   const handleCreateNewFlow = () => {
     setEditingFlowId(null);
@@ -228,7 +237,7 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
   const handleDeleteFlow = async (id: string) => {
     if (!confirm('Deseja realmente deletar esta jornada?')) return;
     try {
-      const res = await fetch(`/api/campaigns?campaignId=${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/flows?id=${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchData();
       }
@@ -249,35 +258,27 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
       const flowSteps = nodes
         .filter(n => n.id !== 'start')
         .map(n => ({
+          type: n.data.stepType || 'MESSAGE',
           dayOffset: Number(n.data.dayOffset) || 0,
           channel: n.data.channel,
           messageTemplate: n.data.messageTemplate || '',
           templateId: n.data.templateId || null,
           reactflowNodeId: n.id,
-          provider: n.data.provider || (n.data.channel === 'WHATSAPP' ? 'EVOLUTION' : 'INTERNAL_SMTP')
+          provider: n.data.provider || (n.data.channel === 'WHATSAPP' ? 'EVOLUTION' : 'INTERNAL_SMTP'),
+          nextFlowId: n.data.nextFlowId || null
         }))
         .sort((a, b) => a.dayOffset - b.dayOffset);
 
       const bodyPayload = {
-        action: editingFlowId ? 'update' : 'save-flow',
-        campaignId: editingFlowId || undefined,
+        id: editingFlowId || undefined,
         name: flowName,
-        pipelineId: flowPipelineId || null,
-        smtpConfigId: flowSmtpConfigId || null,
-        onWinJourneyId: flowOnWinJourneyId || null,
-        onLoseJourneyId: flowOnLoseJourneyId || null,
-        sendingMode: flowSendingMode,
-        minDelay: flowMinDelay,
-        maxDelay: flowMaxDelay,
-        flowSteps,
-        flowGraph: JSON.stringify({ nodes, edges }),
-        routingMode: flowRoutingMode,
-        useAccountManager: flowUseAccountManager,
-        strictSkillMatch: flowStrictSkillMatch,
-        productId: flowProductId || null
+        category: activeTab === 'cs' ? 'POST_SALES' : activeTab === 'nurturing' ? 'NURTURING' : activeTab === 'commercial' ? 'COMMERCIAL' : 'MARKETING',
+        steps: flowSteps,
+        graph: { nodes, edges },
+        publish: true
       };
 
-      const res = await fetch('/api/campaigns', {
+      const res = await fetch('/api/flows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyPayload)
@@ -469,7 +470,7 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
 
             {/* Modal Content */}
             <form onSubmit={handleSaveFlow} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, overflow: 'hidden' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
                 <div>
                   <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Nome da Régua / Fluxo:</label>
                   <input
@@ -481,7 +482,7 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
                     style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, outline: 'none' }}
                   />
                 </div>
-                <div>
+                <div style={{ display: 'none' }}>
                   <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Funil de Destino (Pipeline):</label>
                   <select
                     value={flowPipelineId}
@@ -493,7 +494,7 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
                     ))}
                   </select>
                 </div>
-                <div>
+                <div style={{ display: 'none' }}>
                   <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Conector SMTP (Opcional):</label>
                   <select
                     value={flowSmtpConfigId}
@@ -509,7 +510,7 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
               </div>
 
               {/* 1. Controle de Cadência (Evitar Blacklist) */}
-              <div style={{ background: 'var(--surface-raised)', padding: 14, borderRadius: 8, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'none' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span>🕒 1. Controle de Cadência (Evitar Blacklist)</span>
                 </div>
@@ -554,7 +555,7 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
               </div>
 
               {/* RevOps Intelligent Routing Configuration */}
-              <div style={{ background: 'var(--surface-raised)', padding: 14, borderRadius: 8, border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'none' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span>⚙️ Configuração de Roteamento Inteligente e Especialistas (RevOps)</span>
                 </div>
@@ -605,7 +606,7 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
               </div>
 
               {/* Roteamento de Finais se CS ou Comercial */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, background: 'var(--surface-raised)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+              <div style={{ display: 'none' }}>
                 <div>
                   <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Se GANHO (WON) &rarr; Mudar para:</label>
                   <select
@@ -665,6 +666,8 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
                     <Panel position="top-right" style={{ display: 'flex', gap: 6 }}>
                       <button type="button" onClick={() => addStepNode('WHATSAPP')} className="btn-action" style={{ fontSize: 11, padding: '4px 8px' }}>💬 +Whats</button>
                       <button type="button" onClick={() => addStepNode('EMAIL')} className="btn-action" style={{ fontSize: 11, padding: '4px 8px' }}>📧 +Email</button>
+                      <button type="button" onClick={() => addControlNode('STOP')} className="btn-action" style={{ fontSize: 11, padding: '4px 8px' }}>⏹ Stop</button>
+                      <button type="button" onClick={() => addControlNode('NEXT_FLOW')} className="btn-action" style={{ fontSize: 11, padding: '4px 8px' }}>➡️ Próximo fluxo</button>
                     </Panel>
                   </ReactFlow>
                 </div>
@@ -682,11 +685,25 @@ export default function FlowManagerContent({ currentUser, initialPipelines = [],
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
                           <div>
-                            <span className="label-sm" style={{ fontSize: 10 }}>Canal de Ação:</span>
+                            <span className="label-sm" style={{ fontSize: 10 }}>Tipo de passo:</span>
                             <div style={{ fontWeight: 600, color: 'var(--accent)', fontSize: 13, marginTop: 2 }}>
-                              {node.data.channel === 'WHATSAPP' ? '💬 WhatsApp' : node.data.channel === 'CALL' ? '📞 Ligação' : '📧 E-mail'}
+                              {node.data.stepType === 'STOP' ? '⏹ Encerrar fluxo' : node.data.stepType === 'NEXT_FLOW' ? '➡️ Próximo fluxo' : node.data.channel === 'WHATSAPP' ? '💬 WhatsApp' : node.data.channel === 'CALL' ? '📞 Ligação' : '📧 E-mail'}
                             </div>
                           </div>
+
+                          {node.data.stepType === 'NEXT_FLOW' && (
+                            <div>
+                              <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Fluxo seguinte:</label>
+                              <select
+                                value={node.data.nextFlowId || ''}
+                                onChange={e => setNodes(prev => prev.map(item => item.id === node.id ? { ...item, data: { ...item.data, nextFlowId: e.target.value || null } } : item))}
+                                style={{ width: '100%', padding: '6px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', fontSize: 12 }}
+                              >
+                                <option value="">-- Selecione --</option>
+                                {flows.filter(flow => flow.id !== editingFlowId).map(flow => <option key={flow.id} value={flow.id}>{flow.name}</option>)}
+                              </select>
+                            </div>
+                          )}
 
                           {node.data.channel === 'WHATSAPP' && (
                             <div>

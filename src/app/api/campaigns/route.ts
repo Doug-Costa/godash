@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import pool from '@/lib/db';
 import { AssignCampaignLeadsUseCase } from '@/lib/application/AssignCampaignLeadsUseCase';
 import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
+import { CampaignOrchestrationService } from '@/lib/application/CampaignOrchestrationService';
 
 export async function GET() {
   try {
@@ -18,6 +19,17 @@ export async function GET() {
         _count: {
           select: { customers: true }
         }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const canonicalCampaigns = await prisma.campaign.findMany({
+      include: {
+        flow: true,
+        flowVersion: { include: { steps: true } },
+        pipeline: true,
+        operators: { include: { user: true } },
+        _count: { select: { enrollments: true } }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -63,7 +75,31 @@ export async function GET() {
       }).sort((a, b) => a.dayOffset - b.dayOffset)
     }));
 
-    return NextResponse.json({ success: true, data: mappedJourneys });
+    const mappedCanonical = canonicalCampaigns.map(campaign => ({
+      id: campaign.id,
+      name: campaign.name,
+      status: campaign.status,
+      campaignNature: campaign.campaignNature,
+      targetCriteria: campaign.targetCriteria,
+      limitPerDay: campaign.limitPerDay,
+      pipelineId: campaign.pipelineId,
+      routingMode: campaign.routingMode,
+      useAccountManager: campaign.useAccountManager,
+      strictSkillMatch: campaign.strictSkillMatch,
+      productId: campaign.productId,
+      flowId: campaign.flowId,
+      createdAt: campaign.createdAt,
+      updatedAt: campaign.updatedAt,
+      entityType: 'CAMPAIGN',
+      _count: { leads: campaign._count.enrollments },
+      flowSteps: (campaign.flowVersion?.steps || []).map(step => ({
+        ...step,
+        dayOffset: Math.floor((step.delayMinutes || 0) / (24 * 60))
+      })),
+      operators: campaign.operators.map(item => ({ id: item.user.id, name: item.user.name }))
+    }));
+
+    return NextResponse.json({ success: true, data: [...mappedCanonical, ...mappedJourneys.map(item => ({ ...item, entityType: 'LEGACY_JOURNEY' }))] });
   } catch (error: any) {
     console.error('GET campaigns error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -321,6 +357,15 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: 'Parâmetros inválidos para atribuição' }, { status: 400 });
       }
 
+      const canonicalCampaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+      if (canonicalCampaign) {
+        const results = await CampaignOrchestrationService.enroll(campaignId, externalPersonIds, {
+          sourceType: 'MANUAL',
+          fixedAssigneeId: userIds.length === 1 ? userIds[0] : undefined
+        });
+        return NextResponse.json({ success: true, count: results.length, data: results });
+      }
+
       const useCase = new AssignCampaignLeadsUseCase();
       const results = await useCase.execute(externalPersonIds, campaignId, userIds);
 
@@ -383,6 +428,50 @@ export async function POST(request: Request) {
       }
 
       const targetCriteria = JSON.stringify({ rules, rulesRelation, startDate, excludeNurturing: excludeNurturing !== false });
+
+      // Arquitetura canônica: Flow versionado -> Campaign em rascunho -> preflight -> Enrollment.
+      {
+        const defaultPipeline = body.pipelineId || (nature === 'COMMERCIAL'
+          ? (await prisma.pipeline.findFirst({ where: { name: 'Vendas' } }) || await prisma.pipeline.findFirst())?.id
+          : null);
+        const selectedFlowId = body.flowId || (await CampaignOrchestrationService.saveFlow({
+          name: `${name} — Fluxo`,
+          category: nature === 'COMMERCIAL' ? 'COMMERCIAL' : 'MARKETING',
+          graph: flowGraph ? (typeof flowGraph === 'string' ? JSON.parse(flowGraph) : flowGraph) : {},
+          publish: true,
+          steps: (flowSteps || []).map((step: any) => ({
+            type: step.type || 'MESSAGE', channel: step.channel, templateId: step.templateId || null,
+            dayOffset: Number(step.dayOffset) || 0, messageTemplate: step.messageTemplate || '', provider: step.provider || 'EVOLUTION',
+            nextFlowId: step.nextFlowId || null
+          }))
+        })).flow.id;
+        const canonicalCampaign = await CampaignOrchestrationService.saveDraft({
+          name,
+          campaignNature: nature,
+          objective: nature === 'COMMERCIAL' ? 'Venda' : 'Marketing e nutrição',
+          productId: body.productId || null,
+          pipelineId: defaultPipeline || null,
+          flowId: selectedFlowId,
+          targetCriteria: { rules, rulesRelation, startDate, excludeNurturing: excludeNurturing !== false },
+          routingMode: body.routingMode || 'ROUND_ROBIN',
+          useAccountManager: body.useAccountManager === true,
+          strictSkillMatch: body.strictSkillMatch === true,
+          operatorIds: userIds || [],
+          limitPerDay: limitPerDay ? Number(limitPerDay) : null,
+          startsAt: startDate || null,
+          excludeNurturing: excludeNurturing !== false
+        });
+        const canonicalAudience = await getSegmentedLeadIds(rules, rulesRelation || 'AND', excludeNurturing !== false);
+        if (canonicalAudience.length === 0) {
+          return NextResponse.json({
+            success: false,
+            error: 'Campanha salva como rascunho, mas nenhuma pessoa elegível foi encontrada. Adicione a audiência e execute o preflight antes de ativar.',
+            data: canonicalCampaign
+          }, { status: 400 });
+        }
+        const enrollments = await CampaignOrchestrationService.enroll(canonicalCampaign!.id, canonicalAudience, { sourceType: 'SEGMENT' });
+        return NextResponse.json({ success: true, data: canonicalCampaign, leadsAssignedCount: enrollments.length });
+      }
 
       // Criar jornada e automações
       const journey = await prisma.journey.create({
@@ -461,21 +550,21 @@ export async function POST(request: Request) {
             personId = person.id;
           } else {
             const existing = await prisma.customer.findUnique({
-              where: { id: currentId }
+              where: { id: String(currentId) }
             });
             if (!existing) continue;
-            personId = existing.personId;
+            personId = existing!.personId;
           }
 
           let customer = await prisma.customer.findFirst({
             where: typeof currentId === 'number'
-              ? { externalPersonId: currentId }
-              : { id: currentId }
+              ? { externalPersonId: Number(currentId) }
+              : { id: String(currentId) }
           });
 
           if (customer) {
             customer = await prisma.customer.update({
-              where: { id: customer.id },
+              where: { id: customer!.id },
               data: {
                 personId: personId,
                 journeyId: journey.id,
@@ -487,7 +576,7 @@ export async function POST(request: Request) {
           } else if (typeof currentId === 'number') {
             customer = await prisma.customer.create({
               data: {
-                externalPersonId: currentId,
+                externalPersonId: Number(currentId),
                 personId: personId,
                 journeyId: journey.id,
                 pipelineId: targetPipelineId,
@@ -512,7 +601,7 @@ export async function POST(request: Request) {
               await automationQueue.add(
                 'execute-automation',
                 {
-                  customerId: customer.id,
+                  customerId: customer!.id,
                   automationId: auto.id,
                   journeyId: journey.id
                 },

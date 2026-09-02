@@ -576,10 +576,10 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
-                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Campanha de Origem (atribuição)</label>
+                    <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Campanha de entrada (recomendado)</label>
                     <select
                       value={activeForm?.campaignId || ''}
-                      onChange={(e) => setActiveForm({ ...activeForm!, campaignId: e.target.value || null })}
+                      onChange={(e) => setActiveForm({ ...activeForm!, campaignId: e.target.value || null, journeyId: null })}
                       style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
                     >
                       <option value="">Nenhuma campanha</option>
@@ -604,12 +604,13 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                     <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Distribuição para Operador</label>
                     <select
                       value={activeForm?.assignmentMode || 'POOL'}
+                      disabled={!!activeForm?.campaignId}
                       onChange={(e) => setActiveForm({
                         ...activeForm!,
                         assignmentMode: e.target.value as Form['assignmentMode'],
                         fixedAssigneeId: e.target.value === 'FIXED' ? activeForm?.fixedAssigneeId || null : null
                       })}
-                      style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
+                      style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', opacity: activeForm?.campaignId ? 0.55 : 1 }}
                     >
                       <option value="POOL">Pool / sem operador</option>
                       <option value="ROUND_ROBIN">Round-robin automático</option>
@@ -620,7 +621,7 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                     <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Operador Fixo</label>
                     <select
                       value={activeForm?.fixedAssigneeId || ''}
-                      disabled={activeForm?.assignmentMode !== 'FIXED'}
+                      disabled={!!activeForm?.campaignId || activeForm?.assignmentMode !== 'FIXED'}
                       onChange={(e) => setActiveForm({ ...activeForm!, fixedAssigneeId: e.target.value || null })}
                       style={{ width: '100%', padding: '10px 14px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', opacity: activeForm?.assignmentMode === 'FIXED' ? 1 : 0.55 }}
                     >
@@ -630,8 +631,8 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                   </div>
                 </div>
 
-                <div>
-                  <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Jornada / Fluxo Automático (opcional)</label>
+                {!activeForm?.campaignId ? <div>
+                  <label className="label-sm" style={{ marginBottom: 6, display: 'block' }}>Jornada legada (compatibilidade)</label>
                   <select
                     value={activeForm?.journeyId || ''}
                     onChange={(e) => setActiveForm({ ...activeForm!, journeyId: e.target.value || null })}
@@ -640,7 +641,9 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                     <option value="">Nenhuma jornada — somente funil</option>
                     {journeys.map(journey => <option key={journey.id} value={journey.id}>{journey.name}</option>)}
                   </select>
-                </div>
+                </div> : <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: 10, background: 'var(--accent-glow)', borderRadius: 8 }}>
+                  Funil, produto, equipe, distribuição e fluxo serão herdados da campanha selecionada.
+                </div>}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>

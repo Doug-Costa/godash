@@ -25,9 +25,10 @@ interface ProductFormModalProps {
   onClose: () => void;
   onSave: (productData: any) => void;
   editingProduct?: any;
+  campaigns?: any[];
 }
 
-export default function ProductFormModal({ isOpen, onClose, onSave, editingProduct }: ProductFormModalProps) {
+export default function ProductFormModal({ isOpen, onClose, onSave, editingProduct, campaigns = [] }: ProductFormModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('CURSO');
@@ -41,6 +42,8 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const [postSaleCampaignId, setPostSaleCampaignId] = useState('');
+  const [nurturingCampaignId, setNurturingCampaignId] = useState('');
 
   // Load editing product data when modal opens or editingProduct changes
   useEffect(() => {
@@ -63,6 +66,8 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
       setStartDate(editingProduct.startDate ? new Date(editingProduct.startDate).toISOString().split('T')[0] : '');
       setEndDate(editingProduct.endDate ? new Date(editingProduct.endDate).toISOString().split('T')[0] : '');
       setIsActive(editingProduct.isActive !== undefined ? editingProduct.isActive : true);
+      setPostSaleCampaignId(editingProduct.postSaleCampaignId || '');
+      setNurturingCampaignId(editingProduct.nurturingCampaignId || '');
     } else {
       // Reset to defaults
       setName('');
@@ -78,6 +83,8 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
       setStartDate('');
       setEndDate('');
       setIsActive(true);
+      setPostSaleCampaignId('');
+      setNurturingCampaignId('');
     }
   }, [editingProduct, isOpen]);
 
@@ -132,6 +139,8 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
       startDate: startDate || null,
       endDate: endDate || null,
       isActive,
+      postSaleCampaignId: postSaleCampaignId || null,
+      nurturingCampaignId: nurturingCampaignId || null,
     };
 
     if (editingProduct && editingProduct.id) {
@@ -329,6 +338,23 @@ export default function ProductFormModal({ isOpen, onClose, onSave, editingProdu
                   border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 12, boxSizing: 'border-box'
                 }}
               />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 12, background: 'var(--surface-raised)', borderRadius: 8 }}>
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Ao ganhar → campanha de pós-venda:</label>
+              <select value={postSaleCampaignId} onChange={e => setPostSaleCampaignId(e.target.value)} style={{ width: '100%', padding: '9px', background: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                <option value="">-- Nenhuma --</option>
+                {campaigns.filter(c => c.campaignNature === 'AUTOMATED').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Ao perder → campanha de nutrição:</label>
+              <select value={nurturingCampaignId} onChange={e => setNurturingCampaignId(e.target.value)} style={{ width: '100%', padding: '9px', background: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                <option value="">-- Nenhuma --</option>
+                {campaigns.filter(c => c.campaignNature === 'AUTOMATED').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
             </div>
           </div>
 

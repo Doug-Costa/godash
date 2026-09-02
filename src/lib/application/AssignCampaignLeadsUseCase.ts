@@ -218,7 +218,7 @@ export class AssignCampaignLeadsUseCase {
               pipelineId: targetPipelineId,
               stage: 'novo_cadastro',
               assigneeId,
-              sourceCampaignId: campaignId
+              metadata: { legacyJourneyId: campaignId }
             }
           });
           DomainEventService.publish({

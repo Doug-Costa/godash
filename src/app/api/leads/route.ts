@@ -7,6 +7,7 @@ import { auth } from '@/auth';
 import { RegisterLeadInteractionService } from '@/lib/application/RegisterLeadInteractionService';
 import { LeadTaggingService } from '@/lib/application/LeadTaggingService';
 import { JourneyTransitionService } from '@/lib/services/JourneyTransitionService';
+import { CampaignOrchestrationService } from '@/lib/application/CampaignOrchestrationService';
 
 const crmRepository = new PrismaCrmRepository();
 
@@ -374,7 +375,9 @@ export async function GET(request: Request) {
         },
         opportunities: {
           include: {
-            product: true
+            product: true,
+            assignee: { select: { id: true, name: true } },
+            sourceCampaign: { select: { id: true, name: true } }
           }
         }
       }
@@ -595,7 +598,7 @@ export async function GET(request: Request) {
         const displayName = r?.fullName || person?.fullName || null;
         const displayEmail = r?.email || person?.email || '';
         const displayPhone = r?.phoneNumber || person?.phoneNumber || '';
-        const displayId = r?.id ?? c.externalPersonId;
+        const displayId = r?.id ?? c.externalPersonId ?? c.id;
 
         // Se não tem dados em nenhuma das fontes, descarta apenas se não houver Person
         if (!r && !person) return null;
@@ -683,6 +686,34 @@ export async function GET(request: Request) {
           } : null
         };
       }).filter(Boolean);
+
+      // Um card por oportunidade/produto. A identidade continua unificada no
+      // Customer, mas negociações paralelas não são mais colapsadas.
+      data = data.flatMap(base => {
+        const customer = uniqueCustomers.find(item => item.id === base.customerCuid);
+        const opportunities = (customer?.opportunities || []).filter((opportunity: any) =>
+          !pipelineId || pipelineId === 'all' || opportunity.pipelineId === pipelineId
+        );
+        if (!opportunities.length) return [base];
+        return opportunities.map((opportunity: any) => ({
+          ...base,
+          cardId: `${base.customerCuid}:${opportunity.id}`,
+          stage: opportunity.stage,
+          assignee: opportunity.assignee || base.assignee,
+          campaign: opportunity.sourceCampaign || base.campaign,
+          opportunity: {
+            id: opportunity.id,
+            status: opportunity.status,
+            productId: opportunity.productId,
+            product: opportunity.product ? {
+              id: opportunity.product.id,
+              name: opportunity.product.name,
+              category: opportunity.product.category,
+              subType: opportunity.product.subType
+            } : null
+          }
+        }));
+      });
     } else {
       // Filas do MySQL (abandonados, expirar): mapeia pelos rows diretamente
       const stateMap = new Map();
@@ -834,10 +865,68 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { leadId, journeyId, stage, note, assigneeId, type, lossReason, scheduledFor, tag, lostReason, metadata } = body;
+    const { leadId, opportunityId, journeyId, stage, note, assigneeId, type, lossReason, scheduledFor, tag, lostReason, metadata } = body;
 
     if (!leadId) {
       return NextResponse.json({ success: false, error: 'leadId is required' }, { status: 400 });
+    }
+
+    if (opportunityId) {
+      const opportunity = await prisma.opportunity.findUnique({ where: { id: opportunityId }, include: { customer: true } });
+      if (!opportunity) return NextResponse.json({ success: false, error: 'Oportunidade não encontrada.' }, { status: 404 });
+      const finalStage = stage || (type === 'LOST' ? 'perdido' : type === 'RECOVERED' ? 'novo_cadastro' : undefined);
+      const finalStatus = finalStage === 'ganho' ? 'WON' : finalStage === 'perdido' || type === 'LOST' ? 'LOST' : type === 'RECOVERED' ? 'OPEN' : undefined;
+      const normalizedAssignee = assigneeId !== undefined ? (assigneeId === 'unassigned' || !assigneeId ? null : assigneeId) : undefined;
+      const updatedOpportunity = await prisma.$transaction(async tx => {
+        const updated = await tx.opportunity.update({
+          where: { id: opportunityId },
+          data: {
+            stage: finalStage,
+            status: finalStatus,
+            assigneeId: normalizedAssignee,
+            lossReason: lostReason || lossReason || undefined,
+            lastSignificantActivityAt: new Date()
+          },
+          include: { assignee: { select: { id: true, name: true } }, product: true, sourceCampaign: true }
+        });
+        if (normalizedAssignee !== undefined) {
+          await tx.campaignEnrollment.updateMany({ where: { opportunityId }, data: { assigneeId: normalizedAssignee } });
+        }
+        if (finalStatus === 'WON' || finalStatus === 'LOST') {
+          await tx.task.deleteMany({ where: { opportunityId, status: 'PENDING' } });
+          await tx.campaignEnrollment.updateMany({
+            where: { opportunityId, status: { in: ['PENDING', 'RUNNING', 'PAUSED'] } },
+            data: { status: 'STOPPED', completedAt: new Date(), stopReason: finalStatus }
+          });
+        }
+        if (note || type) {
+          await tx.interaction.create({
+            data: {
+              customerId: opportunity.customerId,
+              opportunityId,
+              authorId,
+              text: note || `Ação registrada: ${type}`,
+              type: type || 'NOTE'
+            }
+          });
+        }
+        if (scheduledFor) {
+          await tx.task.create({
+            data: { customerId: opportunity.customerId, opportunityId, assignedToId: normalizedAssignee ?? opportunity.assigneeId, scheduledFor: new Date(scheduledFor), taskType: type || 'RETORNO', status: 'PENDING' }
+          });
+        }
+        return updated;
+      });
+      if ((finalStatus === 'WON' || finalStatus === 'LOST') && updatedOpportunity.productId) {
+        const product = await prisma.product.findUnique({ where: { id: updatedOpportunity.productId } });
+        const lifecycleCampaignId = finalStatus === 'WON' ? product?.postSaleCampaignId : product?.nurturingCampaignId;
+        if (lifecycleCampaignId) {
+          await CampaignOrchestrationService.enroll(lifecycleCampaignId, [opportunity.customerId], {
+            sourceType: finalStatus === 'WON' ? 'POST_SALE' : 'NURTURING'
+          });
+        }
+      }
+      return NextResponse.json({ success: true, data: { ...updatedOpportunity, opportunity: updatedOpportunity } });
     }
 
     const externalPersonId = Number(leadId);

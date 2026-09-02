@@ -5,6 +5,7 @@ import { SaleChannel } from '@prisma/client';
 import { LeadAttributionService } from '@/lib/services/LeadAttributionService';
 import { RoutingEngineService } from '@/lib/services/RoutingEngineService';
 import { AssignCampaignLeadsUseCase } from '@/lib/application/AssignCampaignLeadsUseCase';
+import { CampaignOrchestrationService } from '@/lib/application/CampaignOrchestrationService';
 
 // Helper function to return headers supporting CORS
 function corsResponse(data: any, status = 200) {
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
     // 1. Fetch Form settings
     const formConfig = await prisma.form.findUnique({
       where: { id: formId },
-      include: { product: true, pipeline: true, journey: true }
+      include: { product: true, pipeline: true, journey: true, campaign: { include: { product: true, pipeline: true } } }
     });
 
     if (!formConfig) {
@@ -85,12 +86,13 @@ export async function POST(request: Request) {
     };
 
     const customer = await CustomerCreationService.createOrMerge({
-      pipelineId: formConfig.pipelineId,
+      pipelineId: formConfig.campaign?.pipelineId || formConfig.pipelineId,
       stage: formConfig.stageId || 'novo_cadastro',
       source: `Form Capture: ${formConfig.name}`,
       metadata,
-      productId: formConfig.productId || undefined,
-      pricePaid: formConfig.product?.price || formConfig.product?.basePrice || undefined,
+      productId: formConfig.campaign?.productId || formConfig.productId || undefined,
+      sourceCampaignId: formConfig.campaignId || undefined,
+      pricePaid: formConfig.campaign?.product?.price || formConfig.campaign?.product?.basePrice || formConfig.product?.price || formConfig.product?.basePrice || undefined,
       saleChannel: SaleChannel.INBOUND_FORM,
       isPurchase: false
     });
@@ -101,7 +103,14 @@ export async function POST(request: Request) {
 
     // 3. Distribuição e jornada opcional. Formulário sempre cria DESEJO.
     let assignedToId: string | null = null;
-    if (formConfig.journeyId) {
+    if (formConfig.campaignId) {
+      const enrollment = await CampaignOrchestrationService.enroll(formConfig.campaignId, [customer.id], {
+        sourceType: 'FORM',
+        sourceFormId: formConfig.id,
+        fixedAssigneeId: formConfig.assignmentMode === 'FIXED' ? formConfig.fixedAssigneeId || undefined : undefined
+      });
+      assignedToId = enrollment[0]?.assigneeId || null;
+    } else if (formConfig.journeyId) {
       const activeAgents = formConfig.assignmentMode === 'ROUND_ROBIN'
         ? await prisma.user.findMany({ where: { isActive: true, role: 'AGENT' }, select: { id: true } })
         : [];
@@ -139,7 +148,7 @@ export async function POST(request: Request) {
 
     // 4. Atualiza a oportunidade do funil do formulário com atribuição e marketing.
     const activeOpp = await prisma.opportunity.findFirst({
-      where: { customerId: customer.id, pipelineId: formConfig.pipelineId },
+      where: { customerId: customer.id, pipelineId: formConfig.campaign?.pipelineId || formConfig.pipelineId },
     });
 
     if (activeOpp) {
@@ -152,9 +161,9 @@ export async function POST(request: Request) {
           utmTerm: utm_term || undefined,
           utmContent: utm_content || undefined,
           sourceCampaignId: formConfig.campaignId || undefined,
-          productId: formConfig.productId || undefined,
-          pricePaid: formConfig.product?.price || formConfig.product?.basePrice || undefined,
-          value: formConfig.product?.price || formConfig.product?.basePrice || undefined,
+          productId: formConfig.campaign?.productId || formConfig.productId || undefined,
+          pricePaid: formConfig.campaign?.product?.price || formConfig.campaign?.product?.basePrice || formConfig.product?.price || formConfig.product?.basePrice || undefined,
+          value: formConfig.campaign?.product?.price || formConfig.campaign?.product?.basePrice || formConfig.product?.price || formConfig.product?.basePrice || undefined,
           saleChannel: SaleChannel.INBOUND_FORM,
           assigneeId: assignedToId,
           metadata: {

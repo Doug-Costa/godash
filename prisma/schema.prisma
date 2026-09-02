@@ -25,9 +25,9 @@ model User {
   password      String?
 
   /// Roles: "ADMIN" | "AGENT" | "POST_SALES"
-  role          String    @default("AGENT")
-  isActive      Boolean   @default(true)
-  skills        String[]
+  role     String   @default("AGENT")
+  isActive Boolean  @default(true)
+  skills   String[]
 
   // Account Manager governance (Fase 1)
   // Quando false, o operador não pode ser account manager de nenhuma Person,
@@ -35,25 +35,27 @@ model User {
   isAccountManagerEnabled Boolean @default(true)
 
   // NextAuth relations
-  accounts      Account[]
-  sessions      Session[]
+  accounts Account[]
+  sessions Session[]
 
   // CRM/CDP relations
-  assignedCustomers   Customer[]
-  interactions        Interaction[]
-  tasks               Task[]
-  opportunities       Opportunity[]
-  managedPersons      Person[]    @relation("PersonAccountManager")
-  identityReviews     IdentityReview[]
-  decidedMerges       MergeEvent[]
-  
+  assignedCustomers Customer[]
+  interactions      Interaction[]
+  tasks             Task[]
+  opportunities     Opportunity[]
+  managedPersons    Person[]         @relation("PersonAccountManager")
+  identityReviews   IdentityReview[]
+  decidedMerges     MergeEvent[]
+
   // Import V4 relations
-  productAliases      ProductAlias[]
-  uploadedBatches     ImportBatch[]
-  
+  productAliases  ProductAlias[]
+  uploadedBatches ImportBatch[]
+
   // Rotation
   leadAssignmentHistory LeadAssignmentHistory[]
-  assignedForms         Form[] @relation("FormFixedAssignee")
+  assignedForms         Form[]                  @relation("FormFixedAssignee")
+  campaignMemberships   CampaignOperator[]
+  campaignEnrollments   CampaignEnrollment[]    @relation("EnrollmentAssignee")
 }
 
 model Account {
@@ -97,35 +99,35 @@ model VerificationToken {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Person {
-  id               String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Identidade tipada — resolve o problema "Lead #7509"
-  fullName         String?
-  email            String?   // email principal (normalizado lowercase)
-  secondaryEmail   String?   // email alternativo (ex: email anterior)
-  phoneNumber      String?   // celular principal (formato E.164: +5544988762228)
-  secondaryPhone   String?   // fixo / telefone da clínica
-  cpf              String?   // opcional — não é dependência de deduplicação
+  fullName       String?
+  email          String? // email principal (normalizado lowercase)
+  secondaryEmail String? // email alternativo (ex: email anterior)
+  phoneNumber    String? // celular principal (formato E.164: +5544988762228)
+  secondaryPhone String? // fixo / telefone da clínica
+  cpf            String? // opcional — não é dependência de deduplicação
 
   // Origem primária do cadastro
-  source           String    @default("DENTALGO") // DENTALGO | MANUAL | CSV | FORM
+  source String @default("DENTALGO") // DENTALGO | MANUAL | CSV | FORM
 
   // Vínculo com o sistema legado (MySQL DentalGO)
-  externalPersonId Int?      // ID em people.id do MySQL — nullable para leads externos
+  externalPersonId Int? // ID em people.id do MySQL — nullable para leads externos
 
   // Account Manager — relação de longo prazo (governança em 2 níveis)
   // Nível 1: este campo + accountManagerActive (por pessoa)
   // Nível 2: User.isAccountManagerEnabled (por operador, via admin)
   // Nível 3: Journey/Campaign.honorAccountManager (por campanha)
   accountManagerId     String?
-  accountManager       User?     @relation("PersonAccountManager", fields: [accountManagerId], references: [id], onDelete: SetNull)
-  accountManagerActive Boolean   @default(false) // false = sem account manager definido ainda
+  accountManager       User?   @relation("PersonAccountManager", fields: [accountManagerId], references: [id], onDelete: SetNull)
+  accountManagerActive Boolean @default(false) // false = sem account manager definido ainda
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  customers       Customer[]      // 1:N — mesma Person pode ter Customer por jornada (padrão atual)
+  customers       Customer[] // 1:N — mesma Person pode ter Customer por jornada (padrão atual)
   identityAliases IdentityAlias[] // audit trail de todos os sinais de identidade coletados
   identityReviews IdentityReview[]
 }
@@ -136,19 +138,19 @@ model Person {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model IdentityAlias {
-  id         String   @id @default(cuid())
+  id         String @id @default(cuid())
   personId   String
-  person     Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
-  source     String   // e.g., MYSQL_CORE, CSV_CONGRESSOS, MANUAL, FORM
-  externalId String   // ID da origem (pode ser string para flexibilidade)
+  person     Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+  source     String // e.g., MYSQL_CORE, CSV_CONGRESSOS, MANUAL, FORM
+  externalId String // ID da origem (pode ser string para flexibilidade)
 
   // Sinais de identidade desta entrada
-  email      String?
-  phone      String?  // normalizado E.164
-  name       String?
-  rawData    Json?    // dados brutos originais para auditoria completa
+  email   String?
+  phone   String? // normalizado E.164
+  name    String?
+  rawData Json? // dados brutos originais para auditoria completa
 
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@unique([source, externalId])
   @@index([personId])
@@ -162,15 +164,15 @@ model IdentityAlias {
 
 model IdentityReview {
   id                 String    @id @default(cuid())
-  incomingSource     String    // Origem do lead em análise (ex: "FORM")
-  incomingExternalId String    // ID externo ou identificador da entrada
-  candidatePersonId  String?   // Person candidata para associação (se houver)
+  incomingSource     String // Origem do lead em análise (ex: "FORM")
+  incomingExternalId String // ID externo ou identificador da entrada
+  candidatePersonId  String? // Person candidata para associação (se houver)
   candidatePerson    Person?   @relation(fields: [candidatePersonId], references: [id], onDelete: SetNull)
-  confidenceScore    Float     // Score de 0 a 100
-  evidences          Json      // Evidências (ex: ["EMAIL_EXACT", "NAME_SIMILARITY"])
+  confidenceScore    Float // Score de 0 a 100
+  evidences          Json // Evidências (ex: ["EMAIL_EXACT", "NAME_SIMILARITY"])
   status             String    @default("PENDING") // PENDING | PROCESSED | DEFERRED
-  decision           String?   // LINK | REJECT | DEFER
-  reviewedById       String?   // Usuário (agente/admin) que revisou
+  decision           String? // LINK | REJECT | DEFER
+  reviewedById       String? // Usuário (agente/admin) que revisou
   reviewedBy         User?     @relation(fields: [reviewedById], references: [id], onDelete: SetNull)
   reviewedAt         DateTime?
   createdAt          DateTime  @default(now())
@@ -186,13 +188,13 @@ model IdentityReview {
 
 model MergeEvent {
   id             String   @id @default(cuid())
-  sourcePersonId String   // ID da Person que foi mesclada e desativada
-  targetPersonId String   // ID da Person sobrevivente
-  decidedById    String?  // Usuário (agente/admin) que realizou o merge
+  sourcePersonId String // ID da Person que foi mesclada e desativada
+  targetPersonId String // ID da Person sobrevivente
+  decidedById    String? // Usuário (agente/admin) que realizou o merge
   decidedBy      User?    @relation(fields: [decidedById], references: [id], onDelete: SetNull)
-  reason         String   // Motivo
+  reason         String // Motivo
   timestamp      DateTime @default(now())
-  metadata       Json?    // Detalhes extras para reversibilidade (ex: aliases movidos, logs de histórico)
+  metadata       Json? // Detalhes extras para reversibilidade (ex: aliases movidos, logs de histórico)
 
   @@index([sourcePersonId])
   @@index([targetPersonId])
@@ -203,47 +205,48 @@ model MergeEvent {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Customer {
-  id                String        @id @default(cuid())
+  id String @id @default(cuid())
 
   // Vínculo com a identidade canônica (Fase 2: NOT NULL definitivo)
-  personId          String
-  person            Person        @relation(fields: [personId], references: [id], onDelete: Cascade)
+  personId String
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
 
-  externalPersonId  Int?          // MANTIDO: backward-compatible. Migra para Person.externalPersonId na Fase 2
-  source            String        @default("DENTALGO") // e.g., DENTALGO, CSV, MANUAL, LP
-  acquisitionChannel String?      // e.g., ORGANIC_SEARCH, INSTAGRAM_ADS, INDICAÇÃO, EVENTO_PRESENCIAL
-  leadSource        String?       // General marketing macro source
-  totalLifetimeValue Float        @default(0.0)
-  stage             String        @default("novo_cadastro") // Legacy, to be migrated to Opportunity
-  assigneeId        String?
-  pipelineId        String?       // Legacy, to be migrated to Opportunity
-  journeyId         String?
-  joinedJourneyAt   DateTime?
-  metadata          Json?         @default("{}") // Armazena Instagram, especialidade, rede social, etc. (legado)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  lastInteractionAt DateTime?
-  interactionCount  Int           @default(0)
-  lossReason        String?       // Legacy, to be migrated to Opportunity
-  tag               String?
-  scheduledFor      DateTime?
-  frozenUntil       DateTime?     // Legacy, to be migrated to Opportunity
-  freezeReason      String?       // Legacy, to be migrated to Opportunity
-  humanTakeover     Boolean       @default(false) // Legacy, to be migrated to Opportunity
-  lostReason        String?       // Legacy, to be migrated to Opportunity
-  leadScore         Int           @default(0)
-  isInNurturing     Boolean       @default(false)
+  externalPersonId   Int? // MANTIDO: backward-compatible. Migra para Person.externalPersonId na Fase 2
+  source             String    @default("DENTALGO") // e.g., DENTALGO, CSV, MANUAL, LP
+  acquisitionChannel String? // e.g., ORGANIC_SEARCH, INSTAGRAM_ADS, INDICAÇÃO, EVENTO_PRESENCIAL
+  leadSource         String? // General marketing macro source
+  totalLifetimeValue Float     @default(0.0)
+  stage              String    @default("novo_cadastro") // Legacy, to be migrated to Opportunity
+  assigneeId         String?
+  pipelineId         String? // Legacy, to be migrated to Opportunity
+  journeyId          String?
+  joinedJourneyAt    DateTime?
+  metadata           Json?     @default("{}") // Armazena Instagram, especialidade, rede social, etc. (legado)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  lastInteractionAt  DateTime?
+  interactionCount   Int       @default(0)
+  lossReason         String? // Legacy, to be migrated to Opportunity
+  tag                String?
+  scheduledFor       DateTime?
+  frozenUntil        DateTime? // Legacy, to be migrated to Opportunity
+  freezeReason       String? // Legacy, to be migrated to Opportunity
+  humanTakeover      Boolean   @default(false) // Legacy, to be migrated to Opportunity
+  lostReason         String? // Legacy, to be migrated to Opportunity
+  leadScore          Int       @default(0)
+  isInNurturing      Boolean   @default(false)
   nurturingJourneyId String?
 
   // Relations
-  assignee         User?             @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
-  pipeline         Pipeline?         @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
-  journey          Journey?          @relation(fields: [journeyId], references: [id], onDelete: SetNull)
-  interactions     Interaction[]
-  tasks            Task[]
-  flowExecutions   FlowExecution[]
-  opportunities    Opportunity[]
-  customerProducts CustomerProduct[]
+  assignee            User?                @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  pipeline            Pipeline?            @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  journey             Journey?             @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  interactions        Interaction[]
+  tasks               Task[]
+  flowExecutions      FlowExecution[]
+  opportunities       Opportunity[]
+  customerProducts    CustomerProduct[]
+  campaignEnrollments CampaignEnrollment[]
 
   // MANTIDO: constraint de deduplicação por (pessoa, jornada) — remoção adiada para Fase 2
   @@unique([externalPersonId, journeyId])
@@ -251,138 +254,139 @@ model Customer {
 }
 
 model Journey {
-  id             String       @id @default(cuid())
+  id             String   @id @default(cuid())
   name           String
-  status         String       @default("ACTIVE") // "ACTIVE" | "PAUSED" | "COMPLETED"
+  status         String   @default("ACTIVE") // "ACTIVE" | "PAUSED" | "COMPLETED"
   objective      String
-  campaignNature String       @default("COMMERCIAL") // "COMMERCIAL" | "AUTOMATED"
+  campaignNature String   @default("COMMERCIAL") // "COMMERCIAL" | "AUTOMATED"
   financialGoal  Float?
   targetCriteria String?
   limitPerDay    Int?
   flowGraph      String?
-  durationDays   Int          @default(30)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  durationDays   Int      @default(30)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   // Routing fields
-  routingMode        String    @default("ROUND_ROBIN") // ROUND_ROBIN, POOL
-  useAccountManager  Boolean   @default(false)
-  strictSkillMatch   Boolean   @default(false)
-  productId          String?
-  
+  routingMode       String  @default("ROUND_ROBIN") // ROUND_ROBIN, POOL
+  useAccountManager Boolean @default(false)
+  strictSkillMatch  Boolean @default(false)
+  productId         String?
+
   // Rotation
-  rotationEnabled        Boolean @default(false)
-  rotationInactivityDays Int     @default(3)
-  product           Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  rotationEnabled        Boolean  @default(false)
+  rotationInactivityDays Int      @default(3)
+  product                Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   // Account Manager governance (Fase 1)
   // false = esta jornada ignora Person.accountManagerId e usa round-robin puro
-  honorAccountManager Boolean      @default(true)
+  honorAccountManager Boolean @default(true)
 
   // Mailer Integration
   smtpConfigId             String?
-  smtpConfig               SmtpConfig?    @relation(fields: [smtpConfigId], references: [id], onDelete: SetNull)
+  smtpConfig               SmtpConfig? @relation(fields: [smtpConfigId], references: [id], onDelete: SetNull)
   templateId               String?
-  template                 Template?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  sendingMode              String         @default("IMMEDIATE") // IMMEDIATE, FIXED, RANDOM
-  minDelay                 Int            @default(100)        // em ms
-  maxDelay                 Int            @default(1000)       // em ms (usado se RANDOM)
-  totalEmails              Int            @default(0)
-  sentEmails               Int            @default(0)
-  failedEmails             Int            @default(0)
-  openedEmails             Int            @default(0)
-  nextCampaignId           String?        @unique
-  nextCampaignDelayMinutes Int            @default(0)
-  nextCampaign             Journey?       @relation("LinkedCampaigns", fields: [nextCampaignId], references: [id], onDelete: SetNull)
-  prevCampaign             Journey?       @relation("LinkedCampaigns")
+  template                 Template?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  sendingMode              String      @default("IMMEDIATE") // IMMEDIATE, FIXED, RANDOM
+  minDelay                 Int         @default(100) // em ms
+  maxDelay                 Int         @default(1000) // em ms (usado se RANDOM)
+  totalEmails              Int         @default(0)
+  sentEmails               Int         @default(0)
+  failedEmails             Int         @default(0)
+  openedEmails             Int         @default(0)
+  nextCampaignId           String?     @unique
+  nextCampaignDelayMinutes Int         @default(0)
+  nextCampaign             Journey?    @relation("LinkedCampaigns", fields: [nextCampaignId], references: [id], onDelete: SetNull)
+  prevCampaign             Journey?    @relation("LinkedCampaigns")
 
   // Marketing, Pipeline & Post-Sales Routing
-  warmupTemplateId         String?
-  pipelineId               String?
-  onWinJourneyId           String?
-  onWinJourney             Journey?       @relation("JourneyToWin", fields: [onWinJourneyId], references: [id], onDelete: SetNull)
-  onLoseJourneyId          String?
-  onLoseJourney            Journey?       @relation("JourneyToLose", fields: [onLoseJourneyId], references: [id], onDelete: SetNull)
-  wonJourneys              Journey[]      @relation("JourneyToWin")
-  lostJourneys             Journey[]      @relation("JourneyToLose")
+  warmupTemplateId String?
+  pipelineId       String?
+  onWinJourneyId   String?
+  onWinJourney     Journey?  @relation("JourneyToWin", fields: [onWinJourneyId], references: [id], onDelete: SetNull)
+  onLoseJourneyId  String?
+  onLoseJourney    Journey?  @relation("JourneyToLose", fields: [onLoseJourneyId], references: [id], onDelete: SetNull)
+  wonJourneys      Journey[] @relation("JourneyToWin")
+  lostJourneys     Journey[] @relation("JourneyToLose")
 
   // Relations
-  customers      Customer[]
-  tasks          Task[]
-  automations    Automation[]
-  recipients     RecipientLog[]
-  forms          Form[]
+  customers   Customer[]
+  tasks       Task[]
+  automations Automation[]
+  recipients  RecipientLog[]
+  forms       Form[]
 }
 
 model Pipeline {
-  id          String     @id @default(cuid())
-  name        String     @unique // "Vendas" | "CS" | "Nutrição"
+  id          String  @id @default(cuid())
+  name        String  @unique // "Vendas" | "CS" | "Nutrição"
   description String?
-  
-  productId   String?
-  product     Product?   @relation(fields: [productId], references: [id])
-  
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
 
-  routingMode       String    @default("ROUND_ROBIN")
-  useAccountManager Boolean   @default(false)
-  strictSkillMatch  Boolean   @default(false)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  routingMode       String  @default("ROUND_ROBIN")
+  useAccountManager Boolean @default(false)
+  strictSkillMatch  Boolean @default(false)
 
   // Relations
   customers     Customer[]
   opportunities Opportunity[]
   forms         Form[]
+  campaigns     Campaign[]
 }
 
 model Interaction {
-  id             String   @id @default(cuid())
-  customerId     String
-  text           String
-  authorId       String?
-  createdAt      DateTime @default(now())
-  
+  id         String   @id @default(cuid())
+  customerId String
+  text       String
+  authorId   String?
+  createdAt  DateTime @default(now())
+
   // Mailer/Notification extension
-  type           String?  // EMAIL_SENT, WHATS_SENT, etc.
-  metadata       Json?    @default("{}")
-  deliveryStatus String   @default("PENDING") // PENDING, SENT, DELIVERED, READ, FAILED
+  type           String? // EMAIL_SENT, WHATS_SENT, etc.
+  metadata       Json?   @default("{}")
+  deliveryStatus String  @default("PENDING") // PENDING, SENT, DELIVERED, READ, FAILED
   errorMessage   String?
   channel        String?
   automationId   String? // Para tracking visual no Campaign Monitor
 
   // Relations
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  
+
   opportunityId String?
   opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
-  
-  author   User?    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  author User? @relation(fields: [authorId], references: [id], onDelete: Cascade)
 }
 
 model Task {
-  id               String    @id @default(cuid())
-  customerId       String
-  assignedToId     String?
-  journeyId        String?
-  automationId     String?
-  scheduledFor     DateTime
-  taskType         String    // "WHATSAPP" | "EMAIL" | "CALL" | "ABANDONED_CART" | "EXPIRATION" | "POST_SALE"
-  status           String    @default("PENDING") // "PENDING" | "COMPLETED" | "SKIPPED" | "CANCELED"
-  completionNote   String?
-  completedAt      DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  
+  id             String    @id @default(cuid())
+  customerId     String
+  assignedToId   String?
+  journeyId      String?
+  automationId   String?
+  scheduledFor   DateTime
+  taskType       String // "WHATSAPP" | "EMAIL" | "CALL" | "ABANDONED_CART" | "EXPIRATION" | "POST_SALE"
+  status         String    @default("PENDING") // "PENDING" | "COMPLETED" | "SKIPPED" | "CANCELED"
+  completionNote String?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
   // Snapshots/Metadata para pós-vendas
   snapshotPlanId   Int?
   snapshotPlanName String?
 
   // Relations
-  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
   opportunityId String?
   opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
-  
+
   assignedTo User?       @relation(fields: [assignedToId], references: [id], onDelete: Cascade)
   journey    Journey?    @relation(fields: [journeyId], references: [id], onDelete: SetNull)
   automation Automation? @relation(fields: [automationId], references: [id], onDelete: SetNull)
@@ -391,25 +395,25 @@ model Task {
 model Automation {
   id           String   @id @default(cuid())
   name         String
-  triggerEvent String   // "CART_ABANDONED" | "SUBSCRIPTION_EXPIRING" | "NEW_SIGNUP" | "POST_SALE"
+  triggerEvent String // "CART_ABANDONED" | "SUBSCRIPTION_EXPIRING" | "NEW_SIGNUP" | "POST_SALE"
   conditions   Json?
-  actionType   String   // "CREATE_TASK"
-  actionConfig Json?    // Configuração contendo templateMessage, dayOffset, channel, etc.
+  actionType   String // "CREATE_TASK"
+  actionConfig Json? // Configuração contendo templateMessage, dayOffset, channel, etc.
   isActive     Boolean  @default(true)
   journeyId    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   // Template Engine
-  templateId   String?
-  template     Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  channel      String?   // "WHATSAPP" | "EMAIL" | "CALL"
-  delay        Int?      // delay em minutos ou dias
-  provider     String?   // "Mailer" | "Evolution" etc
-  retry        Int?      @default(3)
-  timeout      Int?      @default(5000)
-  stepNumber   Int       @default(1)
-  delayDays    Int       @default(0)
+  templateId      String?
+  template        Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  channel         String? // "WHATSAPP" | "EMAIL" | "CALL"
+  delay           Int? // delay em minutos ou dias
+  provider        String? // "Mailer" | "Evolution" etc
+  retry           Int?      @default(3)
+  timeout         Int?      @default(5000)
+  stepNumber      Int       @default(1)
+  delayDays       Int       @default(0)
   reactflowNodeId String?
 
   // Relations
@@ -418,16 +422,16 @@ model Automation {
 }
 
 model SmtpConfig {
-  id        String     @id @default(cuid())
+  id        String    @id @default(cuid())
   name      String
   host      String
   port      Int
   user      String
-  pass      String     // Encrypted
-  secure    Boolean    @default(false)
-  active    Boolean    @default(false)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  pass      String // Encrypted
+  secure    Boolean   @default(false)
+  active    Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   journeys  Journey[]
 }
 
@@ -435,7 +439,7 @@ model Template {
   id          String       @id @default(cuid())
   name        String
   description String?
-  type        String       // EMAIL, WHATSAPP, etc.
+  type        String // EMAIL, WHATSAPP, etc.
   version     Int          @default(1)
   status      String       @default("ACTIVE") // DRAFT, ACTIVE, ARCHIVED
   language    String       @default("PT") // PT, EN, ES
@@ -449,17 +453,17 @@ model Template {
 }
 
 model RecipientLog {
-  id         String    @id @default(cuid())
-  journeyId  String
-  journey    Journey   @relation(fields: [journeyId], references: [id], onDelete: Cascade)
-  email      String
-  data       Json      // Variables parsed from Excel row
-  status     String    @default("PENDING") // PENDING, SENT, FAILED
-  opened     Boolean   @default(false)
-  openedAt   DateTime?
-  error      String?
-  sentAt     DateTime?
-  createdAt  DateTime  @default(now())
+  id        String    @id @default(cuid())
+  journeyId String
+  journey   Journey   @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  email     String
+  data      Json // Variables parsed from Excel row
+  status    String    @default("PENDING") // PENDING, SENT, FAILED
+  opened    Boolean   @default(false)
+  openedAt  DateTime?
+  error     String?
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -467,89 +471,192 @@ model RecipientLog {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Campaign {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
   name           String
   description    String?
   objective      String
-  campaignNature String    @default("COMMERCIAL") // "COMMERCIAL" | "AUTOMATED"
-  targetCriteria String?   // JSON segment rules
+  campaignNature String   @default("COMMERCIAL") // "COMMERCIAL" | "AUTOMATED"
+  targetCriteria String? // JSON segment rules
   financialGoal  Float?
-  status         String    @default("ACTIVE")
+  status         String   @default("DRAFT") // DRAFT | READY | TESTING | SCHEDULED | ACTIVE | PAUSED | COMPLETED
   productId      String?
-  product        Product?  @relation(fields: [productId], references: [id])
-  
-  flowId         String?
-  flow           Flow?     @relation(fields: [flowId], references: [id])
-  
-  opportunities  Opportunity[]
-  forms          Form[]
+  product        Product? @relation(fields: [productId], references: [id])
 
-  routingMode       String    @default("ROUND_ROBIN")
-  useAccountManager Boolean   @default(false)
-  strictSkillMatch  Boolean   @default(false)
+  flowId        String?
+  flow          Flow?        @relation(fields: [flowId], references: [id], onDelete: SetNull)
+  flowVersionId String?
+  flowVersion   FlowVersion? @relation(fields: [flowVersionId], references: [id], onDelete: SetNull)
+
+  pipelineId       String?
+  pipeline         Pipeline? @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  initialStage     String    @default("novo_cadastro")
+  startsAt         DateTime?
+  endsAt           DateTime?
+  limitPerDay      Int?
+  excludeNurturing Boolean   @default(true)
+
+  opportunities     Opportunity[]
+  forms             Form[]
+  operators         CampaignOperator[]
+  enrollments       CampaignEnrollment[]
+  postSaleProducts  Product[]            @relation("ProductPostSaleCampaign")
+  nurturingProducts Product[]            @relation("ProductNurturingCampaign")
+
+  routingMode       String  @default("ROUND_ROBIN")
+  useAccountManager Boolean @default(false)
+  strictSkillMatch  Boolean @default(false)
 
   // Account Manager governance (Fase 1)
   // false = esta campanha ignora Person.accountManagerId e usa round-robin puro
   honorAccountManager Boolean @default(true)
 
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([pipelineId])
+  @@index([flowId])
+}
+
+model CampaignOperator {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([campaignId, userId])
+  @@index([userId])
+}
+
+model CampaignEnrollment {
+  id              String         @id @default(cuid())
+  campaignId      String
+  campaign        Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerId      String
+  customer        Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  opportunityId   String?
+  opportunity     Opportunity?   @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  assigneeId      String?
+  assignee        User?          @relation("EnrollmentAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  flowExecutionId String?        @unique
+  flowExecution   FlowExecution? @relation(fields: [flowExecutionId], references: [id], onDelete: SetNull)
+  sourceType      String         @default("SEGMENT") // SEGMENT | FORM | IMPORT | MANUAL | TEST
+  sourceFormId    String?
+  status          String         @default("PENDING") // PENDING | RUNNING | PAUSED | COMPLETED | STOPPED | FAILED
+  isTest          Boolean        @default(false)
+  currentStep     Int?
+  enteredAt       DateTime       @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+  stopReason      String?
+  attribution     Json?          @default("{}")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([campaignId, customerId, isTest])
+  @@index([campaignId, status])
+  @@index([customerId])
+  @@index([assigneeId])
 }
 
 model Flow {
-  id          String      @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
   description String?
-  status      String      @default("ACTIVE")
-  
+  status      String  @default("ACTIVE")
+  category    String  @default("MARKETING") // MARKETING | COMMERCIAL | POST_SALES | NURTURING
+
+  campaigns  Campaign[]
+  steps      FlowStep[]
+  executions FlowExecution[]
+  versions   FlowVersion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FlowVersion {
+  id          String            @id @default(cuid())
+  flowId      String
+  flow        Flow              @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  version     Int
+  status      String            @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  graph       Json?             @default("{}")
+  createdAt   DateTime          @default(now())
+  publishedAt DateTime?
+  steps       FlowVersionStep[]
   campaigns   Campaign[]
-  steps       FlowStep[]
   executions  FlowExecution[]
-  
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+
+  @@unique([flowId, version])
+  @@index([status])
+}
+
+model FlowVersionStep {
+  id               String      @id @default(cuid())
+  flowVersionId    String
+  flowVersion      FlowVersion @relation(fields: [flowVersionId], references: [id], onDelete: Cascade)
+  type             String // MESSAGE | DELAY | CONDITION | ACTION | STOP | NEXT_FLOW
+  order            Int
+  channel          String?
+  templateId       String?
+  delayMinutes     Int?
+  targetPipelineId String?
+  targetStage      String?
+  nextFlowId       String?
+  config           Json?       @default("{}")
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@unique([flowVersionId, order])
+  @@index([nextFlowId])
 }
 
 model FlowStep {
-  id           String    @id @default(cuid())
-  flowId       String
-  flow         Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
-  
-  type         String    // "MESSAGE", "DELAY", "CONDITION", "ACTION"
-  order        Int
-  
+  id     String @id @default(cuid())
+  flowId String
+  flow   Flow   @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  type  String // "MESSAGE", "DELAY", "CONDITION", "ACTION"
+  order Int
+
   // Fields for MESSAGE
-  templateId   String?
-  
+  templateId String?
+
   // Fields for DELAY
   delayMinutes Int?
-  
+
   // Fields for ACTION (e.g. Move to Funnel)
   targetPipelineId String?
   targetStage      String?
-  
-  nextStepId   String?
-  
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+
+  nextStepId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model FlowExecution {
-  id             String    @id @default(cuid())
-  flowId         String
-  flow           Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
-  
-  customerId     String
-  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  
-  opportunityId  String?
-  opportunity    Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  
-  currentStepId  String?
-  status         String    @default("RUNNING") // "RUNNING", "PAUSED", "COMPLETED", "FAILED"
-  
-  startedAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id     String @id @default(cuid())
+  flowId String
+  flow   Flow   @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  opportunityId String?
+  opportunity   Opportunity?        @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  flowVersionId String?
+  flowVersion   FlowVersion?        @relation(fields: [flowVersionId], references: [id], onDelete: SetNull)
+  enrollment    CampaignEnrollment?
+
+  currentStepId String?
+  status        String  @default("RUNNING") // "RUNNING", "PAUSED", "COMPLETED", "FAILED"
+
+  startedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -557,21 +664,25 @@ model FlowExecution {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Product {
-  id          String    @id @default(cuid())
-  name        String
-  description String?
-  category    ProductCategory @default(CURSO)
-  subType     ProductSubType  @default(ONLINE)
-  basePrice   Float?    // Base catalog price
-  price       Float?
-  isActive    Boolean   @default(true)
-  cohort      String?   // Turma/Edição do produto
-  specialty   String?   // Especialidade Odontológica / Área de Conhecimento
-  startDate   DateTime? // Data de início do produto/turma
-  endDate     DateTime? // Data de término do produto/turma
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                  String          @id @default(cuid())
+  name                String
+  description         String?
+  category            ProductCategory @default(CURSO)
+  subType             ProductSubType  @default(ONLINE)
+  basePrice           Float? // Base catalog price
+  price               Float?
+  isActive            Boolean         @default(true)
+  cohort              String? // Turma/Edição do produto
+  specialty           String? // Especialidade Odontológica / Área de Conhecimento
+  startDate           DateTime? // Data de início do produto/turma
+  endDate             DateTime? // Data de término do produto/turma
+  postSaleCampaignId  String?
+  postSaleCampaign    Campaign?       @relation("ProductPostSaleCampaign", fields: [postSaleCampaignId], references: [id], onDelete: SetNull)
+  nurturingCampaignId String?
+  nurturingCampaign   Campaign?       @relation("ProductNurturingCampaign", fields: [nurturingCampaignId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   pipelines        Pipeline[]
   campaigns        Campaign[]
@@ -580,78 +691,82 @@ model Product {
   customerProducts CustomerProduct[]
   forms            Form[]
   aliases          ProductAlias[]
+
+  @@index([postSaleCampaignId])
+  @@index([nurturingCampaignId])
 }
 
 model CustomerProduct {
-  id         String    @id @default(cuid())
+  id         String   @id @default(cuid())
   customerId String
-  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  
-  productId  String
-  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  
-  status     String    @default("ACTIVE") // ACTIVE, CANCELED, EXPIRED, COMPLETED
-  startDate  DateTime?
-  endDate    DateTime?
-  validUntil DateTime? // Data limite da ativação (null = vitalício)
-  pricePaid  Float?
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  status      String       @default("ACTIVE") // ACTIVE, CANCELED, EXPIRED, COMPLETED
+  startDate   DateTime?
+  endDate     DateTime?
+  validUntil  DateTime? // Data limite da ativação (null = vitalício)
+  pricePaid   Float?
   saleChannel SaleChannel?
-  
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Opportunity {
-  id             String    @id @default(cuid())
-  
-  customerId     String
-  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  
-  pipelineId     String
-  pipeline       Pipeline  @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
-  
-  stage          String    @default("novo_cadastro")
-  status         String    @default("OPEN") // OPEN, WON, LOST
-  value          Float?
-  
-  assigneeId     String?
-  assignee       User?     @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
-  
-  productId      String?
-  product        Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
-  
+  id String @id @default(cuid())
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  pipelineId String
+  pipeline   Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+
+  stage  String @default("novo_cadastro")
+  status String @default("OPEN") // OPEN, WON, LOST
+  value  Float?
+
+  assigneeId String?
+  assignee   User?   @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
   sourceCampaignId String?
   sourceCampaign   Campaign? @relation(fields: [sourceCampaignId], references: [id], onDelete: SetNull)
-  
+
   // Matriz de Canais - Canal de Venda (Onde ocorreu a venda física)
-  saleChannel      SaleChannel?
-  pricePaid        Float?
-  
+  saleChannel SaleChannel?
+  pricePaid   Float?
+
   // UTM Rastreamento Inbound
-  utmSource        String?
-  utmMedium        String?
-  utmCampaign      String?
-  utmTerm          String?
-  utmContent       String?
-  
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmTerm     String?
+  utmContent  String?
+
   // Marketing Campaign Spend relation
   marketingCampaignId String?
   marketingCampaign   MarketingCampaign? @relation(fields: [marketingCampaignId], references: [id], onDelete: SetNull)
-  
-  lossReason     String?
-  humanTakeover  Boolean   @default(false)
-  freezeReason   String?
-  metadata       Json?     @default("{}")
-  
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  
-  tasks          Task[]
-  interactions   Interaction[]
-  flowExecutions FlowExecution[]
-  
+
+  lossReason    String?
+  humanTakeover Boolean @default(false)
+  freezeReason  String?
+  metadata      Json?   @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks               Task[]
+  interactions        Interaction[]
+  flowExecutions      FlowExecution[]
+  campaignEnrollments CampaignEnrollment[]
+
   // Lead Rotation
-  lastSignificantActivityAt DateTime  @default(now())
+  lastSignificantActivityAt DateTime                @default(now())
   freezeUntil               DateTime?
   assignmentHistory         LeadAssignmentHistory[]
 }
@@ -664,7 +779,7 @@ model LeadAssignmentHistory {
   assignee      User?       @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
   assignedAt    DateTime    @default(now())
   releasedAt    DateTime?
-  reason        String      // "INITIAL", "SLA_EXPIRED", "MANUAL_TRANSFER"
+  reason        String // "INITIAL", "SLA_EXPIRED", "MANUAL_TRANSFER"
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -672,67 +787,67 @@ model LeadAssignmentHistory {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model MarketingCampaign {
-  id            String        @id @default(cuid())
-  name          String
-  platform      String        // Ex: META, GOOGLE
-  totalSpend    Float         @default(0.0)
-  active        Boolean       @default(true)
-  
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  
+  id         String  @id @default(cuid())
+  name       String
+  platform   String // Ex: META, GOOGLE
+  totalSpend Float   @default(0.0)
+  active     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   opportunities Opportunity[]
 }
 
 model Form {
-  id             String      @id @default(cuid())
+  id             String  @id @default(cuid())
   name           String
   redirectUrl    String?
   successMessage String?
-  styleConfig    Json        @default("{}") // Cores, bordas, tipografia, transparência
-  
-  pipelineId     String
-  pipeline       Pipeline    @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
-  stageId        String?     // Estágio inicial padrão
-  
-  campaignId     String?
-  campaign       Campaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  styleConfig    Json    @default("{}") // Cores, bordas, tipografia, transparência
+
+  pipelineId String
+  pipeline   Pipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  stageId    String? // Estágio inicial padrão
+
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
   // Entrada comercial: todo formulário é DESEJO. A jornada é opcional.
-  journeyId      String?
-  journey        Journey?    @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  journeyId String?
+  journey   Journey? @relation(fields: [journeyId], references: [id], onDelete: SetNull)
 
   // POOL = sem operador; ROUND_ROBIN = motor de roteamento; FIXED = operador escolhido.
-  assignmentMode  String     @default("POOL")
+  assignmentMode  String  @default("POOL")
   fixedAssigneeId String?
-  fixedAssignee   User?      @relation("FormFixedAssignee", fields: [fixedAssigneeId], references: [id], onDelete: SetNull)
-  
-  productId      String?
-  product        Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
-  
-  fields         FormField[]
-  
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  fixedAssignee   User?   @relation("FormFixedAssignee", fields: [fixedAssigneeId], references: [id], onDelete: SetNull)
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  fields FormField[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([journeyId])
   @@index([fixedAssigneeId])
 }
 
 model FormField {
-  id         String    @id @default(cuid())
-  formId     String
-  form       Form      @relation(fields: [formId], references: [id], onDelete: Cascade)
-  
-  name       String    // Ex: "name", "email", "whatsapp", "city"
-  label      String    // Ex: "Seu Nome Completo"
-  type       String    // Ex: "text", "email", "select", "checkbox"
-  options    Json      @default("[]") // Lista de opções configuráveis para múltiplos campos
-  required   Boolean   @default(false)
-  order      Int       @default(0)
-  
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id     String @id @default(cuid())
+  formId String
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  name     String // Ex: "name", "email", "whatsapp", "city"
+  label    String // Ex: "Seu Nome Completo"
+  type     String // Ex: "text", "email", "select", "checkbox"
+  options  Json    @default("[]") // Lista de opções configuráveis para múltiplos campos
+  required Boolean @default(false)
+  order    Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -740,15 +855,15 @@ model FormField {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model SyncLog {
-  id           String    @id @default(cuid())
+  id String @id @default(cuid())
 
   // Nome do job de sync
-  jobName      String    // "PERSON_IDENTITY" | "SUBSCRIPTION_STATUS" | "FULL_SYNC"
+  jobName String // "PERSON_IDENTITY" | "SUBSCRIPTION_STATUS" | "FULL_SYNC"
 
   // Resultado
-  status       String    // "RUNNING" | "COMPLETED" | "FAILED"
-  startedAt    DateTime  @default(now())
-  completedAt  DateTime?
+  status      String // "RUNNING" | "COMPLETED" | "FAILED"
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
 
   // Contadores
   personsSynced       Int @default(0)
@@ -760,7 +875,7 @@ model SyncLog {
   errorMessage String?
 
   // Quem disparou
-  triggeredBy  String @default("CRON") // "CRON" | "MANUAL" | "STARTUP"
+  triggeredBy String @default("CRON") // "CRON" | "MANUAL" | "STARTUP"
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -768,40 +883,40 @@ model SyncLog {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model ProductAlias {
-  id              String   @id @default(cuid())
-  productId       String
-  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
   rawValue        String
-  normalizedValue String   @unique // Normalização (lowercase, trim, sem acentos) para busca primária
-  sourceLabel     String?  // Opcional para tracking de origem da sigla
-  
-  createdBy       String?  // ID do User que autorizou a criação do alias no HITL
-  creator         User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  normalizedValue String  @unique // Normalização (lowercase, trim, sem acentos) para busca primária
+  sourceLabel     String? // Opcional para tracking de origem da sigla
+
+  createdBy String? // ID do User que autorizou a criação do alias no HITL
+  creator   User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([productId])
 }
 
 model ImportBatch {
-  id             String   @id @default(cuid())
-  fileName       String
-  fileHash       String   @unique // Para impedir duplo upload idêntico 
-  schemaVersion  String   // Ex: "v4-canonical" ou "v4-marketing"
-  
-  uploadedById   String?
-  uploadedBy     User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  
-  status         String   @default("PREFLIGHT") // PREFLIGHT, IMPORTING, COMPLETED, FAILED
-  
-  totalRows      Int      @default(0)
-  successRows    Int      @default(0)
-  warningRows    Int      @default(0)
-  errorRows      Int      @default(0)
-  
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String @id @default(cuid())
+  fileName      String
+  fileHash      String @unique // Para impedir duplo upload idêntico
+  schemaVersion String // Ex: "v4-canonical" ou "v4-marketing"
+
+  uploadedById String?
+  uploadedBy   User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  status String @default("PREFLIGHT") // PREFLIGHT, IMPORTING, COMPLETED, FAILED
+
+  totalRows   Int @default(0)
+  successRows Int @default(0)
+  warningRows Int @default(0)
+  errorRows   Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -809,27 +924,27 @@ model ImportBatch {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model DomainEvent {
-  id             String   @id @default(cuid())
-  type           String   // Ex: LEAD_CAPTURED, OPPORTUNITY_STAGE_CHANGED
-  
+  id   String @id @default(cuid())
+  type String // Ex: LEAD_CAPTURED, OPPORTUNITY_STAGE_CHANGED
+
   // Agrupadores opcionais para filtro
-  personId       String?
-  customerId     String?
-  opportunityId  String?
-  campaignId     String?
-  productId      String?
-  
+  personId      String?
+  customerId    String?
+  opportunityId String?
+  campaignId    String?
+  productId     String?
+
   // Quem disparou a ação
-  actorType      String   // Ex: USER, SYSTEM, WORKER, IMPORT
-  actorId        String?  // Id do User se actorType = USER
-  
+  actorType String // Ex: USER, SYSTEM, WORKER, IMPORT
+  actorId   String? // Id do User se actorType = USER
+
   // Correlação (opcional)
-  correlationId  String?
-  causationId    String?
-  
-  metadata       Json?    @default("{}")
-  occurredAt     DateTime @default(now())
-  
+  correlationId String?
+  causationId   String?
+
+  metadata   Json?    @default("{}")
+  occurredAt DateTime @default(now())
+
   @@index([personId])
   @@index([customerId])
   @@index([opportunityId])

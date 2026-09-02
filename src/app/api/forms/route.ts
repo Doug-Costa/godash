@@ -68,6 +68,12 @@ export async function POST(request: Request) {
     if (assignmentMode === 'FIXED' && !fixedAssigneeId) {
       return NextResponse.json({ success: false, error: 'Selecione o operador fixo.' }, { status: 400 });
     }
+    if (campaignId) {
+      const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+      if (!campaign || campaign.status !== 'ACTIVE') {
+        return NextResponse.json({ success: false, error: 'O formulário só pode receber uma campanha canônica ativa.' }, { status: 400 });
+      }
+    }
 
     const form = await prisma.form.create({
       data: {
@@ -78,7 +84,7 @@ export async function POST(request: Request) {
         pipelineId,
         stageId,
         campaignId,
-        journeyId: journeyId || null,
+        journeyId: campaignId ? null : (journeyId || null),
         assignmentMode,
         fixedAssigneeId: assignmentMode === 'FIXED' ? fixedAssigneeId : null,
         productId: productId || null,
@@ -124,6 +130,12 @@ export async function PUT(request: Request) {
     if (assignmentMode === 'FIXED' && !fixedAssigneeId) {
       return NextResponse.json({ success: false, error: 'Selecione o operador fixo.' }, { status: 400 });
     }
+    if (campaignId) {
+      const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+      if (!campaign || campaign.status !== 'ACTIVE') {
+        return NextResponse.json({ success: false, error: 'O formulário só pode receber uma campanha canônica ativa.' }, { status: 400 });
+      }
+    }
 
     // Delete existing fields first to replace them entirely
     await prisma.formField.deleteMany({
@@ -140,7 +152,7 @@ export async function PUT(request: Request) {
         pipelineId,
         stageId,
         campaignId,
-        journeyId: journeyId || null,
+        journeyId: campaignId ? null : (journeyId || null),
         assignmentMode,
         fixedAssigneeId: assignmentMode === 'FIXED' ? fixedAssigneeId : null,
         productId: productId || null,

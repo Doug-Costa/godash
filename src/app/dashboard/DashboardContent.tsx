@@ -168,9 +168,10 @@ export default function DashboardContent({
 
   // Funnel exit lostReason state variables
   const [showLossReasonSelection, setShowLossReasonSelection] = useState(false);
-  const [lossTargetLeadId, setLossTargetLeadId] = useState<number | null>(null);
+  const [lossTargetLeadId, setLossTargetLeadId] = useState<number | string | null>(null);
   const [lossTargetJourneyId, setLossTargetJourneyId] = useState<string | null>(null);
   const [lossTargetStage, setLossTargetStage] = useState<string | null>(null);
+  const [lossTargetOpportunityId, setLossTargetOpportunityId] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedLead) {
@@ -290,6 +291,9 @@ export default function DashboardContent({
   const [campaignRotationInactivityDays, setCampaignRotationInactivityDays] = useState<number>(3);
   const [campaignProductId, setCampaignProductId] = useState<string>('');
   const [campaignWarmupTemplateId, setCampaignWarmupTemplateId] = useState('');
+  const [campaignFlowId, setCampaignFlowId] = useState('');
+  const [canonicalFlows, setCanonicalFlows] = useState<any[]>([]);
+  const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
 
   // Estados para SMTP e Templates (DentalGO CRM 360)
   const [smtpConfigs, setSmtpConfigs] = useState<any[]>([]);
@@ -563,6 +567,10 @@ export default function DashboardContent({
   // Fetch estimated audience for campaign wizard (debounced)
   useEffect(() => {
     if (!showCampaignModal) return;
+    fetch('/api/flows')
+      .then(response => response.ok ? response.json() : null)
+      .then(json => setCanonicalFlows(json?.data || []))
+      .catch(() => setCanonicalFlows([]));
     
     const delayDebounceFn = setTimeout(async () => {
       setLoadingEstimate(true);
@@ -616,8 +624,13 @@ export default function DashboardContent({
   };
 
   // Drag and Drop handlers for Kanban
-  const handleDragStart = (e: React.DragEvent, leadId: number, journeyId: string | null = null) => {
-    e.dataTransfer.setData('text/plain', JSON.stringify({ leadId, journeyId }));
+  const handleDragStart = (
+    e: React.DragEvent,
+    leadId: number | string,
+    journeyId: string | null = null,
+    opportunityId: string | null = null
+  ) => {
+    e.dataTransfer.setData('text/plain', JSON.stringify({ leadId, journeyId, opportunityId }));
   };
 
   const handleDrop = async (e: React.DragEvent, targetStage: string) => {
@@ -625,12 +638,14 @@ export default function DashboardContent({
     const dragDataStr = e.dataTransfer.getData('text/plain');
     if (!dragDataStr) return;
     
-    let leadId: number;
+    let leadId: number | string;
     let journeyId: string | null = null;
+    let opportunityId: string | null = null;
     try {
       const data = JSON.parse(dragDataStr);
       leadId = data.leadId;
       journeyId = data.journeyId;
+      opportunityId = data.opportunityId || null;
     } catch {
       leadId = Number(dragDataStr);
     }
@@ -639,6 +654,7 @@ export default function DashboardContent({
       setLossTargetLeadId(leadId);
       setLossTargetJourneyId(journeyId);
       setLossTargetStage('perdido');
+      setLossTargetOpportunityId(opportunityId);
       setShowLossReasonSelection(true);
       return;
     }
@@ -647,7 +663,7 @@ export default function DashboardContent({
       const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId, journeyId, stage: targetStage }),
+        body: JSON.stringify({ leadId, opportunityId, journeyId, stage: targetStage }),
       });
       if (res.ok) {
         fetchLeads();
@@ -675,6 +691,7 @@ export default function DashboardContent({
     if (fastStage === 'perdido') {
       setLossTargetLeadId(selectedLead.id);
       setLossTargetJourneyId(selectedLead.journeyId || null);
+      setLossTargetOpportunityId(selectedLead.opportunity?.id || null);
       setLossTargetStage('perdido');
       setShowLossReasonSelection(true);
       setShowFastAcquisitionModal(false);
@@ -687,6 +704,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: selectedLead.id,
+          opportunityId: selectedLead.opportunity?.id || null,
           journeyId: selectedLead.journeyId || null,
           stage: fastStage,
           assigneeId: fastAssignee,
@@ -749,6 +767,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: selectedLead.id,
+          opportunityId: selectedLead.opportunity?.id || null,
           journeyId: selectedLead.journeyId || null,
           type,
           lossReason,
@@ -798,6 +817,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: selectedLead.id,
+          opportunityId: selectedLead.opportunity?.id || null,
           journeyId: selectedLead.journeyId || null,
           note: detailNote,
           ...(autoAssign && { assigneeId: currentUser.id, stage: 'primeiro_contato' })
@@ -829,6 +849,7 @@ export default function DashboardContent({
     if (field === 'stage' && value === 'perdido') {
       setLossTargetLeadId(selectedLead.id);
       setLossTargetJourneyId(selectedLead.journeyId || null);
+      setLossTargetOpportunityId(selectedLead.opportunity?.id || null);
       setLossTargetStage('perdido');
       setShowLossReasonSelection(true);
       setShowTimelineModal(false);
@@ -843,6 +864,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: selectedLead.id,
+          opportunityId: selectedLead.opportunity?.id || null,
           journeyId: selectedLead.journeyId || null,
           [field]: value,
           ...(isAssigningToMe && { stage: 'primeiro_contato' })
@@ -1143,6 +1165,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId: lossTargetLeadId,
+          opportunityId: lossTargetOpportunityId,
           journeyId: lossTargetJourneyId,
           stage: 'perdido',
           type: 'LOST',
@@ -1293,8 +1316,12 @@ export default function DashboardContent({
   };
 
   const handleLaunchCampaignSubmit = async () => {
-    if (nodes.length <= 1) {
+    if (!campaignFlowId && nodes.length <= 1) {
       alert('Por favor, adicione pelo menos um passo de ação na sua régua.');
+      return;
+    }
+
+    if (!confirm(`Ativar esta campanha para a audiência estimada de ${estimatedAudience} pessoa(s)? Para um ensaio seguro, use primeiro "Salvar rascunho" e "Executar teste controlado".`)) {
       return;
     }
 
@@ -1302,10 +1329,13 @@ export default function DashboardContent({
       const flowSteps = nodes
         .filter(n => n.id !== 'start')
         .map(n => ({
+          type: n.data.stepType || 'MESSAGE',
           dayOffset: Number(n.data.dayOffset) || 0,
           channel: n.data.channel,
           messageTemplate: n.data.messageTemplate || '',
-          templateId: n.data.templateId || null
+          templateId: n.data.templateId || null,
+          provider: n.data.provider || 'EVOLUTION',
+          nextFlowId: n.data.nextFlowId || null
         }))
         .sort((a, b) => a.dayOffset - b.dayOffset);
 
@@ -1327,6 +1357,7 @@ export default function DashboardContent({
           onWinJourneyId: campaignOnWinJourneyId || null,
           onLoseJourneyId: campaignOnLoseJourneyId || null,
           campaignNature,
+          flowId: campaignFlowId || null,
           flowSteps,
           flowGraph: JSON.stringify({ nodes, edges }),
           routingMode: campaignRoutingMode,
@@ -1365,6 +1396,7 @@ export default function DashboardContent({
         setCampaignRotationEnabled(false);
         setCampaignRotationInactivityDays(3);
         setCampaignProductId('');
+        setCampaignFlowId('');
         setNodes([]);
         setEdges([]);
         setSelectedNodeId(null);
@@ -1377,6 +1409,101 @@ export default function DashboardContent({
       }
     } catch (err) {
       console.error('Failed to launch campaign:', err);
+    }
+  };
+
+  const handleSaveCanonicalCampaign = async (runTest: boolean) => {
+    if (!campaignName.trim()) {
+      alert('Informe o nome da campanha.');
+      return;
+    }
+    if (runTest && selectedLeadIds.length === 0) {
+      alert('Selecione na Audiência ao menos uma pessoa para o teste controlado.');
+      return;
+    }
+    try {
+      const flowSteps = nodes.filter(n => n.id !== 'start').map(n => ({
+        type: 'MESSAGE',
+        dayOffset: Number(n.data.dayOffset) || 0,
+        channel: n.data.channel,
+        messageTemplate: n.data.messageTemplate || '',
+        templateId: n.data.templateId || null,
+        provider: n.data.provider || 'EVOLUTION'
+      })).sort((a, b) => a.dayOffset - b.dayOffset);
+      let selectedFlowId = campaignFlowId;
+      if (!selectedFlowId && flowSteps.length > 0) {
+        const flowResponse = await fetch('/api/flows', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: `${campaignName} — Fluxo`,
+            category: campaignNature === 'COMMERCIAL' ? 'COMMERCIAL' : 'MARKETING',
+            graph: { nodes, edges },
+            steps: flowSteps,
+            publish: true
+          })
+        });
+        const flowJson = await flowResponse.json();
+        if (!flowResponse.ok) throw new Error(flowJson.error || 'Falha ao salvar fluxo.');
+        selectedFlowId = flowJson.data.flow.id;
+      }
+
+      const campaignResponse = await fetch('/api/campaigns/canonical', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save-draft',
+          campaignId: editingCampaignId || undefined,
+          name: campaignName,
+          campaignNature,
+          productId: campaignProductId || null,
+          pipelineId: campaignPipelineId || null,
+          flowId: selectedFlowId || null,
+          targetCriteria: { rules: campaignRules, rulesRelation: campaignRulesRelation, startDate: campaignStartDate, excludeNurturing },
+          routingMode: campaignRoutingMode,
+          useAccountManager: campaignUseAccountManager,
+          strictSkillMatch: campaignStrictSkillMatch,
+          operatorIds: campaignAgentIds,
+          limitPerDay: campaignLimitEnabled && campaignLimitPerDay ? Number(campaignLimitPerDay) : null,
+          startsAt: campaignStartDate,
+          excludeNurturing
+        })
+      });
+      const campaignJson = await campaignResponse.json();
+      if (!campaignResponse.ok) throw new Error(campaignJson.error || 'Falha ao salvar campanha.');
+
+      if (runTest) {
+        const preflightResponse = await fetch('/api/campaigns/canonical', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'preflight', campaignId: campaignJson.data.id, customerIds: selectedLeadIds })
+        });
+        const preflightJson = await preflightResponse.json();
+        if (!preflightResponse.ok || !preflightJson.data?.valid) {
+          throw new Error((preflightJson.data?.errors || [preflightJson.error || 'Preflight inválido.']).join(' '));
+        }
+        const testResponse = await fetch('/api/campaigns/canonical', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'test',
+            campaignId: campaignJson.data.id,
+            customerIds: selectedLeadIds,
+            fixedAssigneeId: campaignAgentIds.length === 1 ? campaignAgentIds[0] : undefined
+          })
+        });
+        const testJson = await testResponse.json();
+        if (!testResponse.ok) throw new Error(testJson.error || 'Falha no teste controlado.');
+        alert(`Teste controlado iniciado para ${testJson.count} pessoa(s).`);
+      } else {
+        alert('Campanha salva como rascunho. Nenhuma mensagem foi enviada.');
+      }
+      setShowCampaignModal(false);
+      setCampaignFlowId('');
+      setEditingCampaignId(null);
+      fetchCampaigns();
+    } catch (error: any) {
+      alert(`Erro: ${error.message}`);
     }
   };
 
@@ -1413,7 +1540,8 @@ export default function DashboardContent({
     }
 
     try {
-      const res = await fetch(`/api/campaigns?campaignId=${campaignId}`, {
+      const isCanonical = campaignsData.find((campaign: any) => campaign.id === campaignId)?.entityType === 'CAMPAIGN';
+      const res = await fetch(isCanonical ? `/api/campaigns/canonical?id=${campaignId}` : `/api/campaigns?campaignId=${campaignId}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -1429,6 +1557,27 @@ export default function DashboardContent({
     } catch (err) {
       console.error('Failed to delete campaign:', err);
     }
+  };
+
+  const handleEditCanonicalCampaign = (campaign: any) => {
+    let criteria: any = {};
+    try { criteria = campaign.targetCriteria ? JSON.parse(campaign.targetCriteria) : {}; } catch { criteria = {}; }
+    setEditingCampaignId(campaign.id);
+    setCampaignName(campaign.name || '');
+    setCampaignNature(campaign.campaignNature || 'COMMERCIAL');
+    setCampaignRules(criteria.rules || []);
+    setCampaignRulesRelation(criteria.rulesRelation || 'AND');
+    setCampaignStartDate(criteria.startDate || new Date().toISOString().slice(0, 10));
+    setExcludeNurturing(criteria.excludeNurturing !== false);
+    setCampaignAgentIds((campaign.operators || []).map((operator: any) => operator.id));
+    setCampaignPipelineId(campaign.pipelineId || '');
+    setCampaignProductId(campaign.productId || '');
+    setCampaignFlowId(campaign.flowId || '');
+    setCampaignRoutingMode(campaign.routingMode || 'ROUND_ROBIN');
+    setCampaignUseAccountManager(campaign.useAccountManager === true);
+    setCampaignStrictSkillMatch(campaign.strictSkillMatch === true);
+    setWizardStep(2);
+    setShowCampaignModal(true);
   };
 
   const handleExecuteBulkAction = async () => {
@@ -1971,9 +2120,14 @@ export default function DashboardContent({
                       ) : (
                         stageLeads.map((lead) => (
                           <div 
-                            key={lead.id}
+                            key={lead.cardId || lead.id}
                             draggable
-                            onDragStart={(e) => handleDragStart(e, lead.id, lead.journeyId)}
+                            onDragStart={(e) => handleDragStart(
+                              e,
+                              lead.id,
+                              lead.journeyId,
+                              lead.opportunity?.id || null
+                            )}
                             onClick={() => openTimeline(lead)}
                             style={{
                               background: 'var(--surface-raised)',
@@ -2197,7 +2351,7 @@ export default function DashboardContent({
                   ) : (
                     filteredLeads.map((lead) => {
                       return (
-                        <tr key={lead.id} onClick={() => openTimeline(lead)} style={{ cursor: 'pointer' }}>
+                        <tr key={lead.cardId || lead.id} onClick={() => openTimeline(lead)} style={{ cursor: 'pointer' }}>
                           <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{lead.fullName}</td>
                           <td>
                             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -2829,6 +2983,7 @@ export default function DashboardContent({
                 </a>
                 <button 
                   onClick={() => {
+                    setEditingCampaignId(null);
                     setCampaignName('');
                     setCampaignSteps([{ dayOffset: 1, channel: 'WHATSAPP', messageTemplate: 'Olá {{nome}}, tudo bem?' }]);
                     setShowCampaignModal(true);
@@ -2854,6 +3009,9 @@ export default function DashboardContent({
                       <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginRight: 12 }}>{campaign.name}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span className="badge badge-cyan" style={{ fontSize: 9 }}>{campaign.status}</span>
+                        {campaign.entityType === 'CAMPAIGN' && (
+                          <button onClick={() => handleEditCanonicalCampaign(campaign)} className="btn-action btn-action-outline" style={{ fontSize: 10, padding: '2px 6px' }}>✏️</button>
+                        )}
                         <button
                           onClick={() => handleDeleteCampaign(campaign.id)}
                           style={{
@@ -3816,8 +3974,8 @@ export default function DashboardContent({
           <FormsConfiguratorContent 
             currentUser={currentUser} 
             pipelines={pipelines.map(p => ({ id: p.id, name: p.name }))}
-            campaigns={[]}
-            journeys={campaignsData.map(c => ({ id: c.id, name: c.name }))}
+            campaigns={campaignsData.filter((c: any) => c.entityType === 'CAMPAIGN' && c.status === 'ACTIVE').map(c => ({ id: c.id, name: c.name }))}
+            journeys={campaignsData.filter((c: any) => c.entityType === 'LEGACY_JOURNEY').map(c => ({ id: c.id, name: c.name }))}
             agents={agents.map(agent => ({ id: agent.id, name: agent.name }))}
             products={products.map(p => ({ id: p.id, name: p.name }))}
             isTab={true}
@@ -4927,6 +5085,7 @@ export default function DashboardContent({
         onClose={() => { setShowProductModal(false); setEditingProduct(null); }}
         onSave={handleSaveProduct}
         editingProduct={editingProduct}
+        campaigns={campaignsData.filter((campaign: any) => campaign.entityType === 'CAMPAIGN' && campaign.status === 'ACTIVE')}
       />
 
       {/* ====================================================================== */}
@@ -5639,7 +5798,21 @@ export default function DashboardContent({
               )}
 
               {wizardStep === 4 && (
-                <div className="animate-fadeUp" style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr', gap: 16, height: '48vh' }}>
+                <div className="animate-fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '52vh' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12, alignItems: 'center' }}>
+                    <label className="label-sm">Usar fluxo publicado:</label>
+                    <select
+                      value={campaignFlowId}
+                      onChange={event => setCampaignFlowId(event.target.value)}
+                      style={{ width: '100%', padding: '9px 12px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
+                    >
+                      <option value="">-- Desenhar um fluxo exclusivo abaixo --</option>
+                      {canonicalFlows.filter(flow => flow.versions?.some((version: any) => version.status === 'PUBLISHED')).map(flow => (
+                        <option key={flow.id} value={flow.id}>{flow.name} (v{flow.versions?.[0]?.version || 1})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr', gap: 16, flex: 1, minHeight: 0, opacity: campaignFlowId ? 0.45 : 1, pointerEvents: campaignFlowId ? 'none' : 'auto' }}>
                   {/* React Flow Board */}
                   <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface-raised)', position: 'relative', overflow: 'hidden' }}>
                     <ReactFlow
@@ -5858,6 +6031,7 @@ export default function DashboardContent({
                       </div>
                     )}
                   </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -5885,6 +6059,27 @@ export default function DashboardContent({
                 {wizardStep === 1 ? 'Cancelar' : '◀️ Voltar'}
               </button>
 
+              {wizardStep === 4 && (
+                <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', marginRight: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveCanonicalCampaign(false)}
+                    className="btn-action btn-action-outline"
+                    style={{ padding: '8px 14px' }}
+                  >
+                    💾 Salvar rascunho
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveCanonicalCampaign(true)}
+                    className="btn-action btn-action-outline"
+                    style={{ padding: '8px 14px', color: 'var(--accent)', borderColor: 'var(--accent)' }}
+                  >
+                    🧪 Executar teste controlado
+                  </button>
+                </div>
+              )}
+
               <button 
                 type="button" 
                 onClick={async () => {
@@ -5907,10 +6102,6 @@ export default function DashboardContent({
                       setWizardStep(4);
                     }
                   } else if (wizardStep === 3) {
-                    if (campaignAgentIds.length === 0) {
-                      alert('Selecione pelo menos um operador para atendimento.');
-                      return;
-                    }
                     if (nodes.length === 0) {
                       setNodes([
                         { id: 'start', type: 'input', data: { label: '🚀 Início: Entrada na Campanha' }, position: { x: 200, y: 50 }, deletable: false, style: { background: 'var(--accent-glow)', border: '1px solid var(--accent)', borderRadius: 8, fontWeight: 700 } }
