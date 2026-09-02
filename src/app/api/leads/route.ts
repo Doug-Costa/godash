@@ -613,7 +613,7 @@ export async function GET(request: Request) {
         // Se não tem dados em nenhuma das fontes, descarta apenas se não houver Person
         if (!r && !person) return null;
 
-        let subBadge = 'expirado';
+        let subBadge = !r && c.source?.startsWith('Form Capture:') ? 'lead_formulario' : 'sem_assinatura';
         if (r?.planId) {
           const now = new Date();
           const expiresDate = r.subIsValidUntil ? new Date(r.subIsValidUntil) : (r.subExpiresIn ? new Date(r.subExpiresIn) : null);
@@ -734,7 +734,7 @@ export async function GET(request: Request) {
       data = (rows as any[]).map(r => {
         const state = stateMap.get(r.id);
 
-        let subBadge = 'expirado';
+        let subBadge = 'sem_assinatura';
         if (r.planId) {
           const now = new Date();
           const expiresDate = r.subIsValidUntil ? new Date(r.subIsValidUntil) : (r.subExpiresIn ? new Date(r.subExpiresIn) : null);

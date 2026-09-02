@@ -2182,6 +2182,11 @@ export default function DashboardContent({
                                   🟡 Expirado
                                 </span>
                               )}
+                              {lead.subscriptionStatus === 'lead_formulario' && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6', border: '1px solid rgba(139, 92, 246, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                                  📝 Lead de formulário
+                                </span>
+                              )}
                               {lead.campaign && (
                                 <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--cyan)', border: '1px solid var(--cyan)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                                   🎯 {lead.campaign.name}
@@ -2247,7 +2252,7 @@ export default function DashboardContent({
                             </div>
 
                             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
-                              <strong>Plano:</strong> {lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}
+                              <strong>Plano:</strong> {lead.plan ? lead.plan.title : 'Sem assinatura DentalGO'}
                             </div>
                             {(lead.subscriptionStartDate || lead.subscriptionEndDate) && (
                               <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -2391,6 +2396,11 @@ export default function DashboardContent({
                                   Expirado
                                 </span>
                               )}
+                              {lead.subscriptionStatus === 'lead_formulario' && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(139, 92, 246, 0.15)', color: '#8B5CF6', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+                                  Lead de formulário
+                                </span>
+                              )}
                               {lead.campaign && (
                                 <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--cyan)', border: '1px solid var(--cyan)' }}>
                                   🎯 {lead.campaign.name}
@@ -2421,7 +2431,7 @@ export default function DashboardContent({
                           <td><span className="stat-mono" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{lead.email}</span></td>
                           <td><span className="stat-mono" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{lead.phoneNumber || 'Sem fone'}</span></td>
                           <td>
-                            <div>{lead.plan ? lead.plan.title : 'Sem Plano / Grátis'}</div>
+                            <div>{lead.plan ? lead.plan.title : 'Sem assinatura DentalGO'}</div>
                             {(lead.subscriptionStartDate || lead.subscriptionEndDate) && (
                               <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 4, alignItems: 'center' }}>
                                 <span>📅</span>
