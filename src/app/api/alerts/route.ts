@@ -183,7 +183,7 @@ export async function GET(request: Request) {
       where: { assigneeId: { not: null } },
       select: { externalPersonId: true }
     });
-    const assignedIds = assignedStates.map(s => s.externalPersonId);
+    const assignedIds = assignedStates.flatMap(s => s.externalPersonId === null ? [] : [s.externalPersonId]);
 
     let orphanBaseQuery = `
       FROM people p
@@ -223,7 +223,7 @@ export async function GET(request: Request) {
       where: { assigneeId: { not: null } },
       select: { externalPersonId: true }
     });
-    const assignedExpiringIds = assignedExpiringStates.map(s => s.externalPersonId);
+    const assignedExpiringIds = assignedExpiringStates.flatMap(s => s.externalPersonId === null ? [] : [s.externalPersonId]);
 
     let expiringBaseQuery = `
       FROM subscriptions s

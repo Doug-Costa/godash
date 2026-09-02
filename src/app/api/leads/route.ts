@@ -277,7 +277,7 @@ export async function GET(request: Request) {
           },
           select: { externalPersonId: true }
         });
-        const excludedIds = occupiedCustomers.map(c => c.externalPersonId);
+        const excludedIds = occupiedCustomers.flatMap(c => c.externalPersonId === null ? [] : [c.externalPersonId]);
         if (excludedIds.length > 0) {
           whereClause += ` AND p.id NOT IN (?)`;
           params.push(excludedIds);

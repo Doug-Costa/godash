@@ -41,7 +41,7 @@ export async function GET(request: Request) {
       },
       select: { externalPersonId: true }
     });
-    const excludedIds = occupiedCustomers.map(c => c.externalPersonId);
+    const excludedIds = occupiedCustomers.flatMap(c => c.externalPersonId === null ? [] : [c.externalPersonId]);
 
     // 1. Campanhas (leads associados a campanhas)
     const campanhasCount = await prisma.customer.count({
