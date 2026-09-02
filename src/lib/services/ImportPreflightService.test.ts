@@ -8,8 +8,13 @@ vi.mock('./ProductResolverService', () => ({
   ProductResolverService: { resolve: vi.fn() }
 }));
 
+vi.mock('./ImportDuplicateInspectionService', () => ({
+  ImportDuplicateInspectionService: { purchaseExists: vi.fn() }
+}));
+
 import { CanonicalIdentityService } from './CanonicalIdentityService';
 import { ProductResolverService } from './ProductResolverService';
+import { ImportDuplicateInspectionService } from './ImportDuplicateInspectionService';
 import { ImportPreflightService } from './ImportPreflightService';
 
 const HEADER = 'Código,Data Cadastro,Cliente,Edição Inicial,Descrição,EMAIL_FISCAL,EMAIL,Telefone Comercial,Telefone Residencial,Vendedor Contrato,Vendedor Cliente,Produto,Cód.Curso,Curso,Status';
@@ -22,6 +27,7 @@ describe('ImportPreflightService', () => {
       productId: 'course_44',
       productName: 'Especialização em Endodontia'
     });
+    vi.mocked(ImportDuplicateInspectionService.purchaseExists).mockResolvedValue(false);
   });
 
   it('ignora a linha vazia exportada antes do cabeçalho real', async () => {
@@ -94,6 +100,25 @@ describe('ImportPreflightService', () => {
     const summary = await ImportPreflightService.analyzeCsv(csv);
 
     expect(summary.results[0].parsedData?.phone).toBe('(43)3339-5655');
+  });
+
+  it('avisa quando o contato e a mesma compra já existem', async () => {
+    vi.mocked(CanonicalIdentityService.inspect).mockResolvedValue({ status: 'FOUND', personId: 'person_1' });
+    vi.mocked(ImportDuplicateInspectionService.purchaseExists).mockResolvedValue(true);
+    const csv = [
+      HEADER,
+      ['41754', '7/1/2022', '946274/GLAUCE AKEMI KIARA', '', 'CURSOS / EXCELENCIA EM ALINHADORES',
+        'glauak@icloud.com', 'glauak@icloud.com', '(11)05096-5949', '', '', '', '',
+        '90', 'EXCELENCIA EM ALINHADORES', '37/CANCELADO'].join(',')
+    ].join('\n');
+
+    const summary = await ImportPreflightService.analyzeCsv(csv);
+
+    expect(summary.warningRows).toBe(1);
+    expect(summary.results[0].warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining('Contato já existente'),
+      expect.stringContaining('Compra já existente')
+    ]));
   });
 
   it('aceita mapeamento confirmado sem carregar colunas desconhecidas', async () => {

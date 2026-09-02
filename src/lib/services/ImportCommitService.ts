@@ -22,7 +22,6 @@ export class ImportCommitService {
   ) {
     // 1. Hash determinístico: impede que um duplo clique/reupload replique compras.
     const fileHash = createHash('sha256').update(JSON.stringify({
-      fileName: batchInfo.fileName,
       destination: batchInfo.importDestination,
       productId: batchInfo.productId,
       rows: rows.map(row => ({
@@ -194,7 +193,9 @@ export class ImportCommitService {
     }
 
     // 3. Fatos Comerciais
-    const finalProductId = productId || row.resolvedProductId;
+    // O produto resolvido da própria linha sempre vence. A seleção manual é
+    // apenas fallback para CSVs homogêneos que não informam curso/produto.
+    const finalProductId = row.resolvedProductId || productId;
     const destination = importDestination || (data.fact_type === 'PURCHASE' ? 'FATO' : 'DESEJO');
 
     if (destination === 'FATO') {

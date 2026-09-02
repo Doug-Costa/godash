@@ -330,7 +330,7 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
               
               <div>
                 <label className="label-sm" style={{ display: 'block', marginBottom: 6, fontWeight: 600 }}>
-                  {importDestination === 'DESEJO' ? 'Vincular ao Produto (Opcional):' : 'Vincular ao Produto Adquirido (Obrigatório):'}
+                  {importDestination === 'DESEJO' ? 'Vincular ao Produto (Opcional):' : 'Produto padrão — somente se a linha não informar curso (Opcional):'}
                 </label>
                 <select
                   value={selectedProductId}

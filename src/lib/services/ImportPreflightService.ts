@@ -3,6 +3,7 @@ import { CanonicalIdentityService } from './CanonicalIdentityService';
 import { ProductResolverService } from './ProductResolverService';
 import { SpecialtyClassifierService } from './SpecialtyClassifierService';
 import { CsvColumnMapping, CsvSchemaMappingService } from './CsvSchemaMappingService';
+import { ImportDuplicateInspectionService } from './ImportDuplicateInspectionService';
 
 export type RowPreflightStatus = 'READY' | 'WARNING' | 'ERROR' | 'REVIEW_REQUIRED';
 
@@ -245,6 +246,9 @@ export class ImportPreflightService {
       } else if (identityStatus === 'NOT_FOUND') {
         warnings.push('Nova identidade será criada no banco de dados.');
         if (status === 'READY') status = 'WARNING';
+      } else if (identityStatus === 'FOUND') {
+        warnings.push('Contato já existente: os dados serão unificados, sem criar outra pessoa.');
+        if (status === 'READY') status = 'WARNING';
       }
     }
 
@@ -264,6 +268,10 @@ export class ImportPreflightService {
         if (catalogStatus === 'FOUND' && 'productId' in catalogRes) {
           resolvedProductId = catalogRes.productId;
           resolvedProductName = catalogRes.productName;
+          if (personId && await ImportDuplicateInspectionService.purchaseExists(personId, resolvedProductId, occurredAt)) {
+            warnings.push('Compra já existente para este contato, produto e data; será atualizada sem duplicação.');
+            if (status === 'READY') status = 'WARNING';
+          }
         } else if (catalogStatus === 'UNKNOWN') {
           status = 'REVIEW_REQUIRED';
         }
