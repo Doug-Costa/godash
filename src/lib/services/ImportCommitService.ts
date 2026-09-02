@@ -178,7 +178,9 @@ export class ImportCommitService {
       await prisma.customer.update({
         where: { id: customer.id },
         data: {
-          personId: customer.personId || person.id,
+          // O alias canônico resolvido nesta importação é a fonte da identidade.
+          // Preservar aqui uma Person legada vazia fazia nome/e-mail/telefone sumirem.
+          personId: person.id,
           externalPersonId: customer.externalPersonId || data.externalPersonId || null,
           metadata: {
             ...currentMetadata,

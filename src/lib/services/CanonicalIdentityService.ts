@@ -15,6 +15,12 @@ export interface ResolveInput {
  * Serviço de Master Data Management (MDM) para resolução atômica de identidades canônicas (Person).
  */
 export class CanonicalIdentityService {
+  static isPlaceholderName(name?: string | null): boolean {
+    if (!name) return true;
+    const normalized = name.trim().toLowerCase();
+    return /^(dr\.?\s*)?lead(?:\s+dentalgo)?\s*#?\s*[\w-]+$/.test(normalized)
+      || ['sem nome', 'n/a', 'nao informado', 'não informado'].includes(normalized);
+  }
   /**
    * Normaliza e-mail para minúsculas e remove espaços.
    * Dominio: Identidade Canônica
@@ -145,9 +151,21 @@ export class CanonicalIdentityService {
         updates.phoneNumber = phone;
         needsEnrichment = true;
       }
-      if (!person.fullName && name) {
+      if (this.isPlaceholderName(person.fullName) && name && !this.isPlaceholderName(name)) {
         updates.fullName = name;
         needsEnrichment = true;
+      }
+
+      const aliasUpdates: any = {};
+      if (!existingAlias.email && email) aliasUpdates.email = email;
+      if (!existingAlias.phone && phone) aliasUpdates.phone = phone;
+      if (this.isPlaceholderName(existingAlias.name) && name && !this.isPlaceholderName(name)) aliasUpdates.name = name;
+      if (!existingAlias.rawData && rawData) {
+        aliasUpdates.rawData = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+      }
+
+      if (Object.keys(aliasUpdates).length > 0) {
+        await prisma.identityAlias.update({ where: { id: existingAlias.id }, data: aliasUpdates });
       }
 
       if (needsEnrichment) {
@@ -183,7 +201,7 @@ export class CanonicalIdentityService {
         const updates: { email?: string; phoneNumber?: string; fullName?: string } = {};
         if (!linkedAlias.person.email && email) updates.email = email;
         if (!linkedAlias.person.phoneNumber && phone) updates.phoneNumber = phone;
-        if (!linkedAlias.person.fullName && name) updates.fullName = name;
+        if (this.isPlaceholderName(linkedAlias.person.fullName) && name && !this.isPlaceholderName(name)) updates.fullName = name;
 
         if (Object.keys(updates).length > 0) {
           return prisma.person.update({ where: { id: linkedAlias.personId }, data: updates });

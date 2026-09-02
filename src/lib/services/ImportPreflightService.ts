@@ -143,13 +143,13 @@ export class ImportPreflightService {
     }
 
     // 3. Extração e Sanitização de Telefone
-    let phone = this.getField(rawRow, 'phone', 'telefone', 'Telefone Comercial', 'Telefone Residencial', 'whatsapp', 'Celular');
-    if (phone) {
-      const digits = phone.replace(/\D/g, '');
-      if (digits.length < 8 || /^0+$/.test(digits) || digits === '55555555555') {
-        phone = undefined; // Ignora padrões zerados ou nulos de ERP como (00)00000-0000
-      }
-    }
+    const phoneCandidates = ['phone', 'telefone', 'Telefone Comercial', 'Telefone Residencial', 'whatsapp', 'Celular']
+      .map(field => this.getField(rawRow, field))
+      .filter((candidate): candidate is string => Boolean(candidate));
+    const phone = phoneCandidates.find(candidate => {
+      const digits = candidate.replace(/\D/g, '');
+      return digits.length >= 8 && !/^0+$/.test(digits) && digits !== '55555555555';
+    });
 
     // 4. Mapeamento de Produto / Curso / Cód.Curso
     let productName = this.getField(rawRow, 'Curso', 'curso', 'product_name', 'produto', 'Descrição', 'Descricao');

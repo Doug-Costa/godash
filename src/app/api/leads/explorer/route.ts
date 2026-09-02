@@ -3,6 +3,7 @@ import pool from '@/lib/db';
 import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
 import { CustomerRelationshipService } from '@/lib/services/CustomerRelationshipService';
+import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
 
 export async function GET(request: Request) {
   try {
@@ -320,7 +321,11 @@ export async function GET(request: Request) {
       combinedLeadsMap.set(key, {
         id: c.id,
         externalPersonId: c.externalPersonId || existing.externalPersonId || null,
-        name: existing.name || c.person?.fullName || (c.person?.email ? c.person.email.split('@')[0] : null) || `Lead #${c.externalPersonId || c.id}`,
+        name: (!CanonicalIdentityService.isPlaceholderName(existing.name) ? existing.name : null)
+          || c.person?.fullName
+          || (c.person?.email ? c.person.email.split('@')[0] : null)
+          || existing.name
+          || `Lead #${c.externalPersonId || c.id}`,
         email: existing.email || c.person?.email || '',
         phone: existing.phone || c.person?.phoneNumber || '',
         source: existing.source || c.source || 'Form Capture / CDP',
