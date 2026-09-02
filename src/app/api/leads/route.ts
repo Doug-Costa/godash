@@ -117,6 +117,7 @@ export async function GET(request: Request) {
   }
 
   try {
+    let nativeCustomerIds: string[] = [];
     let selectFields = `
       p.id, 
       p.fullName, 
@@ -178,7 +179,7 @@ export async function GET(request: Request) {
       
       const hasPipeline = pipelineId && pipelineId !== 'all';
       if (hasPipeline && !atendimentoFila) {
-        crmFilter.pipelineId = pipelineId;
+        crmFilter.opportunities = { some: { pipelineId } };
       }
 
       // Filtro de Campanha (Journey) específico
@@ -204,6 +205,7 @@ export async function GET(request: Request) {
       if (productCategory && productCategory !== 'all') {
         crmFilter.opportunities = {
           some: {
+            ...(hasPipeline ? { pipelineId } : {}),
             product: {
               category: productCategory
             }
@@ -261,16 +263,20 @@ export async function GET(request: Request) {
         if (Object.keys(crmFilter).length > 0 || isAgent || hasStage || hasAssignee || hasLossReason || hasTag || hasPipeline || (atendimentoFila && isPostgresQueue)) {
           const matchingStates = await prisma.customer.findMany({
             where: crmFilter,
-            select: { externalPersonId: true }
+            select: { id: true, externalPersonId: true }
           });
           
-          const matchingIds = Array.from(new Set(matchingStates.map(s => s.externalPersonId)));
-          if (matchingIds.length === 0) {
+          const matchingIds = Array.from(new Set(matchingStates.flatMap(s => s.externalPersonId === null ? [] : [s.externalPersonId])));
+          nativeCustomerIds = matchingStates.filter(s => s.externalPersonId === null).map(s => s.id);
+          if (matchingIds.length === 0 && nativeCustomerIds.length === 0) {
             return NextResponse.json({ success: true, data: [], pagination: { total: 0, page, limit, totalPages: 0 } });
           }
-          
-          whereClause += ` AND p.id IN (?)`;
-          params.push(matchingIds);
+          if (matchingIds.length > 0) {
+            whereClause += ` AND p.id IN (?)`;
+            params.push(matchingIds);
+          } else {
+            whereClause += ` AND 1 = 0`;
+          }
         }
       }
     }
@@ -343,14 +349,14 @@ export async function GET(request: Request) {
 
     const personIds = (rows as any[]).map(r => r.id);
 
-    if (personIds.length === 0) {
+    if (personIds.length === 0 && nativeCustomerIds.length === 0) {
       return NextResponse.json({ success: true, data: [], pagination: { total: totalRecords, page, limit, totalPages: Math.ceil(totalRecords / limit) } });
     }
 
     // Monta filtros extras no Postgres para buscar exatamente os customers corretos
-    const postgresQueryFilter: any = {
-      externalPersonId: { in: personIds }
-    };
+    const postgresQueryFilter: any = nativeCustomerIds.length
+      ? { OR: [{ externalPersonId: { in: personIds } }, { id: { in: nativeCustomerIds } }] }
+      : { externalPersonId: { in: personIds } };
     if (campaignId && campaignId !== 'all') {
       postgresQueryFilter.journeyId = campaignId;
     } else if (atendimentoFila === 'campanhas') {
@@ -385,9 +391,9 @@ export async function GET(request: Request) {
 
     // Fetch all customer states for these personIds to get consolidated metadata and interactions
     const allCustomersForTimeline = await prisma.customer.findMany({
-      where: {
-        externalPersonId: { in: personIds }
-      },
+      where: nativeCustomerIds.length
+        ? { OR: [{ externalPersonId: { in: personIds } }, { id: { in: nativeCustomerIds } }] }
+        : { externalPersonId: { in: personIds } },
       include: {
         interactions: {
           include: {
@@ -516,7 +522,9 @@ export async function GET(request: Request) {
 
     // Fetch all customer states for these personIds to populate assigneeByPersonId
     const allStatesForAssignee = await prisma.customer.findMany({
-      where: { externalPersonId: { in: personIds } },
+      where: nativeCustomerIds.length
+        ? { OR: [{ externalPersonId: { in: personIds } }, { id: { in: nativeCustomerIds } }] }
+        : { externalPersonId: { in: personIds } },
       include: { assignee: { select: { id: true, name: true } } }
     });
     const assigneeByPersonId = new Map();
@@ -524,7 +532,9 @@ export async function GET(request: Request) {
     // Fetch all customer states to check for parallel negotiations (active Vendas + CS)
     const allCustomersForParallelCheck = await prisma.customer.findMany({
       where: {
-        externalPersonId: { in: personIds },
+        ...(nativeCustomerIds.length
+          ? { OR: [{ externalPersonId: { in: personIds } }, { id: { in: nativeCustomerIds } }] }
+          : { externalPersonId: { in: personIds } }),
         tag: { not: 'DISCARDED' }
       },
       select: {
@@ -631,7 +641,7 @@ export async function GET(request: Request) {
           fullName: displayName || `Lead #${displayId || c.id}`,
           email: displayEmail,
           phoneNumber: displayPhone,
-          createdAt: r?.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
+          createdAt: r?.createdAt ? new Date(r.createdAt).toISOString() : c.createdAt.toISOString(),
           plan: r?.planId ? {
             id: r.planId,
             title: r.planTitle,
