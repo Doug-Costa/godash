@@ -427,7 +427,7 @@ export default function UnifiedLeadsExplorer({
               <option value="all">📦 Todos os Produtos</option>
               <option value="no_product">⚪ Sem Produto Vinculado</option>
               {products.map(product => (
-                <option key={product.id} value={product.id}>🎓 {product.name}</option>
+                <option key={product.id} value={product.id}>🎓 {product.name?.trim() || `Curso sem nome (${product.id})`}</option>
               ))}
             </select>
           </div>

@@ -27,8 +27,9 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const { name, description, category, subType, specialty, basePrice, price, isActive, cohort, startDate, endDate, postSaleCampaignId, nurturingCampaignId } = body;
+    const normalizedName = typeof name === 'string' ? name.trim() : '';
 
-    if (!name || !category || !subType) {
+    if (!normalizedName || !category || !subType) {
       return NextResponse.json(
         { success: false, error: 'Campos obrigatórios ausentes.' },
         { status: 400 }
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
 
     const newProduct = await prisma.product.create({
       data: {
-        name,
+        name: normalizedName,
         description,
         category,
         subType,
@@ -74,8 +75,9 @@ export async function PUT(request: Request) {
 
     const body = await request.json();
     const { id, name, description, category, subType, specialty, basePrice, price, isActive, cohort, startDate, endDate, postSaleCampaignId, nurturingCampaignId } = body;
+    const normalizedName = typeof name === 'string' ? name.trim() : '';
 
-    if (!id || !name || !category || !subType) {
+    if (!id || !normalizedName || !category || !subType) {
       return NextResponse.json(
         { success: false, error: 'Campos obrigatórios ausentes.' },
         { status: 400 }
@@ -85,7 +87,7 @@ export async function PUT(request: Request) {
     const updatedProduct = await prisma.product.update({
       where: { id },
       data: {
-        name,
+        name: normalizedName,
         description,
         category,
         subType,
