@@ -176,10 +176,18 @@ export async function GET(request: Request) {
 
     if (!leadId) {
       const crmFilter: any = {};
+      const appendAnd = (condition: any) => {
+        crmFilter.AND = [...(crmFilter.AND || []), condition];
+      };
       
       const hasPipeline = pipelineId && pipelineId !== 'all';
       if (hasPipeline && !atendimentoFila) {
-        crmFilter.opportunities = { some: { pipelineId } };
+        appendAnd({
+          OR: [
+            { pipelineId },
+            { opportunities: { some: { pipelineId } } }
+          ]
+        });
       }
 
       // Filtro de Campanha (Journey) específico
@@ -187,11 +195,26 @@ export async function GET(request: Request) {
         crmFilter.journeyId = campaignId;
       }
 
-      // Filtros genéricos compartilhados
+      // Filtros genéricos compartilhados. Durante a migração, responsável e
+      // funil podem estar no Customer legado ou na Opportunity canônica.
       if (isAgent) {
-        crmFilter.assigneeId = userId;
+        appendAnd({
+          OR: [
+            { assigneeId: userId },
+            { opportunities: { some: { assigneeId: userId, status: 'OPEN' } } }
+          ]
+        });
       } else if (hasAssignee) {
-        crmFilter.assigneeId = assigneeId === 'unassigned' ? null : assigneeId;
+        if (assigneeId === 'unassigned') {
+          appendAnd({ assigneeId: null, opportunities: { none: { assigneeId: { not: null }, status: 'OPEN' } } });
+        } else {
+          appendAnd({
+            OR: [
+              { assigneeId },
+              { opportunities: { some: { assigneeId, status: 'OPEN' } } }
+            ]
+          });
+        }
       }
       if (hasStage) {
         crmFilter.stage = stage;
