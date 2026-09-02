@@ -19,6 +19,8 @@ interface Product {
 interface Journey {
   id: string;
   name: string;
+  status?: string;
+  entityType?: 'CAMPAIGN' | 'LEGACY_JOURNEY';
 }
 
 interface Plan {
@@ -187,7 +189,10 @@ export default function UnifiedLeadsExplorer({
       });
       const data = await res.json();
       if (data.success) {
-        alert(`Sucesso! ${data.updatedCount || selectedLeadIds.length} leads inscritos na campanha.`);
+        const selectedCampaign = activeJourneys.find(item => item.id === selectedTargetJourneyId);
+        alert(selectedCampaign?.entityType === 'CAMPAIGN'
+          ? `Sucesso! ${data.updatedCount || selectedLeadIds.length} contato(s) adicionados à audiência planejada. Nenhum fluxo foi disparado.`
+          : `Sucesso! ${data.updatedCount || selectedLeadIds.length} leads inscritos na campanha.`);
         setSelectedLeadIds([]);
         setBulkActionType(null);
         setPage(p => p);
@@ -531,7 +536,9 @@ export default function UnifiedLeadsExplorer({
                 >
                   <option value="">Selecione a Campanha...</option>
                   {activeJourneys.map(j => (
-                    <option key={j.id} value={j.id}>{j.name}</option>
+                    <option key={j.id} value={j.id}>
+                      {j.name}{j.entityType === 'CAMPAIGN' ? ` — ${j.status || 'DRAFT'} (preparar audiência)` : ' — legado'}
+                    </option>
                   ))}
                 </select>
                 <button
@@ -539,7 +546,7 @@ export default function UnifiedLeadsExplorer({
                   disabled={isSubmittingBulk}
                   style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#10B981', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
                 >
-                  {isSubmittingBulk ? 'Confirmando...' : 'Confirmar Lançamento'}
+                  {isSubmittingBulk ? 'Confirmando...' : 'Adicionar à Audiência'}
                 </button>
                 <button onClick={() => setBulkActionType(null)} style={{ background: 'transparent', border: '1px solid #ffffff', color: '#ffffff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer' }}>Cancelar</button>
               </div>

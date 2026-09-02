@@ -29,6 +29,10 @@ export async function GET() {
         flowVersion: { include: { steps: true } },
         pipeline: true,
         operators: { include: { user: true } },
+        audience: {
+          where: { status: 'PLANNED' },
+          include: { customer: { include: { person: { select: { fullName: true, email: true, phoneNumber: true } } } } }
+        },
         _count: { select: { enrollments: true } }
       },
       orderBy: { createdAt: 'desc' }
@@ -96,7 +100,15 @@ export async function GET() {
         ...step,
         dayOffset: Math.floor((step.delayMinutes || 0) / (24 * 60))
       })),
-      operators: campaign.operators.map(item => ({ id: item.user.id, name: item.user.name }))
+      operators: campaign.operators.map(item => ({ id: item.user.id, name: item.user.name })),
+      audience: campaign.audience.map(item => ({
+        id: item.id,
+        customerId: item.customerId,
+        name: item.customer.person.fullName,
+        email: item.customer.person.email,
+        phone: item.customer.person.phoneNumber,
+        status: item.status
+      }))
     }));
 
     return NextResponse.json({ success: true, data: [...mappedCanonical, ...mappedJourneys.map(item => ({ ...item, entityType: 'LEGACY_JOURNEY' }))] });
@@ -403,7 +415,7 @@ export async function POST(request: Request) {
 
     // 3. Ação de Lançamento / Ativação Direta (Wizard Finalizado)
     if (action === 'launch') {
-      const { name, rules, rulesRelation, userIds, limitPerDay, flowSteps, flowGraph, startDate, campaignNature, excludeNurturing } = body;
+      const { campaignId, name, rules, rulesRelation, userIds, limitPerDay, flowSteps, flowGraph, startDate, campaignNature, excludeNurturing } = body;
       const nature = campaignNature || 'COMMERCIAL';
 
       if (nature === 'COMMERCIAL') {
@@ -460,7 +472,15 @@ export async function POST(request: Request) {
           limitPerDay: limitPerDay ? Number(limitPerDay) : null,
           startsAt: startDate || null,
           excludeNurturing: excludeNurturing !== false
-        });
+        }, campaignId || undefined);
+        if (campaignId) {
+          const preflight = await CampaignOrchestrationService.preflight(canonicalCampaign!.id);
+          if (!preflight.valid) {
+            return NextResponse.json({ success: false, error: preflight.errors.join(' '), data: preflight }, { status: 400 });
+          }
+          const enrollments = await CampaignOrchestrationService.enroll(canonicalCampaign!.id, [], { activate: true, sourceType: 'SEGMENT' });
+          return NextResponse.json({ success: true, data: canonicalCampaign, leadsAssignedCount: enrollments.length });
+        }
         const canonicalAudience = await getSegmentedLeadIds(rules, rulesRelation || 'AND', excludeNurturing !== false);
         if (canonicalAudience.length === 0) {
           return NextResponse.json({

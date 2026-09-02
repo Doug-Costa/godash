@@ -294,6 +294,8 @@ export default function DashboardContent({
   const [campaignFlowId, setCampaignFlowId] = useState('');
   const [canonicalFlows, setCanonicalFlows] = useState<any[]>([]);
   const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
+  const [plannedCampaignAudience, setPlannedCampaignAudience] = useState<any[]>([]);
+  const [selectedTestCustomerIds, setSelectedTestCustomerIds] = useState<string[]>([]);
 
   // Estados para SMTP e Templates (DentalGO CRM 360)
   const [smtpConfigs, setSmtpConfigs] = useState<any[]>([]);
@@ -1344,6 +1346,7 @@ export default function DashboardContent({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'launch',
+          campaignId: editingCampaignId || undefined,
           name: campaignName,
           startDate: campaignStartDate,
           rules: campaignRules,
@@ -1397,6 +1400,9 @@ export default function DashboardContent({
         setCampaignRotationInactivityDays(3);
         setCampaignProductId('');
         setCampaignFlowId('');
+        setEditingCampaignId(null);
+        setPlannedCampaignAudience([]);
+        setSelectedTestCustomerIds([]);
         setNodes([]);
         setEdges([]);
         setSelectedNodeId(null);
@@ -1417,7 +1423,10 @@ export default function DashboardContent({
       alert('Informe o nome da campanha.');
       return;
     }
-    if (runTest && selectedLeadIds.length === 0) {
+    const controlledTestIds: Array<string | number> = selectedTestCustomerIds.length
+      ? selectedTestCustomerIds
+      : selectedLeadIds;
+    if (runTest && controlledTestIds.length === 0) {
       alert('Selecione na Audiência ao menos uma pessoa para o teste controlado.');
       return;
     }
@@ -1476,7 +1485,7 @@ export default function DashboardContent({
         const preflightResponse = await fetch('/api/campaigns/canonical', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'preflight', campaignId: campaignJson.data.id, customerIds: selectedLeadIds })
+          body: JSON.stringify({ action: 'preflight', campaignId: campaignJson.data.id, customerIds: controlledTestIds })
         });
         const preflightJson = await preflightResponse.json();
         if (!preflightResponse.ok || !preflightJson.data?.valid) {
@@ -1488,7 +1497,7 @@ export default function DashboardContent({
           body: JSON.stringify({
             action: 'test',
             campaignId: campaignJson.data.id,
-            customerIds: selectedLeadIds,
+            customerIds: controlledTestIds,
             fixedAssigneeId: campaignAgentIds.length === 1 ? campaignAgentIds[0] : undefined
           })
         });
@@ -1576,6 +1585,8 @@ export default function DashboardContent({
     setCampaignRoutingMode(campaign.routingMode || 'ROUND_ROBIN');
     setCampaignUseAccountManager(campaign.useAccountManager === true);
     setCampaignStrictSkillMatch(campaign.strictSkillMatch === true);
+    setPlannedCampaignAudience(campaign.audience || []);
+    setSelectedTestCustomerIds([]);
     setWizardStep(2);
     setShowCampaignModal(true);
   };
@@ -6035,6 +6046,31 @@ export default function DashboardContent({
                 </div>
               )}
             </div>
+
+            {wizardStep === 4 && editingCampaignId && plannedCampaignAudience.length > 0 && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginTop: 12, background: 'var(--surface-raised)' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
+                  Audiência planejada ({plannedCampaignAudience.length}) — selecione quem receberá o teste
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 140, overflowY: 'auto' }}>
+                  {plannedCampaignAudience.map(member => (
+                    <label key={member.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedTestCustomerIds.includes(member.customerId)}
+                        onChange={(event) => setSelectedTestCustomerIds(current => event.target.checked
+                          ? [...current, member.customerId]
+                          : current.filter(id => id !== member.customerId))}
+                      />
+                      <span>{member.name || 'Contato sem nome'}{member.email ? ` — ${member.email}` : ''}</span>
+                    </label>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                  O teste cria uma inscrição isolada. Os demais contatos continuam apenas planejados e a campanha não é ativada para eles.
+                </div>
+              </div>
+            )}
 
             {/* Stepper Footer Controls */}
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 16 }}>

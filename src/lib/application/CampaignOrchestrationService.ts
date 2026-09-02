@@ -149,8 +149,43 @@ export class CampaignOrchestrationService {
     return [...new Set(resolved)];
   }
 
-  static async preflight(campaignId: string, customerIds: Array<string | number> = []) {
+  static async stageAudience(campaignId: string, customerIds: Array<string | number>, sourceType = 'MANUAL') {
+    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId }, select: { id: true, status: true } });
+    if (!campaign) throw new Error('Campanha não encontrada.');
+    if (!['DRAFT', 'READY', 'TESTING', 'PAUSED'].includes(campaign.status)) {
+      throw new Error('A audiência planejada só pode ser alterada antes da ativação ou com a campanha pausada.');
+    }
     const resolvedCustomerIds = await this.resolveAudience(customerIds);
+    if (!resolvedCustomerIds.length) throw new Error('Nenhum contato válido foi selecionado.');
+    await prisma.$transaction(resolvedCustomerIds.map(customerId => prisma.campaignAudienceMember.upsert({
+      where: { campaignId_customerId: { campaignId, customerId } },
+      create: { campaignId, customerId, sourceType, status: 'PLANNED' },
+      update: { sourceType, status: 'PLANNED', removedAt: null, enrolledAt: null }
+    })));
+    return { added: resolvedCustomerIds.length, campaignId, status: campaign.status };
+  }
+
+  static async removeFromAudience(campaignId: string, customerIds: Array<string | number>) {
+    const resolvedCustomerIds = await this.resolveAudience(customerIds);
+    const result = await prisma.campaignAudienceMember.updateMany({
+      where: { campaignId, customerId: { in: resolvedCustomerIds }, status: 'PLANNED' },
+      data: { status: 'REMOVED', removedAt: new Date() }
+    });
+    return { removed: result.count };
+  }
+
+  private static async plannedAudienceIds(campaignId: string) {
+    const rows = await prisma.campaignAudienceMember.findMany({
+      where: { campaignId, status: 'PLANNED' },
+      select: { customerId: true }
+    });
+    return rows.map(row => row.customerId);
+  }
+
+  static async preflight(campaignId: string, customerIds: Array<string | number> = []) {
+    const resolvedCustomerIds = customerIds.length
+      ? await this.resolveAudience(customerIds)
+      : await this.plannedAudienceIds(campaignId);
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
       include: { flowVersion: { include: { steps: true } }, pipeline: true, operators: { include: { user: true } } }
@@ -227,8 +262,12 @@ export class CampaignOrchestrationService {
     };
   }
 
-  static async enroll(campaignId: string, customerIds: Array<string | number>, options: { test?: boolean; sourceType?: string; sourceFormId?: string; fixedAssigneeId?: string } = {}) {
-    const resolvedCustomerIds = await this.resolveAudience(customerIds);
+  static async enroll(campaignId: string, customerIds: Array<string | number>, options: { test?: boolean; activate?: boolean; sourceType?: string; sourceFormId?: string; fixedAssigneeId?: string } = {}) {
+    if (options.test && !customerIds.length) throw new Error('Selecione explicitamente ao menos um contato para o teste controlado.');
+    const resolvedCustomerIds = customerIds.length
+      ? await this.resolveAudience(customerIds)
+      : options.activate ? await this.plannedAudienceIds(campaignId) : [];
+    if (!resolvedCustomerIds.length) throw new Error('A campanha não possui audiência para esta ação.');
     const preflight = await this.preflight(campaignId, resolvedCustomerIds);
     if (!preflight.valid) throw new Error(preflight.errors.join(' '));
     const campaign = await prisma.campaign.findUnique({
@@ -338,6 +377,12 @@ export class CampaignOrchestrationService {
         enrollments.push({ ...enrollment, flowExecutionId: executionId });
       }
       await tx.campaign.update({ where: { id: campaignId }, data: { status: options.test ? 'TESTING' : 'ACTIVE' } });
+      if (!options.test) {
+        await tx.campaignAudienceMember.updateMany({
+          where: { campaignId, customerId: { in: eligibleCustomers.map(customer => customer.id) }, status: 'PLANNED' },
+          data: { status: 'ENROLLED', enrolledAt: new Date() }
+        });
+      }
       return enrollments;
     });
 

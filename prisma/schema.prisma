@@ -238,15 +238,16 @@ model Customer {
   nurturingJourneyId String?
 
   // Relations
-  assignee            User?                @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
-  pipeline            Pipeline?            @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
-  journey             Journey?             @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  assignee            User?                    @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  pipeline            Pipeline?                @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  journey             Journey?                 @relation(fields: [journeyId], references: [id], onDelete: SetNull)
   interactions        Interaction[]
   tasks               Task[]
   flowExecutions      FlowExecution[]
   opportunities       Opportunity[]
   customerProducts    CustomerProduct[]
   campaignEnrollments CampaignEnrollment[]
+  campaignAudience    CampaignAudienceMember[]
 
   // MANTIDO: constraint de deduplicação por (pessoa, jornada) — remoção adiada para Fase 2
   @@unique([externalPersonId, journeyId])
@@ -498,9 +499,10 @@ model Campaign {
   opportunities     Opportunity[]
   forms             Form[]
   operators         CampaignOperator[]
+  audience          CampaignAudienceMember[]
   enrollments       CampaignEnrollment[]
-  postSaleProducts  Product[]            @relation("ProductPostSaleCampaign")
-  nurturingProducts Product[]            @relation("ProductNurturingCampaign")
+  postSaleProducts  Product[]                @relation("ProductPostSaleCampaign")
+  nurturingProducts Product[]                @relation("ProductNurturingCampaign")
 
   routingMode       String  @default("ROUND_ROBIN")
   useAccountManager Boolean @default(false)
@@ -528,6 +530,24 @@ model CampaignOperator {
 
   @@unique([campaignId, userId])
   @@index([userId])
+}
+
+model CampaignAudienceMember {
+  id         String    @id @default(cuid())
+  campaignId String
+  campaign   Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  status     String    @default("PLANNED") // PLANNED | ENROLLED | REMOVED
+  sourceType String    @default("MANUAL")
+  addedAt    DateTime  @default(now())
+  enrolledAt DateTime?
+  removedAt  DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([campaignId, customerId])
+  @@index([campaignId, status])
+  @@index([customerId])
 }
 
 model CampaignEnrollment {
