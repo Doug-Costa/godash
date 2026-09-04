@@ -15,13 +15,13 @@ export async function POST(request: Request) {
 
     const userId = (session.user as any).id || '';
     const body = await request.json();
-    const { sourcePersonId, targetPersonId, reason } = body;
+    const { sourcePersonId, targetPersonId, reason, canonicalOverrides } = body;
 
     if (!sourcePersonId || !targetPersonId || !reason) {
       return NextResponse.json({ success: false, error: 'Parâmetros inválidos. Informe sourcePersonId, targetPersonId e reason.' }, { status: 400 });
     }
 
-    await IdentityMatchingService.mergePersons(sourcePersonId, targetPersonId, userId, reason);
+    await IdentityMatchingService.mergePersons(sourcePersonId, targetPersonId, userId, reason, canonicalOverrides);
 
     return NextResponse.json({ success: true, message: 'Fusão de identidades concluída com sucesso!' });
   } catch (error: any) {

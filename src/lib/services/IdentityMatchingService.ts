@@ -231,15 +231,44 @@ export class IdentityMatchingService {
   }
 
   /**
+   * Atualiza os campos canônicos oficiais de uma Person (Decisão Administrativa).
+   */
+  static async updateCanonicalPerson(
+    personId: string,
+    data: {
+      fullName?: string | null;
+      email?: string | null;
+      phoneNumber?: string | null;
+    },
+    updatedById?: string
+  ): Promise<Person> {
+    const updates: any = {};
+    if (data.fullName !== undefined) updates.fullName = data.fullName;
+    if (data.email !== undefined) updates.email = data.email ? CanonicalIdentityService.normalizeEmail(data.email) : null;
+    if (data.phoneNumber !== undefined) updates.phoneNumber = data.phoneNumber ? CanonicalIdentityService.normalizePhone(data.phoneNumber) : null;
+
+    return prisma.person.update({
+      where: { id: personId },
+      data: updates
+    });
+  }
+
+  /**
    * Unifica duas Persons (sourcePersonId e targetPersonId).
    * Move todos os Aliases, Customers, tarefas e históricos de forma segura e auditada.
+   * Suporta sobreposição opcional de campos canônicos oficiais (canonicalOverrides).
    * Dominio: Fusão de Pessoas (Merge)
    */
   static async mergePersons(
     sourcePersonId: string,
     targetPersonId: string,
     decidedById: string,
-    reason: string
+    reason: string,
+    canonicalOverrides?: {
+      fullName?: string | null;
+      email?: string | null;
+      phoneNumber?: string | null;
+    }
   ): Promise<void> {
     if (sourcePersonId === targetPersonId) {
       throw new Error('Não é possível mesclar uma identidade consigo mesma.');
@@ -335,7 +364,27 @@ export class IdentityMatchingService {
         }
       }
 
-      // 4. Deletar a Person original mesclada (aliases e customers já foram re-apontados)
+      // 4. Se houver sobreposição de dados canônicos escolhidos pelo Admin, aplica na Person sobrevivente
+      if (canonicalOverrides) {
+        const updates: any = {};
+        if (canonicalOverrides.fullName !== undefined && canonicalOverrides.fullName !== null) {
+          updates.fullName = canonicalOverrides.fullName;
+        }
+        if (canonicalOverrides.email !== undefined && canonicalOverrides.email !== null) {
+          updates.email = CanonicalIdentityService.normalizeEmail(canonicalOverrides.email);
+        }
+        if (canonicalOverrides.phoneNumber !== undefined && canonicalOverrides.phoneNumber !== null) {
+          updates.phoneNumber = CanonicalIdentityService.normalizePhone(canonicalOverrides.phoneNumber);
+        }
+        if (Object.keys(updates).length > 0) {
+          await tx.person.update({
+            where: { id: targetPersonId },
+            data: updates
+          });
+        }
+      }
+
+      // 5. Deletar a Person original mesclada (aliases e customers já foram re-apontados)
       await tx.person.delete({
         where: { id: sourcePersonId }
       });

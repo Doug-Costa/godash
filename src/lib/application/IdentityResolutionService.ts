@@ -1,34 +1,53 @@
 import prisma from '@/lib/prisma';
 import { Customer, Person } from '@prisma/client';
 
-export type ResolutionAction = 'FOUND' | 'SUGGEST_MERGE' | 'CREATE_NEW';
+export type ResolutionAction = 
+  | 'AUTO_MATCH' 
+  | 'FOUND'             // alias para AUTO_MATCH (compatibilidade)
+  | 'REVIEW_REQUIRED' 
+  | 'SUGGEST_MERGE'     // alias para REVIEW_REQUIRED (compatibilidade)
+  | 'CONFLICT' 
+  | 'CREATE_NEW';
+
+export interface CandidateEvaluation {
+  person: Person;
+  score: number;
+  evidences: string[];
+  conflicts: string[];
+  isDummyPhoneMatch?: boolean;
+}
 
 export interface ResolutionResult {
   action: ResolutionAction;
   person?: Person;
-  candidates?: Person[]; // candidatos quando SUGGEST_MERGE
-  confidence?: number;   // score 0-100
+  candidates?: Person[];
+  evaluations?: CandidateEvaluation[];
+  confidence?: number; // 0-100
+  evidences?: string[];
+  conflictReason?: string;
 }
 
 /**
- * IdentityResolutionService — Fase 1 (2026-08)
+ * IdentityResolutionService — CDP V4
  *
- * Resolve a identidade de uma entrada de dados em 3 níveis:
+ * Resolução de Identidade Canônica Assistida por Ranking de Candidatos:
  *
- * NÍVEL 1 — AUTO-MERGE (confiança >= 90)
- *   Match exato por: externalPersonId OU email (normalizado) OU phoneNumber (normalizado)
- *   → Retorna a Person existente imediatamente
+ * 1. AUTO_MATCH / FOUND (confiança >= 85 e sem conflito grave)
+ *    Candidato claramente dominante com dados consistentes.
  *
- * NÍVEL 2 — SUGGEST_MERGE (confiança 60-89)
- *   Name similarity > 80% + pelo menos 1 sinal parcial
- *   → Retorna candidatos para revisão humana (não faz merge automático)
+ * 2. REVIEW_REQUIRED / SUGGEST_MERGE (confiança 55-84 ou margem estreita)
+ *    Dois candidatos próximos ou divergência que demanda olhar humano.
  *
- * NÍVEL 3 — CREATE_NEW (confiança < 60)
- *   → Nenhum match, deve criar nova Person
+ * 3. CONFLICT
+ *    Conflito estrutural grave (ex: E-mail pertence à Person A e Telefone pertence à Person B).
+ *    Jamais faz auto-merge silencioso.
+ *
+ * 4. CREATE_NEW (confiança < 50)
+ *    Nenhum candidato relevante, cria nova Person canônica.
  */
 export class IdentityResolutionService {
 
-  // ─── Normalização ─────────────────────────────────────────────────────────
+  // ─── Normalização & Validação ──────────────────────────────────────────────
 
   static normalizePhone(raw: string | null | undefined): string | null {
     if (!raw) return null;
@@ -50,7 +69,26 @@ export class IdentityResolutionService {
     return clean;
   }
 
-  // ─── Resolução Principal ───────────────────────────────────────────────────
+  /**
+   * Identifica se um telefone é fictício / genérico de teste (ex: 99999-9999, 00000-0000, 12345678)
+   * Telefones de teste NÃO devem acionar auto-merge sozinhos para evitar colisões silenciosas.
+   */
+  static isDummyTestPhone(raw: string | null | undefined): boolean {
+    if (!raw) return false;
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length < 8) return true;
+    const last8 = digits.slice(-8);
+    const last9 = digits.slice(-9);
+
+    // Repetições completas (ex: 99999999, 00000000, 11111111)
+    if (/^(\d)\1+$/.test(last8) || /^(\d)\1+$/.test(last9)) return true;
+    if (last8 === '12345678' || last9 === '123456789' || last8 === '98765432') return true;
+    if (/^9{7,}$/.test(last8) || /^0{7,}$/.test(last8)) return true;
+
+    return false;
+  }
+
+  // ─── Resolução Principal com Ranking Comparativo ───────────────────────────
 
   static async resolve(params: {
     externalPersonId?: number | null;
@@ -61,96 +99,243 @@ export class IdentityResolutionService {
     const { externalPersonId, fullName } = params;
     const email = this.normalizeEmail(params.email);
     const phoneNumber = this.normalizePhone(params.phoneNumber);
+    const isDummyPhone = this.isDummyTestPhone(phoneNumber);
 
-    // ── NÍVEL 1: Match determinístico (confiança alta) ─────────────────────
-
-    // 1a. externalPersonId (peso 100 — ID único no sistema legado)
+    // ── 0. Match prioritário por externalPersonId (ID do MySQL legado) ─────────
     if (externalPersonId && !isNaN(externalPersonId)) {
       const match = await prisma.person.findFirst({
         where: { externalPersonId: Number(externalPersonId) }
       });
-      if (match) return { action: 'FOUND', person: match, confidence: 100 };
-    }
-
-    // 1b. Email principal (peso 95)
-    if (email) {
-      const match = await prisma.person.findFirst({
-        where: { email }
-      });
-      if (match) return { action: 'FOUND', person: match, confidence: 95 };
-
-      // 1b2. Email secundário (peso 90)
-      const matchSecondary = await prisma.person.findFirst({
-        where: { secondaryEmail: email }
-      });
-      if (matchSecondary) return { action: 'FOUND', person: matchSecondary, confidence: 90 };
-
-      // 1b3. Email em IdentityAlias (peso 88 — email antigo conhecido)
-      const aliasMatch = await prisma.identityAlias.findFirst({
-        where: { email },
-        include: { person: true }
-      });
-      if (aliasMatch) return { action: 'FOUND', person: aliasMatch.person, confidence: 88 };
-    }
-
-    // 1c. Telefone principal normalizado (peso 90)
-    if (phoneNumber) {
-      const match = await prisma.person.findFirst({
-        where: { phoneNumber }
-      });
-      if (match) return { action: 'FOUND', person: match, confidence: 90 };
-
-      // 1c2. Telefone secundário (fixo/clínica, peso 50)
-      const matchSecondary = await prisma.person.findFirst({
-        where: { secondaryPhone: phoneNumber }
-      });
-      if (matchSecondary) return { action: 'FOUND', person: matchSecondary, confidence: 50 };
-
-      // 1c3. Telefone em IdentityAlias (peso 85)
-      const aliasMatch = await prisma.identityAlias.findFirst({
-        where: { phone: phoneNumber },
-        include: { person: true }
-      });
-      if (aliasMatch) return { action: 'FOUND', person: aliasMatch.person, confidence: 85 };
-    }
-
-    // ── NÍVEL 2: Candidatos para revisão humana ────────────────────────────
-    // Busca por nome similar (só se tiver nome com >= 4 palavras para evitar falsos positivos)
-    if (fullName && fullName.trim().split(' ').length >= 2) {
-      const nameParts = fullName.trim().split(' ').filter(p => p.length > 2);
-      const candidates = await prisma.person.findMany({
-        where: {
-          fullName: {
-            // Busca por correspondência parcial do nome (primeiro + último nome)
-            contains: nameParts[0],
-            mode: 'insensitive'
-          }
-        },
-        take: 5
-      });
-
-      const scored = candidates
-        .map(c => ({ person: c, score: this.nameSimilarity(fullName, c.fullName || '') }))
-        .filter(c => c.score >= 70)
-        .sort((a, b) => b.score - a.score);
-
-      if (scored.length > 0) {
+      if (match) {
         return {
-          action: 'SUGGEST_MERGE',
-          candidates: scored.map(s => s.person),
-          confidence: scored[0].score
+          action: 'AUTO_MATCH',
+          person: match,
+          confidence: 100,
+          evidences: ['EXTERNAL_ID_EXACT']
         };
       }
     }
 
-    // ── NÍVEL 3: Nenhum match ──────────────────────────────────────────────
-    return { action: 'CREATE_NEW', confidence: 0 };
+    // ── 1. Mapear todos os candidatos por Email, Telefone e Aliases ───────────
+    const candidateMap = new Map<string, Person>();
+
+    // 1a. Busca por e-mail
+    if (email) {
+      const byEmail = await prisma.person.findMany({
+        where: {
+          OR: [
+            { email },
+            { secondaryEmail: email }
+          ]
+        }
+      });
+      byEmail.forEach(p => candidateMap.set(p.id, p));
+
+      const byAliasEmail = await prisma.identityAlias.findMany({
+        where: { email },
+        include: { person: true }
+      });
+      byAliasEmail.forEach(a => {
+        if (a.person) candidateMap.set(a.person.id, a.person);
+      });
+    }
+
+    // 1b. Busca por telefone
+    if (phoneNumber) {
+      const byPhone = await prisma.person.findMany({
+        where: {
+          OR: [
+            { phoneNumber },
+            { secondaryPhone: phoneNumber }
+          ]
+        }
+      });
+      byPhone.forEach(p => candidateMap.set(p.id, p));
+
+      const byAliasPhone = await prisma.identityAlias.findMany({
+        where: { phone: phoneNumber },
+        include: { person: true }
+      });
+      byAliasPhone.forEach(a => {
+        if (a.person) candidateMap.set(a.person.id, a.person);
+      });
+    }
+
+    // 1c. Busca por nome se houver nome estruturado
+    if (fullName && fullName.trim().split(/\s+/).length >= 2) {
+      const firstName = fullName.trim().split(/\s+/)[0];
+      if (firstName.length >= 3) {
+        const byName = await prisma.person.findMany({
+          where: {
+            fullName: {
+              startsWith: firstName,
+              mode: 'insensitive'
+            }
+          },
+          take: 6
+        });
+        byName.forEach(p => candidateMap.set(p.id, p));
+      }
+    }
+
+    const candidateList = Array.from(candidateMap.values());
+
+    if (candidateList.length === 0) {
+      return { action: 'CREATE_NEW', confidence: 0, evidences: [] };
+    }
+
+    // ── 2. Avaliar e pontuar cada candidato ──────────────────────────────────
+    const evaluations: CandidateEvaluation[] = [];
+
+    for (const cand of candidateList) {
+      let score = 0;
+      const evidences: string[] = [];
+      const conflicts: string[] = [];
+
+      // Avaliação de E-mail
+      if (email) {
+        if (cand.email === email) {
+          score += 95;
+          evidences.push('EMAIL_EXACT');
+        } else if (cand.secondaryEmail === email) {
+          score += 90;
+          evidences.push('SECONDARY_EMAIL_EXACT');
+        } else {
+          // Checar se está nos aliases do candidato
+          const hasAliasEmail = await prisma.identityAlias.findFirst({
+            where: { personId: cand.id, email }
+          });
+          if (hasAliasEmail) {
+            score += 85;
+            evidences.push('ALIAS_EMAIL_EXACT');
+          } else if (cand.email && cand.email !== email) {
+            // Candidato já possui um e-mail primário diferente
+            score -= 60;
+            conflicts.push(`EMAIL_DIVERGENT (${cand.email})`);
+          }
+        }
+      }
+
+      // Avaliação de Telefone
+      if (phoneNumber) {
+        if (isDummyPhone) {
+          // Telefone de teste / fictício: não pode dar pontuação determinante
+          score += 10;
+          evidences.push('DUMMY_PHONE_WEAK_SIGNAL');
+        } else if (cand.phoneNumber === phoneNumber) {
+          score += 90;
+          evidences.push('PHONE_EXACT');
+        } else if (cand.secondaryPhone === phoneNumber) {
+          score += 50;
+          evidences.push('SECONDARY_PHONE_EXACT');
+        } else {
+          const hasAliasPhone = await prisma.identityAlias.findFirst({
+            where: { personId: cand.id, phone: phoneNumber }
+          });
+          if (hasAliasPhone) {
+            score += 80;
+            evidences.push('ALIAS_PHONE_EXACT');
+          } else if (cand.phoneNumber && cand.phoneNumber !== phoneNumber) {
+            score -= 40;
+            conflicts.push(`PHONE_DIVERGENT (${cand.phoneNumber})`);
+          }
+        }
+      }
+
+      // Avaliação de Nome
+      if (fullName && cand.fullName) {
+        const similarity = this.nameSimilarity(fullName, cand.fullName);
+        if (similarity >= 85) {
+          score += 30;
+          evidences.push(`NAME_HIGH_SIMILARITY (${similarity}%)`);
+        } else if (similarity >= 65) {
+          score += 20;
+          evidences.push(`NAME_PARTIAL_SIMILARITY (${similarity}%)`);
+        } else if (similarity >= 40) {
+          score += 10;
+          evidences.push(`NAME_WEAK_SIMILARITY (${similarity}%)`);
+        } else if (similarity < 25 && cand.fullName.trim().split(/\s+/).length >= 2) {
+          score -= 30;
+          conflicts.push(`NAME_DISSIMILAR (${cand.fullName})`);
+        }
+      }
+
+      const finalScore = Math.max(0, Math.min(score, 100));
+      evaluations.push({
+        person: cand,
+        score: finalScore,
+        evidences,
+        conflicts,
+        isDummyPhoneMatch: isDummyPhone
+      });
+    }
+
+    // Ordenar avaliações por pontuação decrescente
+    evaluations.sort((a, b) => b.score - a.score);
+
+    // ── 3. Detecção de Conflito Estrutural (Cross-Identity Collision) ────────
+    // Exemplo: O e-mail bate com Person A, mas o telefone (real, não-dummy) bate com Person B
+    if (email && phoneNumber && !isDummyPhone && candidateList.length >= 2) {
+      const emailWinner = evaluations.find(e => e.evidences.some(ev => ev.includes('EMAIL')));
+      const phoneWinner = evaluations.find(e => e.evidences.some(ev => ev.includes('PHONE_EXACT')));
+
+      if (emailWinner && phoneWinner && emailWinner.person.id !== phoneWinner.person.id) {
+        return {
+          action: 'CONFLICT',
+          candidates: [emailWinner.person, phoneWinner.person],
+          evaluations,
+          confidence: Math.max(emailWinner.score, phoneWinner.score),
+          evidences: [...emailWinner.evidences, ...phoneWinner.evidences],
+          conflictReason: `E-mail pertence a "${emailWinner.person.fullName || emailWinner.person.id}" e Telefone pertence a "${phoneWinner.person.fullName || phoneWinner.person.id}"`
+        };
+      }
+    }
+
+    const best = evaluations[0];
+    const second = evaluations[1];
+
+    // ── 4. Decisão por Faixas de Confiança ───────────────────────────────────
+
+    // Sem pontuação suficiente -> Novo cadastro
+    if (!best || best.score < 50) {
+      return {
+        action: 'CREATE_NEW',
+        confidence: best ? best.score : 0,
+        evaluations,
+        evidences: best ? best.evidences : []
+      };
+    }
+
+    // Alta confiança e dominante (score >= 85 com margem de pelo menos 20 pts ou sem segundo concorrente)
+    const margin = second ? (best.score - second.score) : 100;
+    if (best.score >= 85 && margin >= 20) {
+      return {
+        action: 'AUTO_MATCH',
+        person: best.person,
+        candidates: evaluations.map(e => e.person),
+        evaluations,
+        confidence: best.score,
+        evidences: best.evidences
+      };
+    }
+
+    // Caso ambíguo ou pontuação intermediária (50-84) ou margem estreita -> Fila de Revisão
+    return {
+      action: 'REVIEW_REQUIRED',
+      person: best.person, // candidato mais provável sugerido
+      candidates: evaluations.map(e => e.person),
+      evaluations,
+      confidence: best.score,
+      evidences: best.evidences,
+      conflictReason: best.conflicts.length > 0 
+        ? `Inconsistências encontradas: ${best.conflicts.join(', ')}`
+        : (second ? `Empate técnico entre "${best.person.fullName}" (${best.score} pts) e "${second.person.fullName}" (${second.score} pts)` : 'Confiança moderada')
+    };
   }
 
   // ─── Compatibilidade retroativa ───────────────────────────────────────────
   /**
-   * @deprecated Use resolve() para o novo fluxo tipado.
-   * Mantido para compatibilidade com código existente que usa resolveIdentity().
+   * @deprecated Use resolve() para o fluxo tipado do CDP V4.
    */
   static async resolveIdentity(params: {
     externalPersonId?: number | null;
@@ -158,8 +343,7 @@ export class IdentityResolutionService {
     email?: string | null;
   }): Promise<Customer | null> {
     const result = await this.resolve(params);
-    if (result.action === 'FOUND' && result.person) {
-      // Retorna o Customer mais recente vinculado a essa Person
+    if ((result.action === 'AUTO_MATCH' || result.action === 'FOUND') && result.person) {
       return prisma.customer.findFirst({
         where: { personId: result.person.id },
         orderBy: { createdAt: 'desc' }
@@ -172,9 +356,9 @@ export class IdentityResolutionService {
 
   /**
    * Calcula similaridade entre dois nomes (0-100).
-   * Usa comparação de tokens (palavras do nome).
+   * Compara tokens e lida com abreviações/sobrenomes compostos.
    */
-  private static nameSimilarity(a: string, b: string): number {
+  static nameSimilarity(a: string, b: string): number {
     if (!a || !b) return 0;
     const tokensA = a.toLowerCase().split(/\s+/).filter(t => t.length > 1);
     const tokensB = b.toLowerCase().split(/\s+/).filter(t => t.length > 1);
@@ -191,8 +375,8 @@ export class IdentityResolutionService {
   }
 
   /**
-   * Registra um novo sinal de identidade para uma Person existente.
-   * Deve ser chamado quando uma Person já existente recebe uma nova entrada.
+   * Registra um novo sinal de identidade para uma Person existente (Auditoria/Alias).
+   * PRESERVA a identidade canônica e nunca sobrescreve dados primários automaticamente.
    */
   static async registerAlias(personId: string, params: {
     source: string;
@@ -206,7 +390,7 @@ export class IdentityResolutionService {
     const phone = this.normalizePhone(params.phone);
     const externalId = params.externalId || `gen_${Math.random().toString(36).substring(2, 11)}`;
 
-    // Evitar alias duplicado
+    // Evitar alias duplicado idêntico
     const exists = await prisma.identityAlias.findFirst({
       where: {
         personId,
@@ -230,7 +414,7 @@ export class IdentityResolutionService {
       });
     }
 
-    // Enriquecer Person com dados faltantes
+    // Enriquecer Person SOMENTE com dados faltantes (nunca sobrescrever campos preenchidos)
     const person = await prisma.person.findUnique({ where: { id: personId } });
     if (person) {
       const updates: any = {};
@@ -250,3 +434,4 @@ export class IdentityResolutionService {
     }
   }
 }
+

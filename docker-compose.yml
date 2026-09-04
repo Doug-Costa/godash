@@ -5,6 +5,8 @@ services:
       - "3035:3000"
     environment:
       - AUTH_TRUST_HOST=true
+      - NEXTAUTH_URL=https://crm.dentalgo.cloud
+      - AUTH_URL=https://crm.dentalgo.cloud
       - REDIS_URL=redis://crm_redis:6379
       - DATABASE_URL=postgresql://postgres:postgres@crm_postgres:5432/dentalgo_crm?schema=public
     env_file:

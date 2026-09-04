@@ -1,22 +1,25 @@
 import { auth } from '@/auth';
+import { NextResponse } from 'next/server';
 
 export default auth((req) => {
   if (!req.auth) {
+    const rawForwardedProto = req.headers.get('x-forwarded-proto');
+    const forwardedProto = rawForwardedProto
+      ? rawForwardedProto.split(',')[0].trim()
+      : (req.url.startsWith('https:') ? 'https' : 'http');
+
+    const rawForwardedHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
+    const forwardedHost = rawForwardedHost ? rawForwardedHost.split(',')[0].trim() : null;
+
+    if (forwardedHost) {
+      const redirectUrl = new URL('/login', `${forwardedProto}://${forwardedHost}`);
+      return NextResponse.redirect(redirectUrl);
+    }
+
     const url = req.nextUrl.clone();
     url.pathname = '/login';
-    
-    // Auto-detect protocol: if client connected via HTTP, redirect via HTTP.
-    // If behind a proxy, check the standard X-Forwarded-Proto header first.
-    const forwardedProto = req.headers.get('x-forwarded-proto');
-    if (forwardedProto === 'http' || forwardedProto === 'https') {
-      url.protocol = forwardedProto + ':';
-    } else {
-      // Direct access (no proxy) - match the protocol of the incoming request URL
-      const isHttps = req.url.startsWith('https:');
-      url.protocol = isHttps ? 'https:' : 'http:';
-    }
-    
-    return Response.redirect(url);
+    url.protocol = forwardedProto + ':';
+    return NextResponse.redirect(url);
   }
 });
 

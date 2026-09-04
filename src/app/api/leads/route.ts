@@ -728,24 +728,36 @@ export async function GET(request: Request) {
           !pipelineId || pipelineId === 'all' || opportunity.pipelineId === pipelineId
         );
         if (!opportunities.length) return [base];
-        return opportunities.map((opportunity: any) => ({
-          ...base,
-          cardId: `${base.customerCuid}:${opportunity.id}`,
-          stage: opportunity.stage,
-          assignee: opportunity.assignee || base.assignee,
-          campaign: opportunity.sourceCampaign || base.campaign,
-          opportunity: {
-            id: opportunity.id,
-            status: opportunity.status,
-            productId: opportunity.productId,
-            product: opportunity.product ? {
-              id: opportunity.product.id,
-              name: opportunity.product.name,
-              category: opportunity.product.category,
-              subType: opportunity.product.subType
-            } : null
-          }
-        }));
+        return opportunities.map((opportunity: any) => {
+          const oppMeta = (opportunity.metadata as Record<string, any>) || {};
+          const custMeta = (customer?.metadata as Record<string, any>) || {};
+          const submittedName = oppMeta.submittedName || custMeta.submittedName || null;
+          const hasPendingReview = oppMeta.hasPendingReview === true || custMeta.hasPendingReview === true;
+
+          return {
+            ...base,
+            cardId: `${base.customerCuid}:${opportunity.id}`,
+            stage: opportunity.stage,
+            assignee: opportunity.assignee || base.assignee,
+            campaign: opportunity.sourceCampaign || base.campaign,
+            submittedName,
+            hasPendingReview,
+            reviewReason: oppMeta.reviewReason || custMeta.reviewReason || null,
+            opportunityCreatedAt: opportunity.createdAt ? new Date(opportunity.createdAt).toISOString() : null,
+            opportunity: {
+              id: opportunity.id,
+              status: opportunity.status,
+              productId: opportunity.productId,
+              metadata: oppMeta,
+              product: opportunity.product ? {
+                id: opportunity.product.id,
+                name: opportunity.product.name,
+                category: opportunity.product.category,
+                subType: opportunity.product.subType
+              } : null
+            }
+          };
+        });
       });
     } else {
       // Filas do MySQL (abandonados, expirar): mapeia pelos rows diretamente

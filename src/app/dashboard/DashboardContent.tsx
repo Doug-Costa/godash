@@ -24,6 +24,7 @@ import FormsConfiguratorContent from '@/components/FormsConfiguratorContent';
 import ManualSaleModal from '@/components/ManualSaleModal';
 import CommercialRevOpsDashboard from '@/components/CommercialRevOpsDashboard';
 import AdminImportTab from '@/components/AdminImportTab';
+import IdentityReviewTab from '@/components/IdentityReviewTab';
 import { SpecialtyClassifierService } from '@/lib/services/SpecialtyClassifierService';
 
 const formatBRL = (cents: number) =>
@@ -312,7 +313,9 @@ export default function DashboardContent({
 
   const [templatesList, setTemplatesList] = useState<any[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
-  const [adminSubTab, setAdminSubTab] = useState<'products' | 'team' | 'integrations' | 'smtp' | 'import'>('products');
+  const [adminSubTab, setAdminSubTab] = useState<'products' | 'team' | 'integrations' | 'smtp' | 'import' | 'identities'>('products');
+  const [identityReviews, setIdentityReviews] = useState<any[]>([]);
+  const [loadingIdentityReviews, setLoadingIdentityReviews] = useState(false);
 
   // Estados do React Flow para a régua
   const [nodes, setNodes] = useState<any[]>([]);
@@ -548,6 +551,9 @@ export default function DashboardContent({
     }
     if (activeTab === 'team') {
       fetchSettings();
+    }
+    if (isAdmin) {
+      fetchIdentityReviews();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, filterCampaignId, canceledFilterAllMonths, kanbanFilterAllMonths, activeTab, selectedKpiCampaignId, activePipelineId, leadsPage, leadsLimit, atendimentoFila, atendimentoViewMode]);
@@ -1044,6 +1050,80 @@ export default function DashboardContent({
     } finally {
       setLoadingSettings(false);
     }
+  };
+
+  const fetchIdentityReviews = async () => {
+    try {
+      setLoadingIdentityReviews(true);
+      const res = await fetch('/api/leads/identity-review?status=PENDING');
+      if (res.ok) {
+        const json = await res.json();
+        setIdentityReviews(json.data || json.reviews || []);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar revisões de identidade:', err);
+    } finally {
+      setLoadingIdentityReviews(false);
+    }
+  };
+
+  const handleIdentityLink = async (reviewId: string, personId: string) => {
+    const res = await fetch('/api/leads/identity-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewId, action: 'LINK_TO_PERSON', targetPersonId: personId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erro ao vincular identidade');
+    await fetchIdentityReviews();
+    await fetchLeads();
+  };
+
+  const handleIdentitySeparate = async (reviewId: string) => {
+    const res = await fetch('/api/leads/identity-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewId, action: 'SEPARATE' })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erro ao separar identidades');
+    await fetchIdentityReviews();
+    await fetchLeads();
+  };
+
+  const handleIdentityDefer = async (reviewId: string) => {
+    const res = await fetch('/api/leads/identity-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewId, action: 'DEFER' })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erro ao adiar revisão');
+    await fetchIdentityReviews();
+  };
+
+  const handleUpdateCanonicalPerson = async (personId: string, updateData: { fullName?: string; email?: string; phoneNumber?: string }) => {
+    const res = await fetch('/api/leads/identity-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'UPDATE_CANONICAL', personId, ...updateData })
+    });
+    const resData = await res.json();
+    if (!res.ok) throw new Error(resData.error || 'Erro ao atualizar dados canônicos');
+    await fetchIdentityReviews();
+    await fetchLeads();
+  };
+
+  const handleMergePersons = async (sourcePersonId: string, targetPersonId: string, reason: string, overrides?: any) => {
+    const res = await fetch('/api/leads/identity-merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePersonId, targetPersonId, reason, overrides })
+    });
+    const resData = await res.json();
+    if (!res.ok) throw new Error(resData.error || 'Erro ao mesclar identidades');
+    await fetchIdentityReviews();
+    await fetchLeads();
   };
 
   const handleSaveSmtp = async (e: React.FormEvent) => {
@@ -2036,6 +2116,53 @@ export default function DashboardContent({
           </div>
         </div>
 
+        {/* Banner de alerta de revisão de identidades (se houver pendências e for admin) */}
+        {isAdmin && identityReviews.length > 0 && (
+          <div style={{
+            marginBottom: 16,
+            padding: '12px 18px',
+            borderRadius: 10,
+            background: 'rgba(234, 179, 8, 0.1)',
+            border: '1px solid rgba(234, 179, 8, 0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 20 }}>⚠️</span>
+              <div>
+                <div style={{ fontWeight: 700, color: '#EAB308', fontSize: 13 }}>
+                  {identityReviews.length} {identityReviews.length === 1 ? 'Identidade Pendente de Revisão' : 'Identidades Pendentes de Revisão'}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Entradas recentes com dados divergentes (mesmo email/telefone com nome ou perfil distinto) aguardam validação humana para preservar identidades canônicas.
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setActiveTab('team');
+                setAdminSubTab('identities');
+              }}
+              className="btn-action"
+              style={{
+                padding: '6px 14px',
+                background: '#EAB308',
+                color: '#000',
+                fontWeight: 700,
+                fontSize: 12,
+                borderRadius: 6,
+                border: 'none',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Revisar Fila ➔
+            </button>
+          </div>
+        )}
+
         {/* Abas de Funis (Pipelines) - Apenas se no Kanban */}
         {atendimentoViewMode === 'kanban' && (
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -2153,6 +2280,16 @@ export default function DashboardContent({
                           >
                             <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <span>{lead.fullName}</span>
+                              {lead.submittedName && lead.submittedName !== lead.fullName && (
+                                <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>
+                                  (Form: {lead.submittedName})
+                                </span>
+                              )}
+                              {lead.hasPendingReview && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(234, 179, 8, 0.15)', color: '#EAB308', border: '1px solid rgba(234, 179, 8, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2, fontWeight: 'bold' }} title={lead.reviewReason || 'Identidade pendente de confirmação'}>
+                                  ⚠️ Revisão de Identidade
+                                </span>
+                              )}
                               {lead.hasParallelNegotiation && (
                                 <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2, fontWeight: 'bold' }}>
                                   ⚠️ Conflito
@@ -2369,7 +2506,19 @@ export default function DashboardContent({
                     filteredLeads.map((lead) => {
                       return (
                         <tr key={lead.cardId || lead.id} onClick={() => openTimeline(lead)} style={{ cursor: 'pointer' }}>
-                          <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{lead.fullName}</td>
+                          <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                            <div>{lead.fullName}</div>
+                            {lead.submittedName && lead.submittedName !== lead.fullName && (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>
+                                (Form: {lead.submittedName})
+                              </div>
+                            )}
+                            {lead.hasPendingReview && (
+                              <span className="badge" style={{ fontSize: 9, padding: '1px 5px', marginTop: 2, background: 'rgba(234, 179, 8, 0.15)', color: '#EAB308', border: '1px solid rgba(234, 179, 8, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2, fontWeight: 'bold' }}>
+                                ⚠️ Revisão
+                              </span>
+                            )}
+                          </td>
                           <td>
                             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                               {lead.tag === 'CANCELED_CLIENT' && (
@@ -2708,10 +2857,25 @@ export default function DashboardContent({
                 padding: '8px 16px', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 background: activeTab === 'team' ? 'var(--accent-glow)' : 'transparent',
                 color: activeTab === 'team' ? 'var(--accent)' : 'var(--text-secondary)',
-                transition: 'all 0.2s'
+                transition: 'all 0.2s',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6
               }}
             >
-              ⚙️ Administração
+              <span>⚙️ Administração</span>
+              {identityReviews.length > 0 && (
+                <span style={{
+                  background: '#EAB308',
+                  color: '#000',
+                  borderRadius: 10,
+                  padding: '1px 6px',
+                  fontSize: 10,
+                  fontWeight: 700
+                }}>
+                  {identityReviews.length}
+                </span>
+              )}
             </button>
           )}
 
@@ -3382,6 +3546,11 @@ export default function DashboardContent({
               { id: 'integrations', label: '🔌 Integrações', desc: 'VoIP e WhatsApp API' },
               { id: 'smtp', label: '📧 Servidores SMTP', desc: 'Contas de disparo de email' },
               { id: 'import', label: '📥 Importação de Dados', desc: 'Carga de CSV (Breve)' },
+              { 
+                id: 'identities', 
+                label: `🆔 Resolução de Identidades${identityReviews.length > 0 ? ` (${identityReviews.length})` : ''}`, 
+                desc: 'Fila de revisão e fusão de pessoas' 
+              },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -4004,6 +4173,20 @@ export default function DashboardContent({
                 onImportCompleted={() => {
                   fetchLeads();
                 }}
+              />
+            )}
+
+            {/* 6. Resolução de Identidades */}
+            {adminSubTab === 'identities' && (
+              <IdentityReviewTab
+                reviews={identityReviews}
+                loading={loadingIdentityReviews}
+                onRefresh={fetchIdentityReviews}
+                onLink={handleIdentityLink}
+                onSeparate={handleIdentitySeparate}
+                onDefer={handleIdentityDefer}
+                onUpdateCanonical={handleUpdateCanonicalPerson}
+                onMerge={handleMergePersons}
               />
             )}
 

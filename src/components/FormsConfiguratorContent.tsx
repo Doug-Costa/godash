@@ -110,9 +110,27 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
   // Copy code feedback
   const [copied, setCopied] = useState(false);
 
+  // Public CRM Base URL for snippet generation (e.g. https://crm.dentalgo.com.br)
+  const [customApiUrl, setCustomApiUrl] = useState('');
+
   useEffect(() => {
     fetchForms();
+    if (typeof window !== 'undefined') {
+      const savedUrl = localStorage.getItem('dentalgo_crm_public_api_url');
+      if (savedUrl) setCustomApiUrl(savedUrl);
+    }
   }, []);
+
+  const handleCustomApiUrlChange = (val: string) => {
+    setCustomApiUrl(val);
+    if (typeof window !== 'undefined') {
+      if (val.trim()) {
+        localStorage.setItem('dentalgo_crm_public_api_url', val.trim());
+      } else {
+        localStorage.removeItem('dentalgo_crm_public_api_url');
+      }
+    }
+  };
 
   const fetchForms = async () => {
     try {
@@ -329,7 +347,9 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
   const generateSnippet = () => {
     if (!activeForm || !activeForm.id) return 'Salve o formulário para gerar o código de incorporação.';
 
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    const baseUrl = customApiUrl.trim()
+      ? customApiUrl.trim().replace(/\/+$/, '')
+      : (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
     
     // Styling attributes
     const shadowStyle = SHADOW_MAP[dropShadow] || 'none';
@@ -372,7 +392,7 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
     <button type="submit" style="${buttonStyle}">Enviar Formulário</button>
   </form>
   <div id="dg-success-${activeForm.id}" style="display: none; padding: 16px; text-align: center; font-size: 14px; font-weight: 600; line-height: 1.5;">
-    ${activeForm.successMessage || 'Formulário enviado com sucesso!'}
+    ${activeForm.successMessage || 'Seus dados foram recebidos. Obrigado!'}
   </div>
 </div>
 
@@ -428,8 +448,12 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
         }
       })
       .catch(err => {
-        console.error(err);
-        alert('Erro ao conectar com o servidor CRM.');
+        console.error('[DentalGO Capture Error]:', err);
+        if (window.location.protocol === 'https:' && '${baseUrl}'.startsWith('http:')) {
+          alert('Erro de Conexão: Bloqueio de Segurança (Mixed Content).\\nEsta página está em HTTPS mas o CRM foi chamado via HTTP (' + '${baseUrl}' + ').\\nO navegador bloqueou o envio por segurança. É necessário configurar um domínio com SSL/HTTPS no CRM.');
+        } else {
+          alert('Erro ao conectar com o servidor CRM.');
+        }
       });
     });
   }
@@ -969,6 +993,48 @@ export default function FormsConfiguratorContent({ currentUser, pipelines, campa
                     </button>
                   )}
                 </div>
+
+                {/* Configuração da URL da API do CRM e Alerta de Mixed Content */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                    URL Pública da API do CRM (Recomendado HTTPS para Landing Pages):
+                  </label>
+                  <input
+                    type="text"
+                    value={customApiUrl}
+                    onChange={(e) => handleCustomApiUrlChange(e.target.value)}
+                    placeholder={typeof window !== 'undefined' ? window.location.origin : 'https://crm.dentalpresscursos.com.br'}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'var(--background)',
+                      color: 'var(--text-primary)',
+                      fontSize: 12,
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Deixe em branco para usar a origem atual do navegador ({typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}).
+                  </div>
+                </div>
+
+                {((customApiUrl.trim() || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')).startsWith('http://')) && (
+                  <div style={{
+                    marginBottom: 12,
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#ef4444',
+                    fontSize: 11,
+                    lineHeight: 1.45
+                  }}>
+                    ⚠️ <strong>Alerta de Bloqueio (Mixed Content):</strong> A URL atual usa <code>http://</code>. Se a sua landing page no WordPress usa <strong>HTTPS</strong> (ex: <code>https://dentalpresscursos.com.br</code>), o navegador bloqueará as requisições por segurança. Configure um domínio com SSL/HTTPS ou preencha a URL segura acima.
+                  </div>
+                )}
 
                 {!activeForm?.id ? (
                   <div style={{ padding: 20, textAlign: 'center', border: '1px dashed var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)' }}>

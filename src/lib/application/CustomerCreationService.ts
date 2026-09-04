@@ -40,7 +40,7 @@ export class CustomerCreationService {
       isPurchase = true
     } = data;
 
-    // 1. Resolve Identity (Person-based CDP V4)
+    // 1. Resolve Identity (Person-based CDP V4 com Ranking e Detecção de Conflitos)
     const fullName = metadata?.fullName || metadata?.name || null;
     const email = metadata?.email || null;
     const phoneNumber = metadata?.phoneNumber || metadata?.phone || null;
@@ -53,10 +53,11 @@ export class CustomerCreationService {
     });
 
     let personId: string;
+    let reviewRecord: any = null;
 
-    if (resolution.action === 'FOUND' && resolution.person) {
+    if ((resolution.action === 'AUTO_MATCH' || resolution.action === 'FOUND') && resolution.person) {
       personId = resolution.person.id;
-      // Enrich Person details if there are new signals
+      // Enrich Person details if there are new signals (Preserva campos canônicos)
       await IdentityResolutionService.registerAlias(personId, {
         source,
         externalId: externalPersonId ? String(externalPersonId) : undefined,
@@ -65,8 +66,67 @@ export class CustomerCreationService {
         name: fullName,
         rawData: metadata
       });
+    } else if (resolution.action === 'REVIEW_REQUIRED' || resolution.action === 'CONFLICT') {
+      const candidatePerson = resolution.person || resolution.candidates?.[0] || null;
+      const incomingExtId = externalPersonId ? String(externalPersonId) : `gen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+      try {
+        reviewRecord = await prisma.identityReview.create({
+          data: {
+            incomingSource: source,
+            incomingExternalId: incomingExtId,
+            candidatePersonId: candidatePerson?.id || null,
+            confidenceScore: resolution.confidence || 0,
+            evidences: resolution.evidences || [],
+            status: 'PENDING'
+          }
+        });
+        console.log(`[CDP V4] Ambiguidade/Conflito detectado (${resolution.action}): IdentityReview ${reviewRecord.id} criado.`);
+      } catch (err) {
+        console.error('[CDP V4] Erro ao criar IdentityReview:', err);
+      }
+
+      if (candidatePerson) {
+        personId = candidatePerson.id;
+        // Salva em alias sem alterar a identidade canônica
+        await IdentityResolutionService.registerAlias(personId, {
+          source,
+          externalId: externalPersonId ? String(externalPersonId) : undefined,
+          email,
+          phone: phoneNumber,
+          name: fullName,
+          rawData: {
+            ...metadata,
+            identityResolutionAction: resolution.action,
+            conflictReason: resolution.conflictReason
+          }
+        });
+      } else {
+        const cleanEmail = IdentityResolutionService.normalizeEmail(email);
+        const cleanPhone = IdentityResolutionService.normalizePhone(phoneNumber);
+        const newPerson = await prisma.person.create({
+          data: {
+            externalPersonId: externalPersonId || null,
+            fullName,
+            email: cleanEmail,
+            phoneNumber: cleanPhone,
+            source,
+            identityAliases: (cleanEmail || cleanPhone || fullName) ? {
+              create: {
+                source,
+                externalId: externalPersonId ? String(externalPersonId) : `gen_${Math.random().toString(36).substring(2, 11)}`,
+                email: cleanEmail,
+                phone: cleanPhone,
+                name: fullName,
+                rawData: metadata as any
+              }
+            } : undefined
+          }
+        });
+        personId = newPerson.id;
+      }
     } else {
-      // Create new canonical Person
+      // CREATE_NEW: Cria nova Person canônica
       const cleanEmail = IdentityResolutionService.normalizeEmail(email);
       const cleanPhone = IdentityResolutionService.normalizePhone(phoneNumber);
       const newPerson = await prisma.person.create({
@@ -91,6 +151,16 @@ export class CustomerCreationService {
       personId = newPerson.id;
     }
 
+    const enrichedMetadata = {
+      ...metadata,
+      ...(reviewRecord ? {
+        hasPendingReview: true,
+        identityReviewId: reviewRecord.id,
+        identityResolutionAction: resolution.action,
+        reviewReason: resolution.conflictReason || 'Revisão de correspondência de identidade necessária'
+      } : {})
+    };
+
     // Find if there is an existing Customer for this Person and journey
     let existingCustomer = await prisma.customer.findFirst({
       where: {
@@ -112,7 +182,7 @@ export class CustomerCreationService {
       // MERGE / ENRICHMENT
       const mergedMetadata = {
         ...(existingCustomer.metadata as Record<string, any> || {}),
-        ...metadata,
+        ...enrichedMetadata,
       };
 
       const updated = await prisma.customer.update({
@@ -137,7 +207,7 @@ export class CustomerCreationService {
           stage, // Legacy field
           tag,
           pipelineId, // Legacy field
-          metadata
+          metadata: enrichedMetadata
         }
       });
       
@@ -177,14 +247,31 @@ export class CustomerCreationService {
       }
     });
 
-    // 4. Create Opportunity (if pipeline is provided)
+    // 4. Create Opportunity with Submission Snapshot (if pipeline is provided)
+    let createdOpportunityId: string | null = null;
     if (pipelineId) {
+      const submissionSnapshot = {
+        submittedName: fullName || metadata?.fullName || metadata?.name || '',
+        submittedEmail: email || metadata?.email || '',
+        submittedPhone: phoneNumber || metadata?.phoneNumber || metadata?.phone || '',
+        capturedAt: new Date().toISOString(),
+        source,
+        lastFormId: metadata?.lastFormId || null,
+        lastFormName: metadata?.lastFormName || null,
+        ...(reviewRecord ? {
+          hasPendingReview: true,
+          identityReviewId: reviewRecord.id,
+          identityResolutionAction: resolution.action,
+          reviewReason: resolution.conflictReason || 'Revisão de correspondência de identidade necessária'
+        } : {})
+      };
+
       const existingOpp = await prisma.opportunity.findFirst({
         where: { customerId, pipelineId, productId: productId || null, status: 'OPEN' }
       });
 
       if (!existingOpp) {
-        await prisma.opportunity.create({
+        const newOpp = await prisma.opportunity.create({
           data: {
             customerId,
             pipelineId,
@@ -193,14 +280,14 @@ export class CustomerCreationService {
             sourceCampaignId,
             pricePaid,
             value: pricePaid,
-            saleChannel
+            saleChannel,
+            metadata: submissionSnapshot
           }
         });
-        console.log(`[Opportunity] Created new Opportunity for customer ${customerId} in pipeline ${pipelineId}`);
+        createdOpportunityId = newOpp.id;
+        console.log(`[Opportunity] Created new Opportunity ${newOpp.id} for customer ${customerId} in pipeline ${pipelineId}`);
 
         // RevOps Cross-Sell Conflict Detection:
-        // Se a oportunidade que estamos criando for no pipeline Vendas/Comercial,
-        // verificamos se o cliente já possui um atendimento ativo de pós-venda (CS).
         const targetPipeline = await prisma.pipeline.findUnique({ where: { id: pipelineId } });
         const isVendas = targetPipeline?.name === 'Vendas' || targetPipeline?.name?.toLowerCase().includes('venda') || targetPipeline?.name?.toLowerCase().includes('comercial');
 
@@ -235,10 +322,38 @@ export class CustomerCreationService {
           }
         }
       } else {
-        console.log(`[Opportunity] Customer ${customerId} already has an Opportunity in pipeline ${pipelineId}`);
+        createdOpportunityId = existingOpp.id;
+        console.log(`[Opportunity] Customer ${customerId} already has an Opportunity ${existingOpp.id} in pipeline ${pipelineId}. Updating submission snapshot.`);
+        
+        // Atualiza a oportunidade aberta com o snapshot mais recente
+        const existingMeta = (existingOpp.metadata as Record<string, any>) || {};
+        await prisma.opportunity.update({
+          where: { id: existingOpp.id },
+          data: {
+            metadata: {
+              ...existingMeta,
+              ...submissionSnapshot
+            }
+          }
+        });
       }
     }
 
-    return await prisma.customer.findUnique({ where: { id: customerId } });
+    const customerRecord: any = await prisma.customer.findUnique({ 
+      where: { id: customerId },
+      include: {
+        person: true,
+        opportunities: {
+          orderBy: { createdAt: 'desc' },
+          take: 5
+        }
+      }
+    });
+
+    if (customerRecord) {
+      customerRecord.lastCreatedOpportunityId = createdOpportunityId;
+    }
+
+    return customerRecord;
   }
 }

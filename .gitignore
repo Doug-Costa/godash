@@ -47,5 +47,6 @@ next-env.d.ts
 *.db-wal
 
 postgres_data/
+scratch/
 
 

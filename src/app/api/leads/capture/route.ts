@@ -147,11 +147,20 @@ export async function POST(request: Request) {
     });
 
     // 4. Atualiza a oportunidade do funil do formulário com atribuição e marketing.
-    const activeOpp = await prisma.opportunity.findFirst({
-      where: { customerId: customer.id, pipelineId: formConfig.campaign?.pipelineId || formConfig.pipelineId },
-    });
+    const createdOppId = (customer as any)?.lastCreatedOpportunityId;
+    const activeOpp = createdOppId 
+      ? await prisma.opportunity.findUnique({ where: { id: createdOppId } })
+      : await prisma.opportunity.findFirst({
+          where: { 
+            customerId: customer.id, 
+            pipelineId: formConfig.campaign?.pipelineId || formConfig.pipelineId,
+            ...(formConfig.campaign?.productId || formConfig.productId ? { productId: formConfig.campaign?.productId || formConfig.productId } : {})
+          },
+          orderBy: { createdAt: 'desc' }
+        });
 
     if (activeOpp) {
+      const existingMeta = (activeOpp.metadata as Record<string, any>) || {};
       await prisma.opportunity.update({
         where: { id: activeOpp.id },
         data: {
@@ -167,6 +176,7 @@ export async function POST(request: Request) {
           saleChannel: SaleChannel.INBOUND_FORM,
           assigneeId: assignedToId,
           metadata: {
+            ...existingMeta,
             formId: formConfig.id,
             formName: formConfig.name,
             pageUrl: page_url || null,
