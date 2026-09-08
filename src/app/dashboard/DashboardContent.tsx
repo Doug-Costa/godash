@@ -572,6 +572,46 @@ export default function DashboardContent({
     setLeadsPage(1);
   }, [filterPlan, filterSearch, filterStage, filterAssignee, filterMonth, filterCampaignId, activeTab, atendimentoFila, atendimentoViewMode]);
 
+  const fetchEstimatedAudience = async (
+    rulesToEvaluate = campaignRules,
+    relation = campaignRulesRelation,
+    exclude = excludeNurturing
+  ) => {
+    setLoadingEstimate(true);
+    try {
+      const res = await fetch('/api/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'estimate',
+          rules: rulesToEvaluate,
+          rulesRelation: relation,
+          excludeNurturing: exclude
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEstimatedAudience(data.count || 0);
+        setCampaignCollisionCount(data.collisionCount || 0);
+        if (data.audience && Array.isArray(data.audience)) {
+          setPlannedCampaignAudience(data.audience);
+          setSelectedTestCustomerIds(prev => {
+            if (prev.length > 0) return prev;
+            return data.audience.length > 0 ? [data.audience[0].customerId] : [];
+          });
+          return data.audience;
+        } else if (data.count === 0) {
+          setPlannedCampaignAudience([]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to estimate audience:', err);
+    } finally {
+      setLoadingEstimate(false);
+    }
+    return [];
+  };
+
   // Fetch estimated audience for campaign wizard (debounced)
   useEffect(() => {
     if (!showCampaignModal) return;
@@ -579,36 +619,10 @@ export default function DashboardContent({
       .then(response => response.ok ? response.json() : null)
       .then(json => setCanonicalFlows(json?.data || []))
       .catch(() => setCanonicalFlows([]));
-    
-    const delayDebounceFn = setTimeout(async () => {
-      setLoadingEstimate(true);
-      try {
-        const res = await fetch('/api/campaigns', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'estimate',
-            rules: campaignRules,
-            rulesRelation: campaignRulesRelation,
-            excludeNurturing: excludeNurturing
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setEstimatedAudience(data.count || 0);
-          setCampaignCollisionCount(data.collisionCount || 0);
-          if (data.audience && Array.isArray(data.audience)) {
-            setPlannedCampaignAudience(data.audience);
-          } else if (data.count === 0) {
-            setPlannedCampaignAudience([]);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to estimate audience:', err);
-      } finally {
-        setLoadingEstimate(false);
-      }
-    }, 500);
+
+    const delayDebounceFn = setTimeout(() => {
+      fetchEstimatedAudience(campaignRules, campaignRulesRelation, excludeNurturing);
+    }, 400);
 
     return () => clearTimeout(delayDebounceFn);
   }, [campaignRules, campaignRulesRelation, excludeNurturing, showCampaignModal]);
@@ -1509,12 +1523,19 @@ export default function DashboardContent({
       alert('Informe o nome da campanha.');
       return;
     }
-    const controlledTestIds: Array<string | number> = selectedTestCustomerIds.length
+    let controlledTestIds: Array<string | number> = selectedTestCustomerIds.length
       ? selectedTestCustomerIds
       : selectedLeadIds;
+
     if (runTest && controlledTestIds.length === 0) {
-      alert('Selecione na Audiência ao menos uma pessoa para o teste controlado.');
-      return;
+      if (plannedCampaignAudience.length > 0) {
+        const fallbackId = plannedCampaignAudience[0].customerId;
+        controlledTestIds = [fallbackId];
+        setSelectedTestCustomerIds([fallbackId]);
+      } else {
+        alert('Não há contatos disponíveis na audiência para realizar o teste controlado. Verifique a Etapa 2 (Segmentação).');
+        return;
+      }
     }
     try {
       const flowSteps = nodes.filter(n => n.id !== 'start').map(n => ({
@@ -1656,14 +1677,23 @@ export default function DashboardContent({
 
   const handleEditCanonicalCampaign = (campaign: any) => {
     let criteria: any = {};
-    try { criteria = campaign.targetCriteria ? JSON.parse(campaign.targetCriteria) : {}; } catch { criteria = {}; }
+    try {
+      criteria = campaign.targetCriteria
+        ? (typeof campaign.targetCriteria === 'string' ? JSON.parse(campaign.targetCriteria) : campaign.targetCriteria)
+        : {};
+    } catch {
+      criteria = {};
+    }
     setEditingCampaignId(campaign.id);
     setCampaignName(campaign.name || '');
     setCampaignNature(campaign.campaignNature || 'COMMERCIAL');
-    setCampaignRules(criteria.rules || []);
-    setCampaignRulesRelation(criteria.rulesRelation || 'AND');
+    const parsedRules = criteria.rules || [];
+    const parsedRelation = criteria.rulesRelation || 'AND';
+    const parsedExclude = criteria.excludeNurturing !== false;
+    setCampaignRules(parsedRules);
+    setCampaignRulesRelation(parsedRelation);
     setCampaignStartDate(criteria.startDate || new Date().toISOString().slice(0, 10));
-    setExcludeNurturing(criteria.excludeNurturing !== false);
+    setExcludeNurturing(parsedExclude);
     setCampaignAgentIds((campaign.operators || []).map((operator: any) => operator.id));
     setCampaignPipelineId(campaign.pipelineId || '');
     setCampaignProductId(campaign.productId || '');
@@ -1671,8 +1701,15 @@ export default function DashboardContent({
     setCampaignRoutingMode(campaign.routingMode || 'ROUND_ROBIN');
     setCampaignUseAccountManager(campaign.useAccountManager === true);
     setCampaignStrictSkillMatch(campaign.strictSkillMatch === true);
-    setPlannedCampaignAudience(campaign.audience || []);
-    setSelectedTestCustomerIds([]);
+
+    if (campaign.audience && campaign.audience.length > 0) {
+      setPlannedCampaignAudience(campaign.audience);
+      setSelectedTestCustomerIds([campaign.audience[0].customerId]);
+    } else {
+      setPlannedCampaignAudience([]);
+      setSelectedTestCustomerIds([]);
+    }
+    fetchEstimatedAudience(parsedRules, parsedRelation, parsedExclude);
     setWizardStep(2);
     setShowCampaignModal(true);
   };
@@ -6002,7 +6039,7 @@ export default function DashboardContent({
               )}
 
               {wizardStep === 4 && (
-                <div className="animate-fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '52vh' }}>
+                <div className="animate-fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12, alignItems: 'center' }}>
                     <label className="label-sm">Usar fluxo publicado:</label>
                     <select
@@ -6016,7 +6053,7 @@ export default function DashboardContent({
                       ))}
                     </select>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr', gap: 16, flex: 1, minHeight: 0, opacity: campaignFlowId ? 0.45 : 1, pointerEvents: campaignFlowId ? 'none' : 'auto' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2.5fr 1.5fr', gap: 16, height: '420px', minHeight: '360px', opacity: campaignFlowId ? 0.45 : 1, pointerEvents: campaignFlowId ? 'none' : 'auto' }}>
                   {/* React Flow Board */}
                   <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface-raised)', position: 'relative', overflow: 'hidden' }}>
                     <ReactFlow
@@ -6236,34 +6273,140 @@ export default function DashboardContent({
                     )}
                   </div>
                   </div>
+
+                  {/* Audiência para Teste Controlado (Sempre visível no layout da Régua) */}
+                  <div style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 12,
+                    padding: 14,
+                    background: 'var(--surface-raised)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                      <div>
+                        <h5 style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          🎯 Audiência para Teste Controlado
+                          <span className="badge badge-purple" style={{ fontSize: 10 }}>
+                            {plannedCampaignAudience.length} contato(s) elegíveis
+                          </span>
+                        </h5>
+                        <p style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '3px 0 0 0' }}>
+                          Marque ao menos um contato para o ensaio seguro. Apenas os selecionados receberão o disparo de teste.
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {plannedCampaignAudience.length > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTestCustomerIds(plannedCampaignAudience.slice(0, 1).map(m => m.customerId))}
+                              className="btn-action btn-action-outline"
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                            >
+                              1º Contato
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTestCustomerIds(plannedCampaignAudience.map(m => m.customerId))}
+                              className="btn-action btn-action-outline"
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                            >
+                              Selecionar Todos
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTestCustomerIds([])}
+                              className="btn-action btn-action-outline"
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                            >
+                              Limpar
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => fetchEstimatedAudience()}
+                          disabled={loadingEstimate}
+                          className="btn-action btn-action-outline"
+                          style={{ fontSize: 11, padding: '3px 8px' }}
+                          title="Recarregar audiência a partir das regras"
+                        >
+                          {loadingEstimate ? '⏳ Carregando...' : '🔄 Atualizar'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {loadingEstimate ? (
+                      <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                        ⏳ Buscando contatos elegíveis da segmentação...
+                      </div>
+                    ) : plannedCampaignAudience.length > 0 ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8, maxHeight: 150, overflowY: 'auto', padding: '2px 0' }}>
+                        {plannedCampaignAudience.map((member, idx) => {
+                          const isChecked = selectedTestCustomerIds.includes(member.customerId);
+                          return (
+                            <label
+                              key={member.id || member.customerId || idx}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                padding: '8px 12px',
+                                borderRadius: 8,
+                                background: isChecked ? 'rgba(124, 58, 237, 0.08)' : 'var(--surface)',
+                                border: isChecked ? '1px solid var(--accent)' : '1px solid var(--border)',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s'
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  setSelectedTestCustomerIds(current => e.target.checked
+                                    ? [...current, member.customerId]
+                                    : current.filter(id => id !== member.customerId));
+                                }}
+                                style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                              />
+                              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                                <span style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {member.name || 'Contato sem nome'}
+                                </span>
+                                <span style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {member.email || member.phone || 'Sem e-mail/tel'}
+                                </span>
+                              </div>
+                              {isChecked && (
+                                <span style={{ fontSize: 10, color: 'var(--accent)', fontWeight: 700 }}>
+                                  Selecionado
+                                </span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                        <div style={{ fontSize: 12, color: 'var(--yellow-dark, #eab308)', lineHeight: 1.4 }}>
+                          ⚠️ <strong>Nenhum contato encontrado nesta audiência.</strong> Verifique os filtros na <strong>Etapa 2 (Segmentação)</strong> ou envie um formulário de teste e clique em Atualizar.
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => fetchEstimatedAudience()}
+                          className="btn-action btn-action-outline"
+                          style={{ fontSize: 11, padding: '4px 10px', whiteSpace: 'nowrap' }}
+                        >
+                          🔄 Recarregar
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
-
-            {wizardStep === 4 && plannedCampaignAudience.length > 0 && (
-              <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginTop: 12, background: 'var(--surface-raised)' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
-                  Audiência da campanha ({plannedCampaignAudience.length}) — selecione quem receberá o teste controlado:
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 140, overflowY: 'auto' }}>
-                  {plannedCampaignAudience.map(member => (
-                    <label key={member.id || member.customerId} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedTestCustomerIds.includes(member.customerId)}
-                        onChange={(event) => setSelectedTestCustomerIds(current => event.target.checked
-                          ? [...current, member.customerId]
-                          : current.filter(id => id !== member.customerId))}
-                      />
-                      <span>{member.name || 'Contato sem nome'}{member.email ? ` — ${member.email}` : ''}{member.phone ? ` (${member.phone})` : ''}</span>
-                    </label>
-                  ))}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-                  O teste cria uma inscrição isolada. Os demais contatos continuam apenas planejados e a campanha não é ativada para eles.
-                </div>
-              </div>
-            )}
 
             {/* Stepper Footer Controls */}
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 16 }}>

@@ -134,7 +134,16 @@ export class CampaignOrchestrationService {
   private static async resolveAudience(customerIds: Array<string | number>) {
     const resolved: string[] = [];
     for (const rawId of customerIds) {
-      const externalId = typeof rawId === 'number' ? rawId : rawId.startsWith('ext_') ? Number(rawId.slice(4)) : null;
+      if (!rawId) continue;
+      const isNumeric = typeof rawId === 'number' || (typeof rawId === 'string' && (/^\d+$/.test(rawId) || rawId.startsWith('ext_')));
+      const externalId = typeof rawId === 'number'
+        ? rawId
+        : (typeof rawId === 'string' && rawId.startsWith('ext_'))
+          ? Number(rawId.slice(4))
+          : (typeof rawId === 'string' && /^\d+$/.test(rawId))
+            ? Number(rawId)
+            : null;
+
       if (externalId !== null && Number.isFinite(externalId)) {
         let customer = await prisma.customer.findFirst({ where: { externalPersonId: externalId } });
         if (!customer) {
@@ -143,7 +152,15 @@ export class CampaignOrchestrationService {
         }
         resolved.push(customer.id);
       } else if (typeof rawId === 'string') {
-        resolved.push(rawId);
+        let customer = await prisma.customer.findUnique({ where: { id: rawId }, select: { id: true } });
+        if (!customer) {
+          customer = await prisma.customer.findFirst({ where: { personId: rawId }, select: { id: true } });
+        }
+        if (customer) {
+          resolved.push(customer.id);
+        } else {
+          resolved.push(rawId);
+        }
       }
     }
     return [...new Set(resolved)];
@@ -239,10 +256,10 @@ export class CampaignOrchestrationService {
     if (collisions) warnings.push(`${collisions} contato(s) estão em nutrição e serão excluídos.`);
     const channels = new Set((campaign.flowVersion?.steps || []).map(step => step.channel).filter(Boolean));
     const missingEmail = channels.has('EMAIL')
-      ? customers.filter(customer => !customer.person.email && !(customer.metadata as any)?.email).length
+      ? customers.filter(customer => !customer.person?.email && !(customer.metadata as any)?.email).length
       : 0;
     const missingPhone = channels.has('WHATSAPP')
-      ? customers.filter(customer => !customer.person.phoneNumber && !(customer.metadata as any)?.phoneNumber).length
+      ? customers.filter(customer => !customer.person?.phoneNumber && !(customer.metadata as any)?.phoneNumber).length
       : 0;
     if (missingEmail) errors.push(`${missingEmail} contato(s) não possuem e-mail para o fluxo selecionado.`);
     if (missingPhone) errors.push(`${missingPhone} contato(s) não possuem telefone para o fluxo selecionado.`);
