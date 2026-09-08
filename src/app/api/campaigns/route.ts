@@ -410,7 +410,47 @@ export async function POST(request: Request) {
         }
       });
 
-      return NextResponse.json({ success: true, count: targetLeadIds.length, collisionCount });
+      const stringIds = targetLeadIds.filter(id => typeof id === 'string') as string[];
+      const numberIds = targetLeadIds.filter(id => typeof id === 'number') as number[];
+
+      const customers = targetLeadIds.length > 0
+        ? await prisma.customer.findMany({
+            where: {
+              OR: [
+                ...(stringIds.length > 0 ? [{ id: { in: stringIds } }] : []),
+                ...(numberIds.length > 0 ? [{ externalPersonId: { in: numberIds } }] : [])
+              ]
+            },
+            take: 100,
+            select: {
+              id: true,
+              externalPersonId: true,
+              metadata: true,
+              person: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                  phoneNumber: true
+                }
+              }
+            }
+          })
+        : [];
+
+      const audience = customers.map(c => {
+        const meta = (c.metadata as any) || {};
+        return {
+          id: c.id,
+          customerId: c.id,
+          name: c.person?.fullName || meta.fullName || meta.name || 'Contato sem nome',
+          email: c.person?.email || meta.email || '',
+          phone: c.person?.phoneNumber || meta.phoneNumber || meta.phone || '',
+          status: 'PLANNED'
+        };
+      });
+
+      return NextResponse.json({ success: true, count: targetLeadIds.length, collisionCount, audience });
     }
 
     // 3. Ação de Lançamento / Ativação Direta (Wizard Finalizado)

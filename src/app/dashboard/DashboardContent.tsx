@@ -597,6 +597,11 @@ export default function DashboardContent({
           const data = await res.json();
           setEstimatedAudience(data.count || 0);
           setCampaignCollisionCount(data.collisionCount || 0);
+          if (data.audience && Array.isArray(data.audience)) {
+            setPlannedCampaignAudience(data.audience);
+          } else if (data.count === 0) {
+            setPlannedCampaignAudience([]);
+          }
         }
       } catch (err) {
         console.error('Failed to estimate audience:', err);
@@ -3197,6 +3202,8 @@ export default function DashboardContent({
                   onClick={() => {
                     setEditingCampaignId(null);
                     setCampaignName('');
+                    setPlannedCampaignAudience([]);
+                    setSelectedTestCustomerIds([]);
                     setCampaignSteps([{ dayOffset: 1, channel: 'WHATSAPP', messageTemplate: 'Olá {{nome}}, tudo bem?' }]);
                     setShowCampaignModal(true);
                   }} 
@@ -6233,14 +6240,14 @@ export default function DashboardContent({
               )}
             </div>
 
-            {wizardStep === 4 && editingCampaignId && plannedCampaignAudience.length > 0 && (
+            {wizardStep === 4 && plannedCampaignAudience.length > 0 && (
               <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginTop: 12, background: 'var(--surface-raised)' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
-                  Audiência planejada ({plannedCampaignAudience.length}) — selecione quem receberá o teste
+                  Audiência da campanha ({plannedCampaignAudience.length}) — selecione quem receberá o teste controlado:
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 140, overflowY: 'auto' }}>
                   {plannedCampaignAudience.map(member => (
-                    <label key={member.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                    <label key={member.id || member.customerId} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
                       <input
                         type="checkbox"
                         checked={selectedTestCustomerIds.includes(member.customerId)}
@@ -6248,7 +6255,7 @@ export default function DashboardContent({
                           ? [...current, member.customerId]
                           : current.filter(id => id !== member.customerId))}
                       />
-                      <span>{member.name || 'Contato sem nome'}{member.email ? ` — ${member.email}` : ''}</span>
+                      <span>{member.name || 'Contato sem nome'}{member.email ? ` — ${member.email}` : ''}{member.phone ? ` (${member.phone})` : ''}</span>
                     </label>
                   ))}
                 </div>
