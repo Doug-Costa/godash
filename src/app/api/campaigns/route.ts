@@ -197,7 +197,7 @@ async function getMatchingPersonIdsFromSubscriptions(rule: any) {
   return (rows as any[]).map((r) => Number(r.personId)).filter((id) => !isNaN(id));
 }
 
-async function getSegmentedLeadIds(rules: any[], relation: 'AND' | 'OR', excludeNurturing: boolean) {
+export async function getSegmentedLeadIds(rules: any[], relation: 'AND' | 'OR', excludeNurturing: boolean) {
   let mysqlPersonIds: number[] = [];
   
   if (rules && Array.isArray(rules)) {
@@ -473,23 +473,29 @@ export async function POST(request: Request) {
           startsAt: startDate || null,
           excludeNurturing: excludeNurturing !== false
         }, campaignId || undefined);
-        if (campaignId) {
-          const preflight = await CampaignOrchestrationService.preflight(canonicalCampaign!.id);
-          if (!preflight.valid) {
-            return NextResponse.json({ success: false, error: preflight.errors.join(' '), data: preflight }, { status: 400 });
-          }
-          const enrollments = await CampaignOrchestrationService.enroll(canonicalCampaign!.id, [], { activate: true, sourceType: 'SEGMENT' });
-          return NextResponse.json({ success: true, data: canonicalCampaign, leadsAssignedCount: enrollments.length });
-        }
-        const canonicalAudience = await getSegmentedLeadIds(rules, rulesRelation || 'AND', excludeNurturing !== false);
-        if (canonicalAudience.length === 0) {
+        const segmentedAudience = (rules && Array.isArray(rules) && rules.length > 0)
+          ? await getSegmentedLeadIds(rules, rulesRelation || 'AND', excludeNurturing !== false)
+          : [];
+        const audienceIds = segmentedAudience.length > 0
+          ? segmentedAudience
+          : (canonicalCampaign ? await CampaignOrchestrationService.getPlannedAudienceIds(canonicalCampaign.id) : []);
+
+        if (audienceIds.length === 0) {
           return NextResponse.json({
             success: false,
-            error: 'Campanha salva como rascunho, mas nenhuma pessoa elegível foi encontrada. Adicione a audiência e execute o preflight antes de ativar.',
+            error: 'Campanha salva como rascunho, mas nenhuma pessoa elegível foi encontrada para os critérios selecionados. Adicione ou ajuste as regras de público antes de ativar.',
             data: canonicalCampaign
           }, { status: 400 });
         }
-        const enrollments = await CampaignOrchestrationService.enroll(canonicalCampaign!.id, canonicalAudience, { sourceType: 'SEGMENT' });
+
+        await CampaignOrchestrationService.stageAudience(canonicalCampaign!.id, audienceIds, 'SEGMENT');
+
+        const preflight = await CampaignOrchestrationService.preflight(canonicalCampaign!.id, audienceIds);
+        if (!preflight.valid) {
+          return NextResponse.json({ success: false, error: preflight.errors.join(' '), data: preflight }, { status: 400 });
+        }
+
+        const enrollments = await CampaignOrchestrationService.enroll(canonicalCampaign!.id, audienceIds, { activate: true, sourceType: 'SEGMENT' });
         return NextResponse.json({ success: true, data: canonicalCampaign, leadsAssignedCount: enrollments.length });
       }
 

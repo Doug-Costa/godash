@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import prisma from '@/lib/prisma';
 import { CampaignOrchestrationService } from '@/lib/application/CampaignOrchestrationService';
+import { getSegmentedLeadIds } from '@/app/api/campaigns/route';
 
 async function requireAdmin() {
   const session = await auth();
@@ -39,6 +40,20 @@ export async function POST(request: Request) {
     if (body.action === 'save-draft') {
       if (!body.name || !body.campaignNature) throw new Error('Nome e natureza são obrigatórios.');
       const campaign = await CampaignOrchestrationService.saveDraft(body, body.campaignId);
+      if (campaign && body.targetCriteria?.rules && Array.isArray(body.targetCriteria.rules) && body.targetCriteria.rules.length > 0) {
+        try {
+          const leadIds = await getSegmentedLeadIds(
+            body.targetCriteria.rules,
+            body.targetCriteria.rulesRelation || 'AND',
+            body.targetCriteria.excludeNurturing !== false
+          );
+          if (leadIds.length > 0) {
+            await CampaignOrchestrationService.stageAudience(campaign.id, leadIds, 'SEGMENT');
+          }
+        } catch (err) {
+          console.error('Erro ao estagiar audiência no save-draft:', err);
+        }
+      }
       return NextResponse.json({ success: true, data: campaign });
     }
     if (body.action === 'preflight') {
@@ -64,6 +79,7 @@ export async function POST(request: Request) {
     }
     if (body.action === 'activate' || body.action === 'enroll') {
       const result = await CampaignOrchestrationService.enroll(body.campaignId, body.customerIds || [], {
+        activate: true,
         sourceType: body.sourceType || 'SEGMENT',
         sourceFormId: body.sourceFormId,
         fixedAssigneeId: body.fixedAssigneeId

@@ -174,12 +174,16 @@ export class CampaignOrchestrationService {
     return { removed: result.count };
   }
 
-  private static async plannedAudienceIds(campaignId: string) {
+  static async getPlannedAudienceIds(campaignId: string) {
     const rows = await prisma.campaignAudienceMember.findMany({
       where: { campaignId, status: 'PLANNED' },
       select: { customerId: true }
     });
     return rows.map(row => row.customerId);
+  }
+
+  private static async plannedAudienceIds(campaignId: string) {
+    return this.getPlannedAudienceIds(campaignId);
   }
 
   static async preflight(campaignId: string, customerIds: Array<string | number> = []) {

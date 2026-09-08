@@ -5644,7 +5644,10 @@ export default function DashboardContent({
                 <p className="label-sm">Siga os 3 passos para segmentar seu público, definir a equipe de atendimento e desenhar a régua.</p>
               </div>
               <button 
-                onClick={() => setShowCampaignModal(false)}
+                onClick={() => {
+                  setShowCampaignModal(false);
+                  setEditingCampaignId(null);
+                }}
                 style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 24, cursor: 'pointer' }}
               >
                 &times;
@@ -6270,6 +6273,7 @@ export default function DashboardContent({
                     setWizardStep((wizardStep - 1) as any);
                   } else {
                     setShowCampaignModal(false);
+                    setEditingCampaignId(null);
                   }
                 }} 
                 className="btn-action btn-action-outline"
