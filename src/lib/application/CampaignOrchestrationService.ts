@@ -45,6 +45,7 @@ export class CampaignOrchestrationService {
       config?: Record<string, unknown>;
       messageTemplate?: string;
       provider?: string;
+      smtpConfigId?: string | null;
     }>;
   }) {
     return prisma.$transaction(async tx => {
@@ -77,7 +78,8 @@ export class CampaignOrchestrationService {
               config: {
                 ...(step.config || {}),
                 messageTemplate: step.messageTemplate || '',
-                provider: step.provider || 'EVOLUTION'
+                provider: step.provider || 'EVOLUTION',
+                smtpConfigId: step.smtpConfigId || (step.config as any)?.smtpConfigId || null
               }
             }))
           }

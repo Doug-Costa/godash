@@ -1382,13 +1382,21 @@ export default function DashboardContent({
     const lastY = lastNode ? lastNode.position.y : 50;
     const newY = lastY + 80;
     
+    const stepDay = Math.max(0, nodes.length - 1);
+    const defaultTemplate = channel === 'EMAIL'
+      ? 'Olá {{customer.name}}, temos uma oportunidade especial para você!'
+      : channel === 'WHATSAPP'
+        ? 'Olá {{customer.name}}, tudo bem? Gostaria de conversar sobre seu interesse em nossos serviços.'
+        : 'Ligação de contato de relacionamento';
+
     const newNode = {
       id,
       data: { 
-        label: `${emoji} ${channel} (Dia ${nodes.length})`, 
+        label: `${emoji} ${channel} (Dia ${stepDay})`, 
         channel, 
-        dayOffset: nodes.length, 
-        messageTemplate: '' 
+        dayOffset: stepDay, 
+        messageTemplate: defaultTemplate,
+        smtpConfigId: null
       },
       position: { x: 200, y: newY },
       style: {
@@ -1437,7 +1445,8 @@ export default function DashboardContent({
           messageTemplate: n.data.messageTemplate || '',
           templateId: n.data.templateId || null,
           provider: n.data.provider || 'EVOLUTION',
-          nextFlowId: n.data.nextFlowId || null
+          nextFlowId: n.data.nextFlowId || null,
+          smtpConfigId: n.data.smtpConfigId || null
         }))
         .sort((a, b) => a.dayOffset - b.dayOffset);
 
@@ -1544,7 +1553,8 @@ export default function DashboardContent({
         channel: n.data.channel,
         messageTemplate: n.data.messageTemplate || '',
         templateId: n.data.templateId || null,
-        provider: n.data.provider || 'EVOLUTION'
+        provider: n.data.provider || 'EVOLUTION',
+        smtpConfigId: n.data.smtpConfigId || null
       })).sort((a, b) => a.dayOffset - b.dayOffset);
       let selectedFlowId = campaignFlowId;
       if (!selectedFlowId && flowSteps.length > 0) {
@@ -3286,7 +3296,7 @@ export default function DashboardContent({
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
                       <strong>Passos da Régua:</strong>
                       <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
-                        {campaign.flowSteps?.map((step: any) => (
+                        {campaign.flowSteps?.filter((step: any) => step.channel).map((step: any) => (
                           <li key={step.id}>Dia {step.dayOffset}: {step.channel}</li>
                         ))}
                       </ul>

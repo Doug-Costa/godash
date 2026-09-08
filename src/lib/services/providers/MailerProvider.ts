@@ -62,9 +62,20 @@ export class MailerProvider implements NotificationProvider {
       const compiledSubject = compileTemplate(template.subject || 'Notificação', variables);
       const compiledBody = compileTemplate(template.content, variables);
 
+      // Sanitize host and port
+      let rawHost = String(config.host).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
+      let port = Number(config.port) || 587;
+      if (rawHost.includes(':')) {
+        const parts = rawHost.split(':');
+        rawHost = parts[0];
+        if (parts[1] && !isNaN(Number(parts[1]))) {
+          port = Number(parts[1]);
+        }
+      }
+
       const transporter = nodemailer.createTransport({
-        host: config.host,
-        port: Number(config.port),
+        host: rawHost,
+        port,
         secure: config.secure === true || config.secure === 'true',
         auth: {
           user: config.user,
@@ -72,8 +83,11 @@ export class MailerProvider implements NotificationProvider {
         },
       });
 
+      const senderName = config.name || 'DentalGO';
+      const senderEmail = config.fromEmail || config.user;
+
       const info = await transporter.sendMail({
-        from: `"${config.name || 'DentalGO'}" <${config.user}>`,
+        from: `"${senderName}" <${senderEmail}>`,
         to,
         subject: compiledSubject,
         html: compiledBody,
@@ -101,9 +115,20 @@ export class MailerProvider implements NotificationProvider {
         passwordToTest = config.pass;
       }
 
+      // Sanitize host and port
+      let rawHost = String(config.host).replace(/^https?:\/\//i, '').replace(/\/.*$/, '').trim();
+      let port = Number(config.port) || 587;
+      if (rawHost.includes(':')) {
+        const parts = rawHost.split(':');
+        rawHost = parts[0];
+        if (parts[1] && !isNaN(Number(parts[1]))) {
+          port = Number(parts[1]);
+        }
+      }
+
       const transporter = nodemailer.createTransport({
-        host: config.host,
-        port: Number(config.port),
+        host: rawHost,
+        port,
         secure: config.secure === true || config.secure === 'true',
         auth: {
           user: config.user,

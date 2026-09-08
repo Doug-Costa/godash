@@ -494,7 +494,8 @@ export async function POST(request: Request) {
           steps: (flowSteps || []).map((step: any) => ({
             type: step.type || 'MESSAGE', channel: step.channel, templateId: step.templateId || null,
             dayOffset: Number(step.dayOffset) || 0, messageTemplate: step.messageTemplate || '', provider: step.provider || 'EVOLUTION',
-            nextFlowId: step.nextFlowId || null
+            nextFlowId: step.nextFlowId || null,
+            smtpConfigId: step.smtpConfigId || null
           }))
         })).flow.id;
         const canonicalCampaign = await CampaignOrchestrationService.saveDraft({

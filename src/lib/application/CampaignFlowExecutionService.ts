@@ -48,10 +48,10 @@ export class CampaignFlowExecutionService {
     if (step.type === 'MESSAGE') {
       const template = step.templateId ? await prisma.template.findUnique({ where: { id: step.templateId } }) : null;
       const channel = (step.channel || template?.type || 'WHATSAPP').toUpperCase();
-      const content = template?.content || config.messageTemplate || '';
-      const subject = template?.subject || 'Mensagem';
-      const person = enrollment.customer.person;
-      const customerMetadata = (enrollment.customer.metadata as Record<string, any>) || {};
+      const content = template?.content || config.messageTemplate || 'Mensagem de acompanhamento DentalGO';
+      const subject = template?.subject || config.subject || `Campanha ${enrollment.campaign.name}`;
+      const person = enrollment.customer?.person || {};
+      const customerMetadata = (enrollment.customer?.metadata as Record<string, any>) || {};
       const variables = {
         ...customerMetadata,
         customer: {
@@ -63,7 +63,7 @@ export class CampaignFlowExecutionService {
         campaign: { name: enrollment.campaign.name }
       };
       const recipient = channel === 'EMAIL' ? variables.customer.email : variables.customer.phone;
-      if (!recipient || !content) throw new Error(`Passo ${step.order}: destinatário ou conteúdo ausente.`);
+      if (!recipient || !content) throw new Error(`Passo ${step.order}: destinatário (${recipient || 'vazio'}) ou conteúdo ausente.`);
       const success = await NotificationService.sendTemplate(
         recipient,
         channel === 'EMAIL' ? 'EMAIL' : 'WHATSAPP',
@@ -71,7 +71,9 @@ export class CampaignFlowExecutionService {
           ? { subject: compileTemplate(subject, variables), content: compileTemplate(content, variables) }
           : { content: compileTemplate(content, variables) },
         variables,
-        channel === 'WHATSAPP' ? { provider: config.provider || 'EVOLUTION' } : undefined
+        channel === 'EMAIL'
+          ? { provider: 'MAILER', smtpConfigId: config.smtpConfigId || (enrollment.campaign as any).smtpConfigId || null }
+          : { provider: config.provider || 'EVOLUTION' }
       );
       await prisma.interaction.create({
         data: {

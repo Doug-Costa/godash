@@ -10,10 +10,14 @@ export const automationWorker = new Worker(
   async (job: Job) => {
     if (job.name === 'campaign-flow-step') {
       const { enrollmentId, stepId } = job.data;
+      console.log(`[AutomationWorker] 🚀 Processing campaign-flow-step for enrollment ${enrollmentId}, step ${stepId}`);
       const { CampaignFlowExecutionService } = await import('../application/CampaignFlowExecutionService');
       try {
-        return await CampaignFlowExecutionService.process(enrollmentId, stepId);
+        const result = await CampaignFlowExecutionService.process(enrollmentId, stepId);
+        console.log(`[AutomationWorker] ✅ Step processed successfully for enrollment ${enrollmentId}`);
+        return result;
       } catch (error: any) {
+        console.error(`[AutomationWorker] ❌ Failed step execution for enrollment ${enrollmentId}:`, error.message);
         await CampaignFlowExecutionService.fail(enrollmentId, error.message || 'Falha na execução do fluxo.');
         throw error;
       }
