@@ -47,47 +47,46 @@ export default function MonthSelector({ currentMonth, allowAll = true, onChange 
   };
 
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'nowrap' }}>
       {allowAll && (
         <button
           type="button"
           onClick={handleToggleAll}
-          title={isAll ? 'Filtro Todos os Meses ativo. Clique para destravar e filtrar pelo mês selecionado.' : 'Clique para ver todos os meses'}
+          title={isAll ? 'Todos os Meses ativo. Clique para destravar e filtrar pelo mês.' : 'Clique para ver todos os meses'}
           style={{
+            height: 38,
             background: isAll ? 'var(--accent)' : 'var(--surface)',
-            border: isAll ? '1px solid var(--accent)' : '1px solid var(--border)',
+            border: `1px solid ${isAll ? 'var(--accent)' : 'var(--border)'}`,
             color: isAll ? '#fff' : 'var(--text-secondary)',
             borderRadius: 8,
-            padding: '6px 12px',
+            padding: '0 12px',
             fontSize: 12,
             fontWeight: 600,
             cursor: 'pointer',
             transition: 'all 0.2s',
-            display: 'flex',
+            display: 'inline-flex',
             alignItems: 'center',
-            gap: 6
+            gap: 6,
+            whiteSpace: 'nowrap',
+            flexShrink: 0
           }}
         >
           <span>📅 Todos os Meses</span>
-          {isAll && (
-            <span style={{ fontSize: 10, opacity: 0.9, background: 'rgba(0,0,0,0.2)', padding: '1px 5px', borderRadius: 4 }}>
-              Destravar ✕
-            </span>
-          )}
         </button>
       )}
 
-      <div style={{ display: 'flex', gap: 4, opacity: isAll ? 0.85 : 1, alignItems: 'center' }}>
+      <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
         <select
           value={year}
           onChange={(e) => handleUpdate(e.target.value, month)}
           title="Selecione o ano da competência"
           style={{
+            height: 38,
             background: 'var(--surface)',
-            border: isAll ? '1px dashed var(--accent)' : '1px solid var(--border)',
+            border: '1px solid var(--border)',
             color: 'var(--text-primary)',
             borderRadius: 8,
-            padding: '6px 10px',
+            padding: '0 8px',
             fontSize: 12,
             fontWeight: 600,
             cursor: 'pointer',
@@ -103,11 +102,12 @@ export default function MonthSelector({ currentMonth, allowAll = true, onChange 
           onChange={(e) => handleUpdate(year, e.target.value)}
           title="Selecione o mês da competência"
           style={{
+            height: 38,
             background: 'var(--surface)',
-            border: isAll ? '1px dashed var(--accent)' : '1px solid var(--border)',
+            border: '1px solid var(--border)',
             color: 'var(--text-primary)',
             borderRadius: 8,
-            padding: '6px 10px',
+            padding: '0 8px',
             fontSize: 12,
             fontWeight: 600,
             cursor: 'pointer',
@@ -118,25 +118,6 @@ export default function MonthSelector({ currentMonth, allowAll = true, onChange 
           {months.map(m => <option key={m.v} value={m.v}>{m.l}</option>)}
         </select>
       </div>
-
-      {allowAll && (
-        <button
-          type="button"
-          onClick={handleToggleAll}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: isAll ? 'var(--accent)' : 'var(--text-secondary)',
-            fontSize: 12,
-            cursor: 'pointer',
-            padding: '4px 8px',
-            textDecoration: 'underline',
-            fontWeight: isAll ? 600 : 400
-          }}
-        >
-          {isAll ? 'Destravar Mês' : 'Ver Todos os Meses'}
-        </button>
-      )}
     </div>
   );
 }

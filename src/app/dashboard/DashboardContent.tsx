@@ -2113,108 +2113,137 @@ export default function DashboardContent({
 
           {/* Controles de Filtro e Busca Unificados */}
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-            gap: 12, padding: 16, background: 'var(--surface-raised)', borderRadius: 12, border: '1px solid var(--border)'
+            padding: '16px 20px',
+            background: 'var(--surface-raised)',
+            borderRadius: 12,
+            border: '1px solid var(--border)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12
           }}>
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>🔍 Buscar Nome/Email/Telefone:</label>
-              <input 
-                type="text" 
-                value={filterSearch} 
-                onChange={(e) => setFilterSearch(e.target.value)}
-                placeholder="Ex: Carlos Silva..."
-                style={{
-                  width: '100%', padding: '8px 12px', background: 'var(--surface)',
-                  border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
-                }}
-              />
-            </div>
-
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Categoria de Produto:</label>
-              <select 
-                value={filterPlan} 
-                onChange={(e) => setFilterPlan(e.target.value)}
-                style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
-              >
-                <option value="all">Todas as Categorias</option>
-                <option value="CURSO">🎓 Curso</option>
-                <option value="CONGRESSO">🎪 Congresso</option>
-                <option value="LIVRO">📘 Livro</option>
-                <option value="SAAS">💻 SaaS</option>
-                <option value="INSTITUCIONAL">🏢 Institucional</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>🎯 Campanha:</label>
-              <select 
-                value={filterCampaignId} 
-                onChange={(e) => setFilterCampaignId(e.target.value)}
-                style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
-              >
-                <option value="all">Todas as Campanhas</option>
-                {campaignsData.map((c: any) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-
-            {isAdmin && (
-              <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Responsável:</label>
-                <select
-                  value={filterAssignee}
-                  onChange={(e) => setFilterAssignee(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
-                >
-                  <option value="all">Todos os Colaboradores</option>
-                  <option value="unassigned">Não Atribuídos</option>
-                  {teamList.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
+            {/* Header de filtros com status e botão Limpar Filtros alinhado no topo */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="label-sm" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}>
+                  Filtros de Atendimento
+                </span>
+                {hasActiveAtendimentoFilters && (
+                  <span style={{ fontSize: 10, background: 'rgba(6, 182, 212, 0.15)', color: 'var(--cyan)', border: '1px solid rgba(6, 182, 212, 0.3)', padding: '2px 8px', borderRadius: 10, fontWeight: 700 }}>
+                    Filtros Aplicados
+                  </span>
+                )}
               </div>
-            )}
 
-
-
-            <div>
-              <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Competência:</label>
-              <MonthSelector currentMonth={filterMonth} allowAll={true} onChange={handleMonthChange} />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
               <button
                 type="button"
                 onClick={handleClearAllFilters}
+                disabled={!hasActiveAtendimentoFilters}
                 style={{
-                  height: 38,
-                  padding: '8px 14px',
-                  borderRadius: 8,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '5px 12px',
+                  borderRadius: 6,
                   fontSize: 12,
                   fontWeight: 600,
-                  cursor: 'pointer',
-                  border: hasActiveAtendimentoFilters ? '1px solid var(--accent)' : '1px solid var(--border)',
-                  background: hasActiveAtendimentoFilters ? 'var(--accent-glow)' : 'var(--surface)',
-                  color: hasActiveAtendimentoFilters ? 'var(--accent)' : 'var(--text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  transition: 'all 0.2s',
-                  width: '100%'
+                  color: hasActiveAtendimentoFilters ? 'var(--text-primary)' : 'var(--text-faint)',
+                  background: hasActiveAtendimentoFilters ? 'var(--surface)' : 'transparent',
+                  border: `1px solid ${hasActiveAtendimentoFilters ? 'var(--border)' : 'transparent'}`,
+                  cursor: hasActiveAtendimentoFilters ? 'pointer' : 'default',
+                  opacity: hasActiveAtendimentoFilters ? 1 : 0.4,
+                  transition: 'all 0.2s'
                 }}
-                title="Limpar todos os filtros da fila de atendimento"
+                onMouseEnter={(e) => {
+                  if (hasActiveAtendimentoFilters) {
+                    e.currentTarget.style.color = '#EF4444';
+                    e.currentTarget.style.borderColor = '#EF4444';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (hasActiveAtendimentoFilters) {
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                  }
+                }}
+                title={hasActiveAtendimentoFilters ? "Redefinir todos os filtros da fila" : "Nenhum filtro ativo para limpar"}
               >
                 <span>🧹</span>
                 <span>Limpar Filtros</span>
-                {hasActiveAtendimentoFilters && (
-                  <span style={{ fontSize: 10, background: 'var(--accent)', color: '#fff', padding: '1px 5px', borderRadius: 10 }}>
-                    Ativos
-                  </span>
-                )}
               </button>
+            </div>
+
+            {/* Linha dos campos de filtro perfeitamente alinhados */}
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 12,
+              alignItems: 'flex-end'
+            }}>
+              <div style={{ flex: '1 1 200px' }}>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>🔍 Buscar Nome/Email/Telefone:</label>
+                <input 
+                  type="text" 
+                  value={filterSearch} 
+                  onChange={(e) => setFilterSearch(e.target.value)}
+                  placeholder="Ex: Carlos Silva..."
+                  style={{
+                    width: '100%', height: 38, padding: '0 12px', background: 'var(--surface)',
+                    border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none', fontSize: 13
+                  }}
+                />
+              </div>
+
+              <div style={{ flex: '1 1 150px' }}>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Categoria de Produto:</label>
+                <select 
+                  value={filterPlan} 
+                  onChange={(e) => setFilterPlan(e.target.value)}
+                  style={{ width: '100%', height: 38, padding: '0 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
+                >
+                  <option value="all">Todas as Categorias</option>
+                  <option value="CURSO">🎓 Curso</option>
+                  <option value="CONGRESSO">🎪 Congresso</option>
+                  <option value="LIVRO">📘 Livro</option>
+                  <option value="SAAS">💻 SaaS</option>
+                  <option value="INSTITUCIONAL">🏢 Institucional</option>
+                </select>
+              </div>
+
+              <div style={{ flex: '1 1 150px' }}>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>🎯 Campanha:</label>
+                <select 
+                  value={filterCampaignId} 
+                  onChange={(e) => setFilterCampaignId(e.target.value)}
+                  style={{ width: '100%', height: 38, padding: '0 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
+                >
+                  <option value="all">Todas as Campanhas</option>
+                  {campaignsData.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {isAdmin && (
+                <div style={{ flex: '1 1 150px' }}>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Responsável:</label>
+                  <select
+                    value={filterAssignee}
+                    onChange={(e) => setFilterAssignee(e.target.value)}
+                    style={{ width: '100%', height: 38, padding: '0 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, cursor: 'pointer' }}
+                  >
+                    <option value="all">Todos os Colaboradores</option>
+                    <option value="unassigned">Não Atribuídos</option>
+                    {teamList.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div style={{ flex: '0 0 auto' }}>
+                <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Competência:</label>
+                <MonthSelector currentMonth={filterMonth} allowAll={true} onChange={handleMonthChange} />
+              </div>
             </div>
           </div>
         </div>
