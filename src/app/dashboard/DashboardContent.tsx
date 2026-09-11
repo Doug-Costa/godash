@@ -78,6 +78,7 @@ export default function DashboardContent({
   const searchParams = useSearchParams();
 
   const handleMonthChange = (newMonth: string) => {
+    setFilterMonth(newMonth);
     const params = new URLSearchParams(searchParams.toString());
     params.set('month', newMonth);
     params.delete('period');
@@ -1950,6 +1951,23 @@ export default function DashboardContent({
   const renderAtendimento = () => {
     const filteredLeads = leads;
 
+    const hasActiveAtendimentoFilters = 
+      filterSearch.trim() !== '' || 
+      filterPlan !== 'all' || 
+      filterCampaignId !== 'all' || 
+      (isAdmin && filterAssignee !== 'all') || 
+      filterStage !== '' || 
+      filterMonth !== 'all';
+
+    const handleClearAllFilters = () => {
+      setFilterSearch('');
+      setFilterPlan('all');
+      setFilterCampaignId('all');
+      if (isAdmin) setFilterAssignee('all');
+      setFilterStage('');
+      handleMonthChange('all');
+    };
+
     return (
       <div className="animate-fadeUp" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         {/* Header principal do Atendimento */}
@@ -2164,6 +2182,39 @@ export default function DashboardContent({
             <div>
               <label className="label-sm" style={{ display: 'block', marginBottom: 6 }}>Competência:</label>
               <MonthSelector currentMonth={filterMonth} allowAll={true} onChange={handleMonthChange} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={handleClearAllFilters}
+                style={{
+                  height: 38,
+                  padding: '8px 14px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  border: hasActiveAtendimentoFilters ? '1px solid var(--accent)' : '1px solid var(--border)',
+                  background: hasActiveAtendimentoFilters ? 'var(--accent-glow)' : 'var(--surface)',
+                  color: hasActiveAtendimentoFilters ? 'var(--accent)' : 'var(--text-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  transition: 'all 0.2s',
+                  width: '100%'
+                }}
+                title="Limpar todos os filtros da fila de atendimento"
+              >
+                <span>🧹</span>
+                <span>Limpar Filtros</span>
+                {hasActiveAtendimentoFilters && (
+                  <span style={{ fontSize: 10, background: 'var(--accent)', color: '#fff', padding: '1px 5px', borderRadius: 10 }}>
+                    Ativos
+                  </span>
+                )}
+              </button>
             </div>
           </div>
         </div>
