@@ -17,6 +17,7 @@ export class ImportCommitService {
       importDestination?: string; 
       productId?: string; 
       pipelineId?: string;
+      targetCampaignId?: string;
     }, 
     rows: RowPreflightResult[]
   ) {
@@ -55,6 +56,7 @@ export class ImportCommitService {
 
     let successRows = 0;
     let errorRows = 0;
+    const committedCustomers: Array<{ customerId: string; destination: string }> = [];
 
     for (const row of rows) {
       if (row.status !== 'READY' && row.status !== 'WARNING') {
@@ -63,17 +65,46 @@ export class ImportCommitService {
       }
 
       try {
-        await this.commitRow(
+        const res = await this.commitRow(
           row, 
           batchInfo.uploadedById, 
           batchInfo.importDestination, 
           batchInfo.productId, 
-          batchInfo.pipelineId
+          batchInfo.pipelineId,
+          batch.id,
+          batchInfo.fileName,
+          Boolean(batchInfo.targetCampaignId)
         );
+        if (res?.customerId) {
+          committedCustomers.push(res);
+        }
         successRows++;
       } catch (error) {
         console.error(`[ImportCommit] Erro ao comitar linha ${row.index}:`, error);
         errorRows++;
+      }
+    }
+
+    // Se foi indicada uma campanha de destino para DESEJO (Caminho Rápido)
+    let enrolledInCampaign = 0;
+    if (batchInfo.targetCampaignId) {
+      const desireIds = [...new Set(
+        committedCustomers
+          .filter(c => c.destination !== 'FATO')
+          .map(c => c.customerId)
+      )];
+      if (desireIds.length > 0) {
+        try {
+          const { CampaignOrchestrationService } = await import('@/lib/application/CampaignOrchestrationService');
+          const enrolled = await CampaignOrchestrationService.enroll(
+            batchInfo.targetCampaignId,
+            desireIds,
+            { sourceType: 'IMPORT', activate: true }
+          );
+          enrolledInCampaign = enrolled.length;
+        } catch (enrollErr: any) {
+          console.error('[ImportCommit] Erro ao matricular na campanha:', enrollErr);
+        }
       }
     }
 
@@ -87,7 +118,7 @@ export class ImportCommitService {
       }
     });
 
-    return { successRows, errorRows, batchId: batch.id };
+    return { successRows, errorRows, batchId: batch.id, enrolledInCampaign };
   }
 
   private static async commitRow(
@@ -95,7 +126,10 @@ export class ImportCommitService {
     authorId: string, 
     importDestination?: string, 
     productId?: string, 
-    pipelineId?: string
+    pipelineId?: string,
+    batchId?: string,
+    batchFileName?: string,
+    hasTargetCampaign?: boolean
   ) {
     const data = row.parsedData;
     if (!data) throw new Error("Linha não tem parsedData.");
@@ -154,7 +188,10 @@ export class ImportCommitService {
             specialties: initialSpecialties,
             interests: initialInterests,
             sellerContract: data.sellerContract || undefined,
-            importSourceRecordId: data.source_record_id || undefined
+            importSourceRecordId: data.source_record_id || undefined,
+            importBatchId: batchId || undefined,
+            importBatchName: batchFileName || undefined,
+            importDate: new Date().toISOString()
           }
         }
       });
@@ -181,7 +218,10 @@ export class ImportCommitService {
             specialties: updatedSpecialties,
             interests: updatedInterests,
             sellerContract: data.sellerContract || currentMetadata.sellerContract,
-            importSourceRecordId: data.source_record_id || currentMetadata.importSourceRecordId
+            importSourceRecordId: data.source_record_id || currentMetadata.importSourceRecordId,
+            importBatchId: batchId || currentMetadata.importBatchId,
+            importBatchName: batchFileName || currentMetadata.importBatchName,
+            lastImportDate: new Date().toISOString()
           }
         }
       });
@@ -226,41 +266,46 @@ export class ImportCommitService {
       }
     } else {
       // DESEJO
-      const finalPipelineId = pipelineId || 'default';
-      
-      let targetPipelineId = finalPipelineId;
-      if (targetPipelineId === 'default') {
-        const defaultPipe = await prisma.pipeline.findFirst({
-          where: { name: 'Vendas' }
-        }) || await prisma.pipeline.findFirst();
-        targetPipelineId = defaultPipe?.id || '';
-      }
+      // Se hasTargetCampaign for true, a oportunidade será criada com as regras da campanha (Round-Robin/cadência) no enroll
+      if (!hasTargetCampaign) {
+        const finalPipelineId = pipelineId || 'default';
+        
+        let targetPipelineId = finalPipelineId;
+        if (targetPipelineId === 'default') {
+          const defaultPipe = await prisma.pipeline.findFirst({
+            where: { name: 'Vendas' }
+          }) || await prisma.pipeline.findFirst();
+          targetPipelineId = defaultPipe?.id || '';
+        }
 
-      if (targetPipelineId) {
-        const existingOpp = await prisma.opportunity.findFirst({
-          where: { customerId: customer.id, pipelineId: targetPipelineId }
-        });
+        if (targetPipelineId) {
+          const existingOpp = await prisma.opportunity.findFirst({
+            where: { customerId: customer.id, pipelineId: targetPipelineId }
+          });
 
-        if (!existingOpp) {
-          if (!customer.pipelineId) {
-            await prisma.customer.update({
-              where: { id: customer.id },
-              data: { pipelineId: targetPipelineId }
+          if (!existingOpp) {
+            if (!customer.pipelineId) {
+              await prisma.customer.update({
+                where: { id: customer.id },
+                data: { pipelineId: targetPipelineId }
+              });
+            }
+
+            await prisma.opportunity.create({
+              data: {
+                customerId: customer.id,
+                pipelineId: targetPipelineId,
+                productId: finalProductId || null,
+                status: data.enrollmentStatus === 'CANCELED' ? 'LOST' : 'OPEN',
+                value: data.value || 0,
+                assigneeId: authorId
+              }
             });
           }
-
-          await prisma.opportunity.create({
-            data: {
-              customerId: customer.id,
-              pipelineId: targetPipelineId,
-              productId: finalProductId || null,
-              status: data.enrollmentStatus === 'CANCELED' ? 'LOST' : 'OPEN',
-              value: data.value || 0,
-              assigneeId: authorId
-            }
-          });
         }
       }
     }
+
+    return { customerId: customer.id, destination };
   }
 }

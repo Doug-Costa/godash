@@ -198,7 +198,7 @@ export class CampaignOrchestrationService {
       where: { campaignId, status: 'PLANNED' },
       select: { customerId: true }
     });
-    return rows.map(row => row.customerId);
+    return rows.map((row: { customerId: number }) => row.customerId);
   }
 
   private static async plannedAudienceIds(campaignId: string) {
@@ -317,6 +317,17 @@ export class CampaignOrchestrationService {
     const scheduled: Array<{ enrollmentId: string; stepId: string; delay: number }> = [];
     const assignmentsPerOperator = new Map<string, number>();
 
+    // Pré-popula atribuições ativas por operador para continuar a cadência diária sem atropelar limites
+    const existingEnrollmentCounts = await prisma.campaignEnrollment.groupBy({
+      by: ['assigneeId'],
+      where: { campaignId, status: { in: ['PENDING', 'RUNNING'] }, isTest: false },
+      _count: { id: true }
+    });
+    for (const ec of existingEnrollmentCounts) {
+      const key = ec.assigneeId || 'POOL';
+      assignmentsPerOperator.set(key, ec._count.id);
+    }
+
     const result = await prisma.$transaction(async tx => {
       const enrollments = [];
       for (let index = 0; index < eligibleCustomers.length; index++) {
@@ -401,10 +412,23 @@ export class CampaignOrchestrationService {
       }
       await tx.campaign.update({ where: { id: campaignId }, data: { status: options.test ? 'TESTING' : 'ACTIVE' } });
       if (!options.test) {
-        await tx.campaignAudienceMember.updateMany({
-          where: { campaignId, customerId: { in: eligibleCustomers.map(customer => customer.id) }, status: 'PLANNED' },
-          data: { status: 'ENROLLED', enrolledAt: new Date() }
-        });
+        for (const customer of eligibleCustomers) {
+          await tx.campaignAudienceMember.upsert({
+            where: { campaignId_customerId: { campaignId, customerId: customer.id } },
+            create: {
+              campaignId,
+              customerId: customer.id,
+              sourceType: options.sourceType || 'MANUAL',
+              status: 'ENROLLED',
+              enrolledAt: new Date()
+            },
+            update: {
+              status: 'ENROLLED',
+              enrolledAt: new Date(),
+              removedAt: null
+            }
+          });
+        }
       }
       return enrollments;
     });

@@ -293,7 +293,7 @@ async function buildPrismaWhereFromRules(rules: any[], relation: 'AND' | 'OR', e
         cond = { OR: subConditions };
       }
     } else if (dimension === 'lead_source') {
-      const isForm = value !== 'CSV' && value !== 'DENTALGO';
+      const isForm = value !== 'CSV' && value !== 'CSV_IMPORT' && value !== 'DENTALGO';
       const sourceCond: any = {};
       
       if (isForm) {
@@ -305,6 +305,14 @@ async function buildPrismaWhereFromRules(rules: any[], relation: 'AND' | 'OR', e
                 contains: utmSource
               }
             }
+          };
+        }
+      } else if (value === 'CSV' || value === 'CSV_IMPORT') {
+        sourceCond.source = { in: ['CSV', 'CSV_IMPORT'] };
+        if (rule.batchId) {
+          sourceCond.metadata = {
+            path: ['importBatchId'],
+            equals: rule.batchId
           };
         }
       } else {
@@ -522,11 +530,16 @@ export async function POST(request: Request) {
           : (canonicalCampaign ? await CampaignOrchestrationService.getPlannedAudienceIds(canonicalCampaign.id) : []);
 
         if (audienceIds.length === 0) {
+          await prisma.campaign.update({
+            where: { id: canonicalCampaign!.id },
+            data: { status: 'ACTIVE' }
+          });
           return NextResponse.json({
-            success: false,
-            error: 'Campanha salva como rascunho, mas nenhuma pessoa elegível foi encontrada para os critérios selecionados. Adicione ou ajuste as regras de público antes de ativar.',
-            data: canonicalCampaign
-          }, { status: 400 });
+            success: true,
+            message: 'Campanha ativada com sucesso (0 leads iniciais). Pronta para receber novos contatos via Importação ou Audiência.',
+            data: { ...canonicalCampaign, status: 'ACTIVE' },
+            leadsAssignedCount: 0
+          });
         }
 
         await CampaignOrchestrationService.stageAudience(canonicalCampaign!.id, audienceIds, 'SEGMENT');

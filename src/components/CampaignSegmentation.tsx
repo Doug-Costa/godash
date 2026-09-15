@@ -7,6 +7,7 @@ export interface CampaignRule {
   dimension: 'lead_source' | 'dentalgo_subscription' | 'congresso' | 'curso';
   operator: 'equals' | 'not_equals' | 'contains';
   value: string;
+  batchId?: string;
   planId?: string;
   status?: string;
   startDate?: string;
@@ -51,6 +52,19 @@ export default function CampaignSegmentation({
   const [loadingForms, setLoadingForms] = useState(false);
   const [plansList, setPlansList] = useState<any[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
+  const [batchesList, setBatchesList] = useState<any[]>([]);
+
+  // Fetch batches list
+  useEffect(() => {
+    fetch('/api/batches')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.data)) {
+          setBatchesList(data.data);
+        }
+      })
+      .catch(() => setBatchesList([]));
+  }, []);
 
   // Fetch Inbound Forms list
   useEffect(() => {
@@ -415,26 +429,54 @@ export default function CampaignSegmentation({
                         {/* Sub-Filters / Operator */}
                         <div style={{ flex: 2.2, display: 'flex', gap: 8 }}>
                           {rule.dimension === 'lead_source' && rule.value !== 'DENTALGO' ? (
-                            <select
-                              value={rule.value.startsWith('Form Capture:') ? 'FORM' : rule.value}
-                              onChange={(e) =>
-                                handleUpdateRule(rule.id, { value: e.target.value })
-                              }
-                              style={{
-                                width: '100%',
-                                padding: '8px 10px',
-                                background: 'var(--surface)',
-                                border: '1px solid var(--border)',
-                                borderRadius: 6,
-                                color: 'var(--text-primary)',
-                                fontSize: 12,
-                                outline: 'none',
-                              }}
-                            >
-                              <option value="CSV">📥 Importação CSV</option>
-                              <option value="DENTALGO">🌐 DentalGO Sinc DB</option>
-                              <option value="FORM">📝 Formulários Site</option>
-                            </select>
+                            <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                              <select
+                                value={rule.value.startsWith('Form Capture:') ? 'FORM' : (rule.value === 'CSV_IMPORT' ? 'CSV' : rule.value)}
+                                onChange={(e) =>
+                                  handleUpdateRule(rule.id, { value: e.target.value, batchId: undefined })
+                                }
+                                style={{
+                                  width: (rule.value === 'CSV' || rule.value === 'CSV_IMPORT') && batchesList.length > 0 ? '45%' : '100%',
+                                  padding: '8px 10px',
+                                  background: 'var(--surface)',
+                                  border: '1px solid var(--border)',
+                                  borderRadius: 6,
+                                  color: 'var(--text-primary)',
+                                  fontSize: 12,
+                                  outline: 'none',
+                                }}
+                              >
+                                <option value="CSV">📥 Importação CSV</option>
+                                <option value="DENTALGO">🌐 DentalGO Sinc DB</option>
+                                <option value="FORM">📝 Formulários Site</option>
+                              </select>
+
+                              {(rule.value === 'CSV' || rule.value === 'CSV_IMPORT') && batchesList.length > 0 && (
+                                <select
+                                  value={rule.batchId || ''}
+                                  onChange={(e) =>
+                                    handleUpdateRule(rule.id, { batchId: e.target.value || undefined })
+                                  }
+                                  style={{
+                                    width: '55%',
+                                    padding: '8px 10px',
+                                    background: 'var(--surface)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: 6,
+                                    color: 'var(--text-primary)',
+                                    fontSize: 12,
+                                    outline: 'none',
+                                  }}
+                                >
+                                  <option value="">📁 Todos os Lotes CSV</option>
+                                  {batchesList.map(b => (
+                                    <option key={b.id} value={b.id}>
+                                      📄 {b.fileName} ({b.successRows || b.totalRows} leads)
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
                           ) : isDentalGo ? (
                             <div style={{ display: 'flex', gap: 8, width: '100%' }}>
                               {/* Source Select if dimension is lead_source */}

@@ -23,7 +23,8 @@ export async function POST(request: Request) {
         uploadedById: session.user.id,
         importDestination: batchInfo.importDestination,
         productId: batchInfo.productId,
-        pipelineId: batchInfo.pipelineId
+        pipelineId: batchInfo.pipelineId,
+        targetCampaignId: batchInfo.targetCampaignId
       },
       rows
     );

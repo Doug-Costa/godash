@@ -75,11 +75,19 @@ export async function POST(request: Request) {
         : [];
 
       if (targetIdsToProcess.length > 0) {
-        const canonicalCampaign = await prisma.campaign.findUnique({ where: { id: targetJourneyId }, select: { id: true } });
+        const canonicalCampaign = await prisma.campaign.findUnique({ where: { id: targetJourneyId }, select: { id: true, status: true } });
         if (canonicalCampaign) {
           const { CampaignOrchestrationService } = await import('@/lib/application/CampaignOrchestrationService');
-          const result = await CampaignOrchestrationService.stageAudience(targetJourneyId, targetIdsToProcess, 'MANUAL');
-          updatedCount = result.added;
+          if (['ACTIVE', 'READY', 'TESTING'].includes(canonicalCampaign.status)) {
+            const results = await CampaignOrchestrationService.enroll(targetJourneyId, targetIdsToProcess, {
+              sourceType: 'MANUAL',
+              activate: true
+            });
+            updatedCount = results.length;
+          } else {
+            const result = await CampaignOrchestrationService.stageAudience(targetJourneyId, targetIdsToProcess, 'MANUAL');
+            updatedCount = result.added;
+          }
         } else {
           const { AssignCampaignLeadsUseCase } = await import('@/lib/application/AssignCampaignLeadsUseCase');
           const useCase = new AssignCampaignLeadsUseCase();

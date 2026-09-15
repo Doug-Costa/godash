@@ -21,6 +21,7 @@ export async function GET(request: Request) {
     const journeyId = searchParams.get('journeyId') || 'all';
     const assigneeId = searchParams.get('assigneeId') || 'all';
     const stage = searchParams.get('stage') || 'all';
+    const batchId = searchParams.get('batchId') || 'all';
     const startDate = searchParams.get('startDate') || '';
     const endDate = searchParams.get('endDate') || '';
     const search = searchParams.get('search') || '';
@@ -186,6 +187,18 @@ export async function GET(request: Request) {
 
     if (stage !== 'all') {
       prismaWhere.stage = stage;
+    }
+
+    if (batchId !== 'all') {
+      prismaWhere.AND = [
+        ...(prismaWhere.AND || []),
+        {
+          metadata: {
+            path: ['importBatchId'],
+            equals: batchId
+          }
+        }
+      ];
     }
 
     if (startDate || endDate) {

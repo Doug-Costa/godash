@@ -48,6 +48,8 @@ export default function UnifiedLeadsExplorer({
 }: UnifiedLeadsExplorerProps) {
   // State for Filters
   const [source, setSource] = useState<string>('all');
+  const [batchId, setBatchId] = useState<string>('all');
+  const [batches, setBatches] = useState<any[]>([]);
   const [planId, setPlanId] = useState<string>('all');
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('all');
   const [productId, setProductId] = useState<string>('all');
@@ -83,14 +85,15 @@ export default function UnifiedLeadsExplorer({
   const [auditorModalData, setAuditorModalData] = useState<{isOpen: boolean, customerId: string, journeyId: string}>({ isOpen: false, customerId: '', journeyId: '' });
   const [refreshKey, setRefreshKey] = useState<number>(0);
 
-  // Fetch Plans, Forms, Journeys on Mount
+  // Fetch Plans, Forms, Journeys, Batches on Mount
   useEffect(() => {
     async function loadOptions() {
       try {
-        const [resPlans, resForms, resJourneys] = await Promise.all([
+        const [resPlans, resForms, resJourneys, resBatches] = await Promise.all([
           fetch('/api/plans').then(r => r.json()),
           fetch('/api/forms').then(r => r.json()),
-          fetch('/api/campaigns').then(r => r.json()).catch(() => ({ journeys: [] }))
+          fetch('/api/campaigns').then(r => r.json()).catch(() => ({ journeys: [] })),
+          fetch('/api/batches').then(r => r.json()).catch(() => ({ data: [] }))
         ]);
 
         const planList = resPlans?.data || resPlans?.plans;
@@ -107,6 +110,10 @@ export default function UnifiedLeadsExplorer({
         if (Array.isArray(journeyList) && journeyList.length > 0) {
           setActiveJourneys(journeyList);
         }
+
+        if (resBatches?.success && Array.isArray(resBatches.data)) {
+          setBatches(resBatches.data);
+        }
       } catch (err) {
         console.warn('Error loading filter options:', err);
       }
@@ -121,6 +128,7 @@ export default function UnifiedLeadsExplorer({
       try {
         const params = new URLSearchParams({
           source,
+          batchId,
           planId,
           subscriptionStatus,
           productId,
@@ -150,7 +158,7 @@ export default function UnifiedLeadsExplorer({
       }
     }
     fetchLeads();
-  }, [source, planId, subscriptionStatus, productId, relationshipType, journeyId, assigneeId, stage, startDate, endDate, search, page, refreshKey]);
+  }, [source, batchId, planId, subscriptionStatus, productId, relationshipType, journeyId, assigneeId, stage, startDate, endDate, search, page, refreshKey]);
 
   // Handle Select All / Toggle Single Lead
   const toggleSelectAll = () => {
@@ -190,12 +198,15 @@ export default function UnifiedLeadsExplorer({
       const data = await res.json();
       if (data.success) {
         const selectedCampaign = activeJourneys.find(item => item.id === selectedTargetJourneyId);
-        alert(selectedCampaign?.entityType === 'CAMPAIGN'
-          ? `Sucesso! ${data.updatedCount || selectedLeadIds.length} contato(s) adicionados à audiência planejada. Nenhum fluxo foi disparado.`
-          : `Sucesso! ${data.updatedCount || selectedLeadIds.length} leads inscritos na campanha.`);
+        const isActiveCampaign = selectedCampaign?.entityType === 'CAMPAIGN' && ['ACTIVE', 'READY', 'TESTING'].includes(selectedCampaign?.status || '');
+        alert(isActiveCampaign
+          ? `Sucesso! ${data.updatedCount || selectedLeadIds.length} lead(s) matriculado(s) na campanha "${selectedCampaign?.name}" e distribuídos para a equipe.`
+          : selectedCampaign?.entityType === 'CAMPAIGN'
+            ? `Sucesso! ${data.updatedCount || selectedLeadIds.length} contato(s) adicionados à audiência planejada da campanha.`
+            : `Sucesso! ${data.updatedCount || selectedLeadIds.length} leads inscritos na campanha.`);
         setSelectedLeadIds([]);
         setBulkActionType(null);
-        setPage(p => p);
+        setRefreshKey(k => k + 1);
       } else {
         alert(`Erro: ${data.error}`);
       }
@@ -400,6 +411,25 @@ export default function UnifiedLeadsExplorer({
             </select>
           </div>
 
+          {/* Lote de Importação */}
+          {batches.length > 0 && (
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>📦 Lote de Importação</label>
+              <select
+                value={batchId}
+                onChange={(e) => { setBatchId(e.target.value); setPage(1); }}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+              >
+                <option value="all">📁 Todos os Lotes</option>
+                {batches.map(b => (
+                  <option key={b.id} value={b.id}>
+                    📄 {b.fileName} ({b.successRows || b.totalRows} leads)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Plano DentalGO */}
           <div>
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Plano DentalGO</label>
@@ -535,19 +565,28 @@ export default function UnifiedLeadsExplorer({
                   style={{ padding: '8px 12px', borderRadius: '8px', border: 'none', background: '#ffffff', color: '#000000', fontSize: '0.85rem' }}
                 >
                   <option value="">Selecione a Campanha...</option>
-                  {activeJourneys.map(j => (
-                    <option key={j.id} value={j.id}>
-                      {j.name}{j.entityType === 'CAMPAIGN' ? ` — ${j.status || 'DRAFT'} (preparar audiência)` : ' — legado'}
-                    </option>
-                  ))}
+                  {activeJourneys.map(j => {
+                    const isDirect = j.entityType === 'CAMPAIGN' && ['ACTIVE', 'READY', 'TESTING'].includes(j?.status || '');
+                    return (
+                      <option key={j.id} value={j.id}>
+                        {j.name}{j.entityType === 'CAMPAIGN' ? ` — ${j.status || 'DRAFT'} (${isDirect ? 'matrícula direta' : 'preparar audiência'})` : ' — legado'}
+                      </option>
+                    );
+                  })}
                 </select>
-                <button
-                  onClick={handleBulkEnrolCampaign}
-                  disabled={isSubmittingBulk}
-                  style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#10B981', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
-                >
-                  {isSubmittingBulk ? 'Confirmando...' : 'Adicionar à Audiência'}
-                </button>
+                {(() => {
+                  const selCamp = activeJourneys.find(j => j.id === selectedTargetJourneyId);
+                  const isDirect = selCamp?.entityType === 'CAMPAIGN' && ['ACTIVE', 'READY', 'TESTING'].includes(selCamp?.status || '');
+                  return (
+                    <button
+                      onClick={handleBulkEnrolCampaign}
+                      disabled={isSubmittingBulk}
+                      style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#10B981', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      {isSubmittingBulk ? 'Confirmando...' : (isDirect ? '🚀 Matricular na Campanha' : '📝 Adicionar à Audiência')}
+                    </button>
+                  );
+                })()}
                 <button onClick={() => setBulkActionType(null)} style={{ background: 'transparent', border: '1px solid #ffffff', color: '#ffffff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer' }}>Cancelar</button>
               </div>
             ) : bulkActionType === 'assign' ? (

@@ -57,6 +57,8 @@ export default function AdminImportTab({
   const [importDestination, setImportDestination] = useState<'DESEJO' | 'FATO'>('DESEJO');
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
+  const [campaignsList, setCampaignsList] = useState<any[]>([]);
 
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [tablePage, setTablePage] = useState(1);
@@ -71,6 +73,14 @@ export default function AdminImportTab({
     if (pipelines.length > 0 && !selectedPipelineId) {
       setSelectedPipelineId(pipelines[0].id);
     }
+    fetch('/api/campaigns')
+      .then(res => res.json())
+      .then(json => {
+        if (json.success && Array.isArray(json.data)) {
+          setCampaignsList(json.data);
+        }
+      })
+      .catch(() => setCampaignsList([]));
   }, [pipelines, selectedPipelineId]);
 
   const inspectFileSchema = async (selectedFile: File) => {
@@ -187,7 +197,8 @@ export default function AdminImportTab({
             schemaVersion: 'V4',
             importDestination,
             productId: selectedProductId || undefined,
-            pipelineId: selectedPipelineId || undefined
+            pipelineId: selectedPipelineId || undefined,
+            targetCampaignId: selectedCampaignId || undefined
           },
           rows: approvedRows
         })
@@ -199,7 +210,8 @@ export default function AdminImportTab({
       }
 
       const result = await res.json();
-      setSuccessMsg(`✅ Importação concluída com sucesso! ${result.successRows} registros gravados.`);
+      const campaignNote = result.enrolledInCampaign ? ` (${result.enrolledInCampaign} matriculado(s) na campanha e distribuídos)` : '';
+      setSuccessMsg(`✅ Importação concluída com sucesso! ${result.successRows} registros gravados${campaignNote}.`);
       setSummary(null);
       setFile(null);
 
@@ -347,21 +359,53 @@ export default function AdminImportTab({
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {importDestination === 'DESEJO' && (
-              <div>
-                <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Pipeline de Entrada:</label>
-                <select
-                  value={selectedPipelineId}
-                  onChange={(e) => setSelectedPipelineId(e.target.value)}
-                  style={{
-                    width: '100%', padding: '8px 12px', background: 'var(--surface-raised)',
-                    border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13
-                  }}
-                >
-                  {pipelines.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div>
+                  <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>
+                    🎯 Vincular a uma Campanha (Opcional):
+                  </label>
+                  <select
+                    value={selectedCampaignId}
+                    onChange={(e) => setSelectedCampaignId(e.target.value)}
+                    style={{
+                      width: '100%', padding: '8px 12px', background: 'var(--surface-raised)',
+                      border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13
+                    }}
+                  >
+                    <option value="">-- Nenhuma (Apenas cadastrar no funil abaixo) --</option>
+                    {campaignsList
+                      .filter(c => ['ACTIVE', 'READY', 'TESTING', 'DRAFT'].includes(c.status))
+                      .map(c => (
+                        <option key={c.id} value={c.id}>
+                          🎯 {c.name} ({c.status || 'DRAFT'})
+                        </option>
+                      ))}
+                  </select>
+                  {selectedCampaignId && (
+                    <span style={{ fontSize: 11, color: 'var(--accent)', display: 'block', marginTop: 4 }}>
+                      ⚡ Os leads serão distribuídos automaticamente entre as atendentes da campanha com limite diário e Round-Robin.
+                    </span>
+                  )}
+                </div>
+
+                {!selectedCampaignId && (
+                  <div>
+                    <label className="label-sm" style={{ display: 'block', marginBottom: 4 }}>Pipeline de Entrada (Fallback):</label>
+                    <select
+                      value={selectedPipelineId}
+                      onChange={(e) => setSelectedPipelineId(e.target.value)}
+                      style={{
+                        width: '100%', padding: '8px 12px', background: 'var(--surface-raised)',
+                        border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13
+                      }}
+                    >
+                      {pipelines.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </>
             )}
 
             <div>

@@ -1483,6 +1483,10 @@ export default function DashboardContent({
       });
 
       if (res.ok) {
+        const json = await res.json();
+        if (json.message) {
+          alert(json.message);
+        }
         setCampaignName('');
         setCampaignSmtpConfigId('');
         setCampaignRules([]);
@@ -3354,7 +3358,9 @@ export default function DashboardContent({
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 8 }}>
                       <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginRight: 12 }}>{campaign.name}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span className="badge badge-cyan" style={{ fontSize: 9 }}>{campaign.status}</span>
+                        <span className={`badge ${campaign.status === 'ACTIVE' ? 'badge-green' : campaign.status === 'DRAFT' ? 'badge-yellow' : 'badge-cyan'}`} style={{ fontSize: 9 }}>
+                          {campaign.status}
+                        </span>
                         {campaign.entityType === 'CAMPAIGN' && (
                           <button onClick={() => handleEditCanonicalCampaign(campaign)} className="btn-action btn-action-outline" style={{ fontSize: 10, padding: '2px 6px' }}>✏️</button>
                         )}
@@ -3371,7 +3377,7 @@ export default function DashboardContent({
                       </div>
                     </div>
                     <div className="label-sm" style={{ fontSize: 11, marginBottom: 12 }}>
-                      Criada em: {new Date(campaign.createdAt).toLocaleDateString('pt-BR')} &bull; {campaign._count?.leads || 0} leads vinculados
+                      Criada em: {new Date(campaign.createdAt).toLocaleDateString('pt-BR')} &bull; <strong>{campaign._count?.leads || 0}</strong> matriculados{campaign.audience?.length ? ` &bull; ${campaign.audience.length} planejados` : ''}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
                       <strong>Passos da Régua:</strong>
