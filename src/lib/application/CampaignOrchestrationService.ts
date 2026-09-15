@@ -198,7 +198,7 @@ export class CampaignOrchestrationService {
       where: { campaignId, status: 'PLANNED' },
       select: { customerId: true }
     });
-    return rows.map((row: { customerId: number }) => row.customerId);
+    return rows.map((row: { customerId: string }) => row.customerId);
   }
 
   private static async plannedAudienceIds(campaignId: string) {
