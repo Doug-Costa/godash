@@ -190,9 +190,15 @@ export async function GET(request: Request) {
         });
       }
 
-      // Filtro de Campanha (Journey) específico
+      // Filtro de Campanha (suporte canônico e legado)
       if (campaignId && campaignId !== 'all') {
-        crmFilter.journeyId = campaignId;
+        appendAnd({
+          OR: [
+            { journeyId: campaignId },
+            { opportunities: { some: { sourceCampaignId: campaignId } } },
+            { campaignEnrollments: { some: { campaignId } } }
+          ]
+        });
       }
 
       // Filtros genéricos compartilhados. Durante a migração, responsável e
@@ -247,7 +253,23 @@ export async function GET(request: Request) {
       // Filtros específicos da fila
       if (atendimentoFila) {
         if (atendimentoFila === 'campanhas') {
-          crmFilter.journeyId = campaignId && campaignId !== 'all' ? campaignId : { not: null };
+          if (campaignId && campaignId !== 'all') {
+            appendAnd({
+              OR: [
+                { journeyId: campaignId },
+                { opportunities: { some: { sourceCampaignId: campaignId } } },
+                { campaignEnrollments: { some: { campaignId } } }
+              ]
+            });
+          } else {
+            appendAnd({
+              OR: [
+                { journeyId: { not: null } },
+                { opportunities: { some: { sourceCampaignId: { not: null } } } },
+                { campaignEnrollments: { some: {} } }
+              ]
+            });
+          }
           if (hasMonthFilter) {
             crmFilter.joinedJourneyAt = { lte: endOfMonth! };
           }
@@ -381,9 +403,17 @@ export async function GET(request: Request) {
       ? { OR: [{ externalPersonId: { in: personIds } }, { id: { in: nativeCustomerIds } }] }
       : { externalPersonId: { in: personIds } };
     if (campaignId && campaignId !== 'all') {
-      postgresQueryFilter.journeyId = campaignId;
+      postgresQueryFilter.OR = [
+        { journeyId: campaignId },
+        { opportunities: { some: { sourceCampaignId: campaignId } } },
+        { campaignEnrollments: { some: { campaignId } } }
+      ];
     } else if (atendimentoFila === 'campanhas') {
-      postgresQueryFilter.journeyId = { not: null };
+      postgresQueryFilter.OR = [
+        { journeyId: { not: null } },
+        { opportunities: { some: { sourceCampaignId: { not: null } } } },
+        { campaignEnrollments: { some: {} } }
+      ];
     }
 
     // Fetch corresponding states, interactions, campaign, alerts and opportunities from Postgres

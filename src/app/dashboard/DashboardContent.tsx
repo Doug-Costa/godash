@@ -2466,6 +2466,11 @@ export default function DashboardContent({
                                   🎯 {lead.campaign.name}
                                 </span>
                               )}
+                              {lead.opportunity?.metadata?.startDayOffset > 0 && (
+                                <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }} title={`Entrada programada no dia ${lead.opportunity.metadata.startDayOffset + 1} da campanha`}>
+                                  ⏳ Fila D+{lead.opportunity.metadata.startDayOffset}
+                                </span>
+                              )}
                               {lead.isInNurturing && (
                                 <span className="badge" style={{ fontSize: 9, padding: '2px 6px', background: 'rgba(124, 58, 237, 0.15)', color: '#7C3AED', border: '1px solid rgba(124, 58, 237, 0.3)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                                   🔄 Nutrição

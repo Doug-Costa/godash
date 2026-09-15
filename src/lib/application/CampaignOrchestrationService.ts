@@ -356,20 +356,63 @@ export class CampaignOrchestrationService {
           : 0;
         const scheduledStart = new Date(Date.now() + startDayOffset * 24 * 60 * 60 * 1000);
 
+        const targetPipelineId = campaign.pipelineId || (await tx.pipeline.findFirst({ where: { name: 'Vendas' } }))?.id || (await tx.pipeline.findFirst())?.id;
         let opportunity = null;
-        if (campaign.campaignNature === 'COMMERCIAL' && campaign.pipelineId) {
+        let finalAssigneeId = assigneeId;
+
+        if (campaign.campaignNature === 'COMMERCIAL' && targetPipelineId) {
           opportunity = await tx.opportunity.findFirst({
-            where: { customerId: customer.id, pipelineId: campaign.pipelineId, productId: campaign.productId, status: 'OPEN' }
+            where: {
+              customerId: customer.id,
+              pipelineId: targetPipelineId,
+              ...(campaign.productId ? { productId: campaign.productId } : {}),
+              status: 'OPEN'
+            }
           });
+
+          const shouldPreserveAssignee = opportunity?.humanTakeover || customer.humanTakeover;
+          finalAssigneeId = shouldPreserveAssignee
+            ? (opportunity?.assigneeId || assigneeId || null)
+            : (assigneeId || opportunity?.assigneeId || null);
+
+          const oppMeta = (opportunity?.metadata as Record<string, any>) || {};
+          const updatedMeta = {
+            ...oppMeta,
+            scheduledStart: scheduledStart.toISOString(),
+            startDayOffset
+          };
+
           if (!opportunity) {
             opportunity = await tx.opportunity.create({
               data: {
                 customerId: customer.id,
-                pipelineId: campaign.pipelineId,
-                productId: campaign.productId,
+                pipelineId: targetPipelineId,
+                productId: campaign.productId || null,
                 sourceCampaignId: campaign.id,
-                assigneeId,
-                stage: campaign.initialStage
+                assigneeId: finalAssigneeId,
+                stage: campaign.initialStage || 'novo_cadastro',
+                metadata: updatedMeta
+              }
+            });
+          } else {
+            opportunity = await tx.opportunity.update({
+              where: { id: opportunity.id },
+              data: {
+                assigneeId: finalAssigneeId,
+                sourceCampaignId: campaign.id,
+                stage: opportunity.stage || campaign.initialStage || 'novo_cadastro',
+                metadata: updatedMeta
+              }
+            });
+          }
+
+          // Sincroniza o Customer no banco para que a custódia do lead também reflita o operador da campanha
+          if (finalAssigneeId && (!customer.assigneeId || !shouldPreserveAssignee)) {
+            await tx.customer.update({
+              where: { id: customer.id },
+              data: {
+                assigneeId: finalAssigneeId,
+                pipelineId: targetPipelineId || customer.pipelineId
               }
             });
           }
@@ -381,14 +424,14 @@ export class CampaignOrchestrationService {
             campaignId,
             customerId: customer.id,
             opportunityId: opportunity?.id || null,
-            assigneeId,
+            assigneeId: finalAssigneeId,
             sourceType: options.test ? 'TEST' : (options.sourceType || 'SEGMENT'),
             sourceFormId: options.sourceFormId || null,
             status: startDayOffset > 0 ? 'PENDING' : 'RUNNING',
             isTest: options.test === true,
             startedAt: scheduledStart
           },
-          update: { opportunityId: opportunity?.id || null, assigneeId, status: startDayOffset > 0 ? 'PENDING' : 'RUNNING', startedAt: scheduledStart, stopReason: null }
+          update: { opportunityId: opportunity?.id || null, assigneeId: finalAssigneeId, status: startDayOffset > 0 ? 'PENDING' : 'RUNNING', startedAt: scheduledStart, stopReason: null }
         });
         let executionId: string | null = null;
         if (flowVersion) {

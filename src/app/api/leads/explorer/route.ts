@@ -176,8 +176,24 @@ export async function GET(request: Request) {
     }
 
     if (journeyId !== 'all') {
-      if (journeyId === 'none') prismaWhere.journeyId = null;
-      else prismaWhere.journeyId = journeyId;
+      if (journeyId === 'none') {
+        prismaWhere.AND = [
+          ...(prismaWhere.AND || []),
+          { journeyId: null },
+          { campaignEnrollments: { none: {} } }
+        ];
+      } else {
+        prismaWhere.AND = [
+          ...(prismaWhere.AND || []),
+          {
+            OR: [
+              { journeyId },
+              { campaignEnrollments: { some: { campaignId: journeyId } } },
+              { opportunities: { some: { sourceCampaignId: journeyId } } }
+            ]
+          }
+        ];
+      }
     }
 
     if (assigneeId !== 'all') {
