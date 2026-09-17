@@ -830,61 +830,13 @@ export async function DELETE(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const campaignId = searchParams.get('campaignId');
+    const campaignId = searchParams.get('campaignId') || searchParams.get('id');
     if (!campaignId) {
       return NextResponse.json({ success: false, error: 'campaignId é obrigatório para exclusão.' }, { status: 400 });
     }
 
-    // 1. Encontrar todos os customers associados a essa jornada
-    const campaignLeads = await prisma.customer.findMany({
-      where: { journeyId: campaignId }
-    });
-
-    // Separar os atendidos dos não atendidos
-    // Não atendidos: stage = 'novo_cadastro' E interactionCount = 0
-    const unattendedLeadIds = campaignLeads
-      .filter(l => l.stage === 'novo_cadastro' && l.interactionCount === 0)
-      .map(l => l.id);
-
-    const attendedLeadIds = campaignLeads
-      .filter(l => !(l.stage === 'novo_cadastro' && l.interactionCount === 0))
-      .map(l => l.id);
-
-    // Iniciar transação no Prisma
-    await prisma.$transaction([
-      // Deletar todas as tarefas pendentes vinculadas a esta jornada
-      prisma.task.deleteMany({
-        where: {
-          customerId: { in: campaignLeads.map(l => l.id) },
-          journeyId: campaignId
-        }
-      }),
-
-      // Deletar os customers não atendidos da jornada
-      prisma.customer.deleteMany({
-        where: {
-          id: { in: unattendedLeadIds }
-        }
-      }),
-
-      // Desassociar os customers atendidos da jornada (remover FK)
-      prisma.customer.updateMany({
-        where: {
-          id: { in: attendedLeadIds }
-        },
-        data: {
-          journeyId: null,
-          joinedJourneyAt: null
-        }
-      }),
-
-      // Deletar a jornada em si (por cascata deleta as automações)
-      prisma.journey.delete({
-        where: { id: campaignId }
-      })
-    ]);
-
-    return NextResponse.json({ success: true, message: 'Campanha excluída e leads não atendidos limpos.' });
+    const result = await CampaignOrchestrationService.deleteCampaign(campaignId);
+    return NextResponse.json({ success: true, message: 'Campanha excluída com sucesso.', data: result });
   } catch (error: any) {
     console.error('DELETE campaign error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

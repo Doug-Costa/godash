@@ -99,15 +99,10 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     await requireAdmin();
-    const id = new URL(request.url).searchParams.get('id');
+    const id = new URL(request.url).searchParams.get('id') || new URL(request.url).searchParams.get('campaignId');
     if (!id) return NextResponse.json({ success: false, error: 'ID obrigatório.' }, { status: 400 });
-    const enrollments = await prisma.campaignEnrollment.count({ where: { campaignId: id } });
-    if (enrollments) {
-      await prisma.campaign.update({ where: { id }, data: { status: 'COMPLETED' } });
-      return NextResponse.json({ success: true, archived: true });
-    }
-    await prisma.campaign.delete({ where: { id } });
-    return NextResponse.json({ success: true, archived: false });
+    const result = await CampaignOrchestrationService.deleteCampaign(id);
+    return NextResponse.json({ success: true, data: result });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }

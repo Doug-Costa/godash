@@ -370,10 +370,16 @@ export class CampaignOrchestrationService {
             }
           });
 
-          const shouldPreserveAssignee = opportunity?.humanTakeover || customer.humanTakeover;
+          const isUnderActiveNegotiation = (opportunity?.assigneeId && opportunity.stage !== 'novo_cadastro') ||
+            (customer.assigneeId && (customer.interactionCount || 0) > 0);
+          const shouldPreserveAssignee = Boolean(
+            opportunity?.humanTakeover ||
+            customer.humanTakeover ||
+            isUnderActiveNegotiation
+          );
           finalAssigneeId = shouldPreserveAssignee
-            ? (opportunity?.assigneeId || assigneeId || null)
-            : (assigneeId || opportunity?.assigneeId || null);
+            ? (opportunity?.assigneeId || customer.assigneeId || assigneeId || null)
+            : (assigneeId || opportunity?.assigneeId || customer.assigneeId || null);
 
           const oppMeta = (opportunity?.metadata as Record<string, any>) || {};
           const updatedMeta = {
@@ -494,5 +500,79 @@ export class CampaignOrchestrationService {
       }
     }
     return result;
+  }
+
+  static async deleteCampaign(campaignId: string) {
+    return prisma.$transaction(async tx => {
+      // 1. Verificar se é uma Campanha Canônica
+      const canonical = await tx.campaign.findUnique({ where: { id: campaignId } });
+      if (canonical) {
+        // Desassociar com segurança referências de negócios e formulários
+        await tx.opportunity.updateMany({
+          where: { sourceCampaignId: campaignId },
+          data: { sourceCampaignId: null }
+        });
+        await tx.form.updateMany({
+          where: { campaignId },
+          data: { campaignId: null }
+        });
+        await tx.product.updateMany({
+          where: { postSaleCampaignId: campaignId },
+          data: { postSaleCampaignId: null }
+        });
+        await tx.product.updateMany({
+          where: { nurturingCampaignId: campaignId },
+          data: { nurturingCampaignId: null }
+        });
+
+        // Deletar associações exclusivas da campanha
+        await tx.campaignAudienceMember.deleteMany({ where: { campaignId } });
+        await tx.campaignEnrollment.deleteMany({ where: { campaignId } });
+        await tx.campaignOperator.deleteMany({ where: { campaignId } });
+
+        // Deletar a campanha canônica
+        await tx.campaign.delete({ where: { id: campaignId } });
+        return { success: true, type: 'CAMPAIGN', id: campaignId, name: canonical.name };
+      }
+
+      // 2. Verificar se é uma Jornada Legada
+      const journey = await tx.journey.findUnique({ where: { id: campaignId } });
+      if (journey) {
+        // Desassociar formulários vinculados
+        await tx.form.updateMany({
+          where: { journeyId: campaignId },
+          data: { journeyId: null }
+        });
+        // Desassociar contatos vinculados
+        await tx.customer.updateMany({
+          where: { journeyId: campaignId },
+          data: { journeyId: null, joinedJourneyAt: null }
+        });
+        // Desassociar autorreferências de jornadas encadeadas
+        await tx.journey.updateMany({
+          where: { onWinJourneyId: campaignId },
+          data: { onWinJourneyId: null }
+        });
+        await tx.journey.updateMany({
+          where: { onLoseJourneyId: campaignId },
+          data: { onLoseJourneyId: null }
+        });
+        await tx.journey.updateMany({
+          where: { nextCampaignId: campaignId },
+          data: { nextCampaignId: null }
+        });
+
+        // Limpar logs e tarefas pendentes vinculadas à jornada
+        await tx.task.deleteMany({ where: { journeyId: campaignId } });
+        await tx.recipientLog.deleteMany({ where: { journeyId: campaignId } });
+        await tx.automation.deleteMany({ where: { journeyId: campaignId } });
+
+        // Deletar a jornada legada
+        await tx.journey.delete({ where: { id: campaignId } });
+        return { success: true, type: 'JOURNEY', id: campaignId, name: journey.name };
+      }
+
+      throw new Error('Campanha ou jornada não encontrada.');
+    });
   }
 }

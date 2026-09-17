@@ -1665,8 +1665,34 @@ export default function DashboardContent({
     }
   };
 
+  const handleActivateCampaign = async (campaignId: string) => {
+    if (!confirm('Deseja ativar esta campanha agora? Os leads da audiência planejada serão matriculados, distribuídos para as operadoras no funil e as réguas serão iniciadas.')) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/campaigns/canonical', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'activate',
+          campaignId
+        })
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        alert(`Campanha ativada com sucesso! ${json.count || 0} lead(s) matriculado(s) e distribuído(s) para os operadores.`);
+        fetchCampaigns();
+        fetchLeads();
+      } else {
+        alert(`Erro ao ativar campanha: ${json.error || 'Erro desconhecido'}`);
+      }
+    } catch (err: any) {
+      alert(`Erro de rede ao ativar campanha: ${err.message}`);
+    }
+  };
+
   const handleDeleteCampaign = async (campaignId: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta campanha? Os leads vinculados que NÃO foram atendidos sumirão do Kanban, e os já atendidos serão mantidos no CRM sem o vínculo com a campanha.')) {
+    if (!confirm('Tem certeza que deseja excluir esta campanha? Ela será desvinculada com segurança de formulários e oportunidades. Todos os contatos e atendimentos no CRM continuarão 100% preservados.')) {
       return;
     }
 
@@ -3381,24 +3407,55 @@ export default function DashboardContent({
                         </button>
                       </div>
                     </div>
-                    <div className="label-sm" style={{ fontSize: 11, marginBottom: 12 }}>
-                      Criada em: {new Date(campaign.createdAt).toLocaleDateString('pt-BR')} &bull; <strong>{campaign._count?.leads || 0}</strong> matriculados{campaign.audience?.length ? ` &bull; ${campaign.audience.length} planejados` : ''}
+                    <div className="label-sm" style={{ fontSize: 11, marginBottom: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div>
+                        Criada em: {new Date(campaign.createdAt).toLocaleDateString('pt-BR')} &bull; Natureza: <strong>{campaign.campaignNature === 'COMMERCIAL' ? 'Comercial' : 'Automática'}</strong>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
+                        <span className="badge badge-purple" style={{ fontSize: 10 }}>
+                          🎯 {campaign.audience?.length || 0} na audiência planejada
+                        </span>
+                        <span className="badge badge-cyan" style={{ fontSize: 10 }}>
+                          👥 {campaign._count?.leads || 0} matriculados
+                        </span>
+                      </div>
                     </div>
+                    {campaign.operators && campaign.operators.length > 0 && (
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                        <strong>Operadores:</strong> {campaign.operators.map((o: any) => o.name).join(', ')}
+                      </div>
+                    )}
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
                       <strong>Passos da Régua:</strong>
-                      <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
-                        {campaign.flowSteps?.filter((step: any) => step.channel).map((step: any) => (
-                          <li key={step.id}>Dia {step.dayOffset}: {step.channel}</li>
-                        ))}
-                      </ul>
+                      {campaign.flowSteps?.length ? (
+                        <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                          {campaign.flowSteps.filter((step: any) => step.channel).map((step: any) => (
+                            <li key={step.id}>Dia {step.dayOffset}: {step.channel}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>Sem régua configurada (Venda Direta)</span>
+                      )}
                     </div>
-                    <button
-                      onClick={() => setSelectedKpiCampaignId(campaign.id)}
-                      className="btn-action btn-action-outline"
-                      style={{ width: '100%', fontSize: 11, padding: '6px' }}
-                    >
-                      📊 Ver KPIs da Campanha
-                    </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {campaign.entityType === 'CAMPAIGN' && (campaign.status === 'DRAFT' || campaign.status === 'PAUSED') && (
+                        <button
+                          type="button"
+                          onClick={() => handleActivateCampaign(campaign.id)}
+                          className="btn-action btn-action-purple"
+                          style={{ width: '100%', fontSize: 11, padding: '7px 10px', fontWeight: 700 }}
+                        >
+                          🚀 Ativar Campanha & Distribuir Leads
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setSelectedKpiCampaignId(campaign.id)}
+                        className="btn-action btn-action-outline"
+                        style={{ width: '100%', fontSize: 11, padding: '6px' }}
+                      >
+                        📊 Ver KPIs da Campanha
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -6533,16 +6590,25 @@ export default function DashboardContent({
                 {wizardStep === 1 ? 'Cancelar' : '◀️ Voltar'}
               </button>
 
-              {wizardStep === 4 && (
-                <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', marginRight: 8 }}>
+              <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', marginRight: 8 }}>
+                {wizardStep >= 2 && (
                   <button
                     type="button"
-                    onClick={() => handleSaveCanonicalCampaign(false)}
+                    onClick={() => {
+                      if (!campaignName.trim()) {
+                        alert('Por favor, informe o nome da campanha.');
+                        return;
+                      }
+                      handleSaveCanonicalCampaign(false);
+                    }}
                     className="btn-action btn-action-outline"
                     style={{ padding: '8px 14px' }}
+                    title="Salvar como molde/rascunho sem disparar mensagens"
                   >
-                    💾 Salvar rascunho
+                    💾 Salvar Rascunho
                   </button>
+                )}
+                {wizardStep === 4 && (
                   <button
                     type="button"
                     onClick={() => handleSaveCanonicalCampaign(true)}
@@ -6551,8 +6617,8 @@ export default function DashboardContent({
                   >
                     🧪 Executar teste controlado
                   </button>
-                </div>
-              )}
+                )}
+              </div>
 
               <button 
                 type="button" 

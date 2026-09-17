@@ -326,18 +326,18 @@ export default function CampaignSegmentation({
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '32px 16px',
+              padding: '24px 16px',
               border: '1px dashed var(--border)',
               borderRadius: 8,
               background: 'rgba(0,0,0,0.02)',
               textAlign: 'center',
             }}>
-              <span style={{ fontSize: 32, marginBottom: 8 }}>🔍</span>
+              <span style={{ fontSize: 28, marginBottom: 6 }}>💡</span>
               <h5 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px 0' }}>
-                Nenhuma regra de segmentação adicionada
+                Audiência Inicial Opcional (0 Leads)
               </h5>
-              <p style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '0 0 16px 0', maxWidth: 280 }}>
-                Adicione regras para filtrar a base de clientes da campanha.
+              <p style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '0 0 14px 0', maxWidth: 360, lineHeight: 1.4 }}>
+                Você pode salvar esta campanha agora como rascunho (definindo funil e operadores) e <strong>injetar os leads depois</strong> usando o <strong>Seletor de Audiência e Leads</strong> ou adicionar regras dinâmicas abaixo:
               </p>
               <button
                 type="button"
@@ -353,7 +353,7 @@ export default function CampaignSegmentation({
                   cursor: 'pointer',
                 }}
               >
-                + Adicionar Primeira Regra
+                + Adicionar Regra de Segmentação
               </button>
             </div>
           ) : (
