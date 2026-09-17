@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { BitrixPreflightSummary } from '@/lib/domain/BitrixImportContract';
+import { BitrixPreflightSummary, BitrixProcessedDeal } from '@/lib/domain/BitrixImportContract';
 
 interface BitrixImportModalProps {
   isOpen: boolean;
@@ -14,30 +14,19 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
   const [dealsFile, setDealsFile] = useState<File | null>(null);
   const [recencyDays, setRecencyDays] = useState<number>(90);
   const [summary, setSummary] = useState<BitrixPreflightSummary | null>(null);
+  const [simulatedDeals, setSimulatedDeals] = useState<BitrixProcessedDeal[]>([]);
   
   const [loading, setLoading] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [progress, setProgress] = useState<{ current: number; total: number; percent: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const [users, setUsers] = useState<Array<{ id: string; name: string }>>([]);
   const [pipelines, setPipelines] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
 
-  // Raw parsed items in memory for commit
-  const [parsedContacts, setParsedContacts] = useState<any[]>([]);
-  const [parsedDeals, setParsedDeals] = useState<any[]>([]);
-
   useEffect(() => {
     if (isOpen) {
-      fetch('/api/users')
-        .then(r => r.json())
-        .then(data => {
-          const list = data.users || data.data || [];
-          setUsers(list);
-        })
-        .catch(console.error);
-
       fetch('/api/pipelines')
         .then(r => r.json())
         .then(data => {
@@ -50,12 +39,12 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
       setContactsFile(null);
       setDealsFile(null);
       setSummary(null);
+      setSimulatedDeals([]);
       setError(null);
       setSuccessMsg(null);
       setLoading(false);
       setCommitting(false);
-      setParsedContacts([]);
-      setParsedDeals([]);
+      setProgress(null);
     }
   }, [isOpen]);
 
@@ -90,6 +79,8 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
     setLoading(true);
     setError(null);
     setSummary(null);
+    setSimulatedDeals([]);
+    setProgress(null);
 
     try {
       let contactsRaw: any[] = [];
@@ -138,10 +129,7 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
         raw: d
       }));
 
-      setParsedContacts(normalizedContacts);
-      setParsedDeals(normalizedDeals);
-
-      const res = await fetch('/api/leads/import/bitrix/preflight', {
+      const preflightRes: Response = await fetch('/api/leads/import/bitrix/preflight', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -151,14 +139,15 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
         })
       });
 
-      if (!res.ok) {
-        throw new Error(await res.text());
+      if (!preflightRes.ok) {
+        throw new Error(await preflightRes.text());
       }
 
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error);
+      const preflightJson: any = await preflightRes.json();
+      if (!preflightJson.success) throw new Error(preflightJson.error);
 
-      setSummary(json.summary);
+      setSummary(preflightJson.summary);
+      setSimulatedDeals(preflightJson.processedDeals || []);
     } catch (err: any) {
       setError(err.message || 'Erro ao realizar preflight Bitrix.');
     } finally {
@@ -167,32 +156,62 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
   };
 
   const handleCommit = async () => {
-    if (!summary || parsedDeals.length === 0) return;
+    if (!summary || simulatedDeals.length === 0) return;
     setCommitting(true);
     setError(null);
+    setProgress({ current: 0, total: simulatedDeals.length, percent: 0 });
+
+    const chunkSize = 250;
+    const totalChunks = Math.ceil(simulatedDeals.length / chunkSize);
+    let batchId: string | undefined = undefined;
+    let totalSuccess = 0;
+    let totalErrors = 0;
+    let totalRecovered = 0;
 
     try {
-      const res = await fetch('/api/leads/import/bitrix/commit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: dealsFile?.name || 'bitrix_migration.csv',
-          contacts: parsedContacts,
-          deals: parsedDeals,
-          recencyCutoffDays: recencyDays,
-          targetPipelineId: selectedPipelineId
-        })
-      });
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const chunkDeals = simulatedDeals.slice(chunkIndex * chunkSize, (chunkIndex + 1) * chunkSize);
+        const isFirstChunk = chunkIndex === 0;
+        const isLastChunk = chunkIndex === totalChunks - 1;
 
-      if (!res.ok) throw new Error(await res.text());
+        const commitRes: Response = await fetch('/api/leads/import/bitrix/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: dealsFile?.name || 'bitrix_migration.csv',
+            deals: chunkDeals,
+            targetPipelineId: selectedPipelineId,
+            batchId,
+            isFirstChunk,
+            isLastChunk,
+            totalExpectedDeals: simulatedDeals.length
+          })
+        });
 
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error);
+        if (!commitRes.ok) {
+          const text = await commitRes.text();
+          throw new Error(`Falha no lote ${chunkIndex + 1}/${totalChunks}: ${text}`);
+        }
+
+        const commitData: any = await commitRes.json();
+        if (!commitData.success) throw new Error(commitData.error);
+
+        if (commitData.data?.batchId) {
+          batchId = commitData.data.batchId;
+        }
+        totalSuccess += commitData.data?.successRows || 0;
+        totalErrors += commitData.data?.errorRows || 0;
+        totalRecovered += commitData.data?.recoveredCount || 0;
+
+        const processedCount = Math.min(simulatedDeals.length, (chunkIndex + 1) * chunkSize);
+        const pct = Math.round((processedCount / simulatedDeals.length) * 100);
+        setProgress({ current: processedCount, total: simulatedDeals.length, percent: pct });
+      }
 
       setSuccessMsg(
-        `Lote Bitrix importado com sucesso! ` +
-        `Processados: ${json.data.successRows} negócios. ` +
-        `Contatos recuperados do snapshot: ${json.data.recoveredCount}.`
+        `🎉 Migração Bitrix24 concluída com sucesso! ` +
+        `Processados: ${totalSuccess} negócios com segurança. ` +
+        `Contatos recuperados do snapshot: ${totalRecovered}.`
       );
 
       setTimeout(() => {
@@ -200,7 +219,7 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
         onClose();
       }, 2500);
     } catch (err: any) {
-      setError(err.message || 'Erro ao efetivar migração Bitrix.');
+      setError(err.message || 'Erro durante o processamento do lote.');
     } finally {
       setCommitting(false);
     }
@@ -280,7 +299,7 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
                 <option value={60}>Últimos 60 dias (Recomendado)</option>
                 <option value={90}>Últimos 90 dias (Padrão 3 meses)</option>
                 <option value={180}>Últimos 180 dias (Semestre)</option>
-                <option value={3650}>Sem corte (Todos os 7.178 abertos vão ao Kanban - Cuidado!)</option>
+                <option value={3650}>Sem corte (Todos os abertos vão ao Kanban)</option>
               </select>
               <p style={{ margin: '6px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 * Negócios anteriores à data de corte são arquivados como dormentes para não sobrecarregar as operadoras.
@@ -374,6 +393,19 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
               </div>
             </div>
 
+            {/* Barra de Progresso Real-time se estiver processando */}
+            {progress && (
+              <div style={{ background: 'var(--surface-raised)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--accent)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                  <span>⏳ Gravando lotes no banco: {progress.current} de {progress.total} negócios...</span>
+                  <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{progress.percent}%</span>
+                </div>
+                <div style={{ width: '100%', height: '10px', background: 'var(--surface)', borderRadius: '5px', overflow: 'hidden' }}>
+                  <div style={{ width: `${progress.percent}%`, height: '100%', background: 'linear-gradient(90deg, #3B82F6, #10B981)', transition: 'width 0.3s ease' }} />
+                </div>
+              </div>
+            )}
+
             {/* Ação de Commit */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--border)' }}>
               <button
@@ -386,7 +418,7 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
                   fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8
                 }}
               >
-                {committing ? 'Efetivando Migração no Banco...' : `🚀 Efetivar Migração Bitrix (${summary.totalDealsRead} negócios)`}
+                {committing ? 'Gravando Lotes com Segurança...' : `🚀 Efetivar Migração Bitrix (${summary.totalDealsRead} negócios)`}
               </button>
             </div>
           </div>

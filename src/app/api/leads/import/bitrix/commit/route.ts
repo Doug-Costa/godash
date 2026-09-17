@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { BitrixPreflightService } from '@/lib/services/BitrixPreflightService';
 import { BitrixCommitService } from '@/lib/services/BitrixCommitService';
 
 export async function POST(req: Request) {
@@ -13,36 +12,31 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { 
       fileName = 'bitrix_migration.csv',
-      contacts = [], 
       deals = [], 
-      operatorMaps = [], 
-      productRules = [], 
-      recencyCutoffDays = 90,
-      targetPipelineId
+      targetPipelineId,
+      batchId,
+      isFirstChunk = true,
+      isLastChunk = false,
+      totalExpectedDeals
     } = body;
 
-    if (!Array.isArray(contacts) || !Array.isArray(deals) || (contacts.length === 0 && deals.length === 0)) {
+    if (!Array.isArray(deals) || deals.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Lista de contatos ou negócios vazia.' },
+        { success: false, error: 'Lista de negócios vazia para este lote.' },
         { status: 400 }
       );
     }
 
-    // 1. Re-executar preflight em memória para garantir consistência total
-    const { processedDeals } = await BitrixPreflightService.simulate({
-      contacts,
-      deals,
-      operatorMaps,
-      productRules,
-      recencyCutoffDays: Number(recencyCutoffDays) || 90
-    });
-
-    // 2. Gravação transacional
-    const result = await BitrixCommitService.commit({
+    // Gravação transacional do pedaço (chunk)
+    const result = await BitrixCommitService.commitChunk({
       fileName,
       uploadedById: session.user.id,
       targetPipelineId,
-      deals: processedDeals
+      batchId,
+      deals,
+      isFirstChunk,
+      isLastChunk,
+      totalExpectedDeals: totalExpectedDeals || deals.length
     });
 
     return NextResponse.json({
@@ -50,7 +44,7 @@ export async function POST(req: Request) {
       data: result
     });
   } catch (error: any) {
-    console.error('[API Bitrix Commit] Erro:', error);
+    console.error('[API Bitrix Commit Chunk] Erro:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Erro ao efetivar lote Bitrix' },
       { status: 500 }

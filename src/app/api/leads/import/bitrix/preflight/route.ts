@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       summary: result.summary,
-      sampleProcessedDeals: result.processedDeals.slice(0, 100), // Enviar amostra para preview
+      processedDeals: result.processedDeals,
       totalDeals: result.processedDeals.length
     });
   } catch (error: any) {
