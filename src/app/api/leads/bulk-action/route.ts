@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
 import { JourneyTransitionService } from '@/lib/services/JourneyTransitionService';
 import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
+import { LeadExplorerQueryService } from '@/lib/services/LeadExplorerQueryService';
 
 export async function POST(request: Request) {
   try {
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { action, targetAssigneeId, targetJourneyId, leadIds, filters } = body;
+    const { action, targetAssigneeId, targetJourneyId, leadIds, selectAllMatching, filters = {} } = body;
 
     if (!action || !['assign', 'return_to_queue', 'enrol_campaign'].includes(action)) {
       return NextResponse.json(
@@ -25,14 +26,15 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!filters) {
-      return NextResponse.json(
-        { success: false, error: 'Filtros de segmentação são obrigatórios.' },
-        { status: 400 }
-      );
+    // Resolve target IDs either from selectAllMatching or from explicit leadIds array
+    let effectiveLeadIds: string[] = Array.isArray(leadIds) ? leadIds : [];
+
+    if (selectAllMatching) {
+      const matchingItems = await LeadExplorerQueryService.fetchMatchingLeads(filters);
+      effectiveLeadIds = matchingItems.map(item => item.id);
     }
 
-    // 2. Build filters for Postgres query
+    // 2. Build filters for Postgres fallback query if neither leadIds nor selectAllMatching provided
     const crmFilter: any = {};
 
     if (filters.pipelineId && filters.pipelineId !== 'all') {
@@ -70,8 +72,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: 'Jornada de destino é obrigatória.' }, { status: 400 });
       }
 
-      const targetIdsToProcess = Array.isArray(leadIds) && leadIds.length > 0
-        ? leadIds.map((id: string) => id.startsWith('ext_') ? parseInt(id.replace('ext_', ''), 10) : id)
+      const targetIdsToProcess = effectiveLeadIds.length > 0
+        ? effectiveLeadIds.map((id: string) => id.startsWith('ext_') ? parseInt(id.replace('ext_', ''), 10) : id)
         : [];
 
       if (targetIdsToProcess.length > 0) {
@@ -105,9 +107,9 @@ export async function POST(request: Request) {
 
       const assigneeValue = targetAssigneeId === 'unassign' ? null : targetAssigneeId;
 
-      if (Array.isArray(leadIds) && leadIds.length > 0) {
-        const cIds = leadIds.filter((id: string) => !id.startsWith('ext_'));
-        const extIds = leadIds.filter((id: string) => id.startsWith('ext_')).map((id: string) => parseInt(id.replace('ext_', ''), 10));
+      if (effectiveLeadIds.length > 0) {
+        const cIds = effectiveLeadIds.filter((id: string) => !id.startsWith('ext_'));
+        const extIds = effectiveLeadIds.filter((id: string) => id.startsWith('ext_')).map((id: string) => parseInt(id.replace('ext_', ''), 10));
 
         if (cIds.length > 0) {
           const [res] = await prisma.$transaction([
@@ -162,14 +164,15 @@ export async function POST(request: Request) {
 
     } else if (action === 'return_to_queue') {
       // Find all matching customers
-      const matchingCustomers = await prisma.customer.findMany({
-        where: crmFilter,
-        select: {
-          id: true,
-          externalPersonId: true,
-          journeyId: true
-        }
-      });
+      const matchingCustomers = effectiveLeadIds.length > 0
+        ? await prisma.customer.findMany({
+            where: { id: { in: effectiveLeadIds.filter(id => !id.startsWith('ext_')) } },
+            select: { id: true, externalPersonId: true, journeyId: true }
+          })
+        : await prisma.customer.findMany({
+            where: crmFilter,
+            select: { id: true, externalPersonId: true, journeyId: true }
+          });
 
       for (const cust of matchingCustomers) {
         // A. Delete pending tasks first

@@ -62,6 +62,7 @@ export default function UnifiedLeadsExplorer({
   const [endDate, setEndDate] = useState<string>('');
   const [search, setSearch] = useState<string>('');
   const [page, setPage] = useState<number>(1);
+  const [limit, setLimit] = useState<number>(20);
 
   // Loaded Options
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -76,16 +77,90 @@ export default function UnifiedLeadsExplorer({
 
   // Selection & Bulk Action State
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [isAllMatchingSelected, setIsAllMatchingSelected] = useState<boolean>(false);
+  const [showConfirmAllModal, setShowConfirmAllModal] = useState<boolean>(false);
   const [bulkActionType, setBulkActionType] = useState<'campaign' | 'assign' | null>(null);
   const [selectedTargetJourneyId, setSelectedTargetJourneyId] = useState<string>('');
   const [selectedTargetAssigneeId, setSelectedTargetAssigneeId] = useState<string>('');
   const [isSubmittingBulk, setIsSubmittingBulk] = useState<boolean>(false);
+  const [isExportingAll, setIsExportingAll] = useState<boolean>(false);
 
   // Import Modal State
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [showBitrixModal, setShowBitrixModal] = useState<boolean>(false);
   const [auditorModalData, setAuditorModalData] = useState<{isOpen: boolean, customerId: string, journeyId: string}>({ isOpen: false, customerId: '', journeyId: '' });
   const [refreshKey, setRefreshKey] = useState<number>(0);
+
+  // Helper to compute human readable active filter label
+  const getActiveFilterLabel = (): string => {
+    const parts: string[] = [];
+    if (productId !== 'all') {
+      if (productId === 'no_product') parts.push('Sem Produto Vinculado');
+      else {
+        const prod = products.find(p => p.id === productId);
+        parts.push(`Curso/Produto: ${prod?.name?.trim() || productId}`);
+      }
+    }
+    if (planId !== 'all') {
+      if (planId === 'no_plan') parts.push('Sem Plano DentalGO');
+      else {
+        const pl = plans.find(p => p.id === planId);
+        parts.push(`Plano: ${pl?.title || planId}`);
+      }
+    }
+    if (source !== 'all') {
+      parts.push(`Origem: ${source}`);
+    }
+    if (batchId !== 'all') {
+      const bat = batches.find(b => b.id === batchId);
+      parts.push(`Lote: ${bat?.fileName || batchId}`);
+    }
+    if (subscriptionStatus !== 'all') {
+      const statusMap: Record<string, string> = { active: 'Ativo', expired: 'Expirado', canceled: 'Cancelado', no_plan: 'Sem Plano' };
+      parts.push(`Status: ${statusMap[subscriptionStatus] || subscriptionStatus}`);
+    }
+    if (relationshipType !== 'all') {
+      parts.push(`Relação: ${relationshipType}`);
+    }
+    if (journeyId !== 'all') {
+      if (journeyId === 'none') parts.push('Fora de Campanha');
+      else {
+        const j = activeJourneys.find(jou => jou.id === journeyId);
+        parts.push(`Campanha: ${j?.name || journeyId}`);
+      }
+    }
+    if (assigneeId !== 'all') {
+      if (assigneeId === 'unassigned') parts.push('Sem Operador (Órfão)');
+      else {
+        const a = agents.find(ag => ag.id === assigneeId);
+        parts.push(`Operador: ${a?.name || assigneeId}`);
+      }
+    }
+    if (search.trim()) {
+      parts.push(`Busca: "${search.trim()}"`);
+    }
+
+    if (parts.length === 0) {
+      return 'Diretório Geral de Leads';
+    }
+    return parts.join(' | ');
+  };
+
+  // Helper for filter query params
+  const getFilterParams = () => ({
+    source,
+    batchId,
+    planId,
+    subscriptionStatus,
+    productId,
+    relationshipType,
+    journeyId,
+    assigneeId,
+    stage,
+    startDate,
+    endDate,
+    search
+  });
 
   // Fetch Plans, Forms, Journeys, Batches on Mount
   useEffect(() => {
@@ -123,7 +198,7 @@ export default function UnifiedLeadsExplorer({
     loadOptions();
   }, []);
 
-  // Fetch Leads when filters, page, or refreshKey change
+  // Fetch Leads when filters, page, limit, or refreshKey change
   useEffect(() => {
     async function fetchLeads() {
       setLoading(true);
@@ -142,7 +217,7 @@ export default function UnifiedLeadsExplorer({
           endDate,
           search,
           page: page.toString(),
-          limit: '25',
+          limit: limit.toString(),
         });
 
         const res = await fetch(`/api/leads/explorer?${params.toString()}`);
@@ -160,23 +235,46 @@ export default function UnifiedLeadsExplorer({
       }
     }
     fetchLeads();
-  }, [source, batchId, planId, subscriptionStatus, productId, relationshipType, journeyId, assigneeId, stage, startDate, endDate, search, page, refreshKey]);
+  }, [source, batchId, planId, subscriptionStatus, productId, relationshipType, journeyId, assigneeId, stage, startDate, endDate, search, page, limit, refreshKey]);
 
-  // Handle Select All / Toggle Single Lead
-  const toggleSelectAll = () => {
-    if (selectedLeadIds.length === leads.length) {
+  // Handle Header Checkbox Click
+  const toggleSelectAllPage = () => {
+    if (isAllMatchingSelected || (selectedLeadIds.length === leads.length && leads.length > 0)) {
       setSelectedLeadIds([]);
+      setIsAllMatchingSelected(false);
     } else {
       setSelectedLeadIds(leads.map(l => l.id));
+      setIsAllMatchingSelected(false);
     }
   };
 
+  // Toggle Single Lead Checkbox
   const toggleSelectLead = (id: string) => {
+    if (isAllMatchingSelected) {
+      setIsAllMatchingSelected(false);
+      setSelectedLeadIds(leads.map(l => l.id).filter(i => i !== id));
+      return;
+    }
+
     if (selectedLeadIds.includes(id)) {
       setSelectedLeadIds(selectedLeadIds.filter(i => i !== id));
     } else {
       setSelectedLeadIds([...selectedLeadIds, id]);
     }
+  };
+
+  // Confirm Selecting All Matching Leads
+  const handleConfirmSelectAllMatching = () => {
+    setIsAllMatchingSelected(true);
+    setSelectedLeadIds(leads.map(l => l.id));
+    setShowConfirmAllModal(false);
+  };
+
+  // Clear Selection
+  const handleClearSelection = () => {
+    setSelectedLeadIds([]);
+    setIsAllMatchingSelected(false);
+    setBulkActionType(null);
   };
 
   // Bulk Enrol in Campaign
@@ -193,21 +291,22 @@ export default function UnifiedLeadsExplorer({
         body: JSON.stringify({
           action: 'enrol_campaign',
           targetJourneyId: selectedTargetJourneyId,
-          leadIds: selectedLeadIds,
-          filters: {}
+          selectAllMatching: isAllMatchingSelected,
+          leadIds: isAllMatchingSelected ? [] : selectedLeadIds,
+          filters: getFilterParams()
         })
       });
       const data = await res.json();
       if (data.success) {
         const selectedCampaign = activeJourneys.find(item => item.id === selectedTargetJourneyId);
         const isActiveCampaign = selectedCampaign?.entityType === 'CAMPAIGN' && ['ACTIVE', 'READY', 'TESTING'].includes(selectedCampaign?.status || '');
+        const count = data.updatedCount || (isAllMatchingSelected ? total : selectedLeadIds.length);
         alert(isActiveCampaign
-          ? `Sucesso! ${data.updatedCount || selectedLeadIds.length} lead(s) matriculado(s) na campanha "${selectedCampaign?.name}" e distribuídos para a equipe.`
+          ? `Sucesso! ${count} lead(s) matriculado(s) na campanha "${selectedCampaign?.name}" e distribuídos para a equipe.`
           : selectedCampaign?.entityType === 'CAMPAIGN'
-            ? `Sucesso! ${data.updatedCount || selectedLeadIds.length} contato(s) adicionados à audiência planejada da campanha.`
-            : `Sucesso! ${data.updatedCount || selectedLeadIds.length} leads inscritos na campanha.`);
-        setSelectedLeadIds([]);
-        setBulkActionType(null);
+            ? `Sucesso! ${count} contato(s) adicionados à audiência planejada da campanha.`
+            : `Sucesso! ${count} leads inscritos na campanha.`);
+        handleClearSelection();
         setRefreshKey(k => k + 1);
       } else {
         alert(`Erro: ${data.error}`);
@@ -233,16 +332,17 @@ export default function UnifiedLeadsExplorer({
         body: JSON.stringify({
           action: 'assign',
           targetAssigneeId: selectedTargetAssigneeId,
-          leadIds: selectedLeadIds,
-          filters: {}
+          selectAllMatching: isAllMatchingSelected,
+          leadIds: isAllMatchingSelected ? [] : selectedLeadIds,
+          filters: getFilterParams()
         })
       });
       const data = await res.json();
       if (data.success) {
-        alert(`Sucesso! Operador atualizado para ${data.updatedCount || selectedLeadIds.length} leads.`);
-        setSelectedLeadIds([]);
-        setBulkActionType(null);
-        setPage(p => p);
+        const count = data.updatedCount || (isAllMatchingSelected ? total : selectedLeadIds.length);
+        alert(`Sucesso! Operador atualizado para ${count} leads.`);
+        handleClearSelection();
+        setRefreshKey(k => k + 1);
       } else {
         alert(`Erro: ${data.error}`);
       }
@@ -254,14 +354,47 @@ export default function UnifiedLeadsExplorer({
   };
 
   // Export CSV
-  const handleExportCSV = () => {
-    const selectedLeadsList = leads.filter(l => selectedLeadIds.includes(l.id));
-    if (selectedLeadsList.length === 0) return;
+  const handleExportCSV = async () => {
+    let exportList: any[] = [];
+
+    if (isAllMatchingSelected) {
+      setIsExportingAll(true);
+      try {
+        const params = new URLSearchParams({
+          ...getFilterParams(),
+          exportAll: 'true'
+        });
+        const res = await fetch(`/api/leads/explorer?${params.toString()}`);
+        const data = await res.json();
+        if (data.success && Array.isArray(data.leads)) {
+          exportList = data.leads;
+        } else {
+          alert('Erro ao buscar todos os contatos para exportação.');
+          setIsExportingAll(false);
+          return;
+        }
+      } catch (err: any) {
+        alert(`Erro ao exportar: ${err.message}`);
+        setIsExportingAll(false);
+        return;
+      } finally {
+        setIsExportingAll(false);
+      }
+    } else {
+      exportList = selectedLeadIds.length > 0
+        ? leads.filter(l => selectedLeadIds.includes(l.id))
+        : leads;
+    }
+
+    if (exportList.length === 0) {
+      alert('Nenhum lead selecionado para exportação.');
+      return;
+    }
 
     const headers = ['Nome', 'Email', 'Telefone', 'Relação', 'Origem', 'Formulário', 'Canal', 'UTM Campaign', 'Plano', 'Produtos', 'Status Plano', 'Jornada', 'Operador', 'Data Cadastro'];
     const csvRows = [headers.join(',')];
 
-    for (const l of selectedLeadsList) {
+    for (const l of exportList) {
       const row = [
         `"${(l.name || '').replace(/"/g, '""')}"`,
         `"${(l.email || '').replace(/"/g, '""')}"`,
@@ -292,7 +425,6 @@ export default function UnifiedLeadsExplorer({
   };
 
   const handleImportSuccess = () => {
-    // Refresh leads table
     setPage(1);
     setRefreshKey(k => k + 1);
   };
@@ -321,6 +453,9 @@ export default function UnifiedLeadsExplorer({
     const definition = definitions[type] || definitions.CONTACT;
     return <span style={{ padding: '4px 9px', borderRadius: 8, fontSize: '0.72rem', fontWeight: 700, color: definition.color, background: definition.background, whiteSpace: 'nowrap' }}>{definition.label}</span>;
   };
+
+  const isSelectionActive = isAllMatchingSelected || selectedLeadIds.length > 0;
+  const isPageFullySelected = selectedLeadIds.length === leads.length && leads.length > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
@@ -382,7 +517,7 @@ export default function UnifiedLeadsExplorer({
               type="text"
               placeholder="🔍 Buscar por nome, e-mail ou telefone..."
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); setIsAllMatchingSelected(false); }}
               style={{
                 padding: '10px 16px',
                 borderRadius: '10px',
@@ -403,7 +538,7 @@ export default function UnifiedLeadsExplorer({
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Relação Comercial</label>
             <select
               value={relationshipType}
-              onChange={(e) => { setRelationshipType(e.target.value); setPage(1); }}
+              onChange={(e) => { setRelationshipType(e.target.value); setPage(1); setIsAllMatchingSelected(false); }}
               style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">Todos: Leads e Clientes</option>
@@ -420,7 +555,7 @@ export default function UnifiedLeadsExplorer({
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Origem do Lead</label>
             <select
               value={source}
-              onChange={(e) => { setSource(e.target.value); setPage(1); }}
+              onChange={(e) => { setSource(e.target.value); setPage(1); setIsAllMatchingSelected(false); }}
               style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">🌐 Todas as Origens</option>
@@ -439,7 +574,7 @@ export default function UnifiedLeadsExplorer({
               <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>📦 Lote de Importação</label>
               <select
                 value={batchId}
-                onChange={(e) => { setBatchId(e.target.value); setPage(1); }}
+                onChange={(e) => { setBatchId(e.target.value); setPage(1); setIsAllMatchingSelected(false); }}
                 style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
               >
                 <option value="all">📁 Todos os Lotes</option>
@@ -457,7 +592,7 @@ export default function UnifiedLeadsExplorer({
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Plano DentalGO</label>
             <select
               value={planId}
-              onChange={(e) => { setPlanId(e.target.value); setPage(1); }}
+              onChange={(e) => { setPlanId(e.target.value); setPage(1); setIsAllMatchingSelected(false); }}
               style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">💳 Todos os Planos</option>
@@ -473,7 +608,7 @@ export default function UnifiedLeadsExplorer({
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Produto / Curso</label>
             <select
               value={productId}
-              onChange={(e) => { setProductId(e.target.value); setPage(1); }}
+              onChange={(e) => { setProductId(e.target.value); setPage(1); setIsAllMatchingSelected(false); }}
               style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">📦 Todos os Produtos</option>
@@ -489,7 +624,7 @@ export default function UnifiedLeadsExplorer({
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Status da Assinatura</label>
             <select
               value={subscriptionStatus}
-              onChange={(e) => { setSubscriptionStatus(e.target.value); setPage(1); }}
+              onChange={(e) => { setSubscriptionStatus(e.target.value); setPage(1); setIsAllMatchingSelected(false); }}
               style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">🌐 Todos os Status</option>
@@ -505,7 +640,7 @@ export default function UnifiedLeadsExplorer({
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Campanha / Jornada</label>
             <select
               value={journeyId}
-              onChange={(e) => { setJourneyId(e.target.value); setPage(1); }}
+              onChange={(e) => { setJourneyId(e.target.value); setPage(1); setIsAllMatchingSelected(false); }}
               style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">🚀 Todas as Campanhas</option>
@@ -521,7 +656,7 @@ export default function UnifiedLeadsExplorer({
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Atendente / Operador</label>
             <select
               value={assigneeId}
-              onChange={(e) => { setAssigneeId(e.target.value); setPage(1); }}
+              onChange={(e) => { setAssigneeId(e.target.value); setPage(1); setIsAllMatchingSelected(false); }}
               style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             >
               <option value="all">👤 Todos os Operadores</option>
@@ -538,7 +673,7 @@ export default function UnifiedLeadsExplorer({
             <input
               type="date"
               value={startDate}
-              onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+              onChange={(e) => { setStartDate(e.target.value); setPage(1); setIsAllMatchingSelected(false); }}
               style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             />
           </div>
@@ -549,7 +684,7 @@ export default function UnifiedLeadsExplorer({
             <input
               type="date"
               value={endDate}
-              onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+              onChange={(e) => { setEndDate(e.target.value); setPage(1); setIsAllMatchingSelected(false); }}
               style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--surface-raised)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
             />
           </div>
@@ -557,7 +692,7 @@ export default function UnifiedLeadsExplorer({
       </div>
 
       {/* Sticky Bulk Action Bar */}
-      {selectedLeadIds.length > 0 && (
+      {isSelectionActive && (
         <div style={{
           position: 'sticky',
           top: '16px',
@@ -568,19 +703,25 @@ export default function UnifiedLeadsExplorer({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
           boxShadow: '0 10px 25px rgba(79, 70, 229, 0.4)',
           color: '#ffffff'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontWeight: 700, fontSize: '1rem' }}>
-              ⚡ {selectedLeadIds.length} lead(s) selecionado(s)
+            <span style={{ fontWeight: 700, fontSize: '0.98rem' }}>
+              {isAllMatchingSelected ? (
+                <>⚡ Todos os <strong>{total}</strong> contatos do [{getActiveFilterLabel()}] selecionados</>
+              ) : (
+                <>⚡ <strong>{selectedLeadIds.length}</strong> lead(s) selecionado(s)</>
+              )}
             </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             {/* Action 1: Enrol Campaign */}
             {bulkActionType === 'campaign' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <select
                   value={selectedTargetJourneyId}
                   onChange={(e) => setSelectedTargetJourneyId(e.target.value)}
@@ -605,14 +746,14 @@ export default function UnifiedLeadsExplorer({
                       disabled={isSubmittingBulk}
                       style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#10B981', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
                     >
-                      {isSubmittingBulk ? 'Confirmando...' : (isDirect ? '🚀 Matricular na Campanha' : '📝 Adicionar à Audiência')}
+                      {isSubmittingBulk ? 'Confirmando...' : (isDirect ? `🚀 Matricular ${isAllMatchingSelected ? total : selectedLeadIds.length} na Campanha` : `📝 Adicionar ${isAllMatchingSelected ? total : selectedLeadIds.length} à Audiência`)}
                     </button>
                   );
                 })()}
                 <button onClick={() => setBulkActionType(null)} style={{ background: 'transparent', border: '1px solid #ffffff', color: '#ffffff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer' }}>Cancelar</button>
               </div>
             ) : bulkActionType === 'assign' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <select
                   value={selectedTargetAssigneeId}
                   onChange={(e) => setSelectedTargetAssigneeId(e.target.value)}
@@ -629,7 +770,7 @@ export default function UnifiedLeadsExplorer({
                   disabled={isSubmittingBulk}
                   style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#10B981', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}
                 >
-                  {isSubmittingBulk ? 'Confirmando...' : 'Confirmar Atribuição'}
+                  {isSubmittingBulk ? 'Confirmando...' : `Confirmar para ${isAllMatchingSelected ? total : selectedLeadIds.length} Leads`}
                 </button>
                 <button onClick={() => setBulkActionType(null)} style={{ background: 'transparent', border: '1px solid #ffffff', color: '#ffffff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer' }}>Cancelar</button>
               </div>
@@ -639,7 +780,7 @@ export default function UnifiedLeadsExplorer({
                   onClick={() => setBulkActionType('campaign')}
                   style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#ffffff', color: '#4f46e5', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
-                  🚀 Lançar em Campanha
+                  🚀 Lançar em Campanha ({isAllMatchingSelected ? total : selectedLeadIds.length})
                 </button>
                 <button
                   onClick={() => setBulkActionType('assign')}
@@ -649,19 +790,59 @@ export default function UnifiedLeadsExplorer({
                 </button>
                 <button
                   onClick={handleExportCSV}
+                  disabled={isExportingAll}
                   style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: 'rgba(255, 255, 255, 0.2)', color: '#ffffff', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
-                  📥 Exportar CSV
+                  {isExportingAll ? '⏳ Exportando...' : `📥 Exportar CSV (${isAllMatchingSelected ? total : selectedLeadIds.length})`}
                 </button>
                 <button
-                  onClick={() => setSelectedLeadIds([])}
+                  onClick={handleClearSelection}
                   style={{ background: 'transparent', border: 'none', color: '#e0e7ff', textDecoration: 'underline', cursor: 'pointer', marginLeft: '8px', fontSize: '0.85rem' }}
                 >
-                  Desmarcar Todos
+                  Limpar Seleção
                 </button>
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Select All Matching Banner when page is fully selected and total > leads.length */}
+      {isPageFullySelected && total > leads.length && !isAllMatchingSelected && (
+        <div style={{
+          background: 'var(--accent-glow, rgba(79, 70, 229, 0.12))',
+          border: '1px solid var(--accent, #4f46e5)',
+          padding: '12px 20px',
+          borderRadius: '12px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
+          color: 'var(--text-primary)',
+          fontSize: '0.9rem'
+        }}>
+          <div>
+            ℹ️ Todos os <strong>{leads.length}</strong> contatos desta página estão selecionados.
+          </div>
+          <button
+            onClick={() => setShowConfirmAllModal(true)}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              border: 'none',
+              background: 'var(--accent, #4f46e5)',
+              color: '#ffffff',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 2px 8px rgba(79, 70, 229, 0.3)'
+            }}
+          >
+            👉 Selecionar todos os {total} contatos do [{getActiveFilterLabel()}]
+          </button>
         </div>
       )}
 
@@ -682,9 +863,10 @@ export default function UnifiedLeadsExplorer({
                 <th style={{ padding: '14px 16px', width: '40px' }}>
                   <input
                     type="checkbox"
-                    checked={selectedLeadIds.length === leads.length && leads.length > 0}
-                    onChange={toggleSelectAll}
+                    checked={isAllMatchingSelected || (selectedLeadIds.length === leads.length && leads.length > 0)}
+                    onChange={toggleSelectAllPage}
                     style={{ cursor: 'pointer' }}
+                    title={isAllMatchingSelected ? "Todos os leads do filtro selecionados" : "Selecionar página atual"}
                   />
                 </th>
                 <th style={{ padding: '14px 16px' }}>Cliente / Lead</th>
@@ -702,7 +884,7 @@ export default function UnifiedLeadsExplorer({
             </thead>
             <tbody>
               {leads.map((lead) => {
-                const isChecked = selectedLeadIds.includes(lead.id);
+                const isChecked = isAllMatchingSelected || selectedLeadIds.includes(lead.id);
                 const rawDigits = lead.phone ? lead.phone.replace(/\D/g, '') : '';
                 const waLink = rawDigits.length >= 10 
                   ? (rawDigits.startsWith('55') ? `https://wa.me/${rawDigits}` : `https://wa.me/55${rawDigits}`) 
@@ -852,19 +1034,49 @@ export default function UnifiedLeadsExplorer({
         )}
 
         {/* Pagination Footer */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderTop: '1px solid var(--border)', background: 'var(--surface-raised)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderTop: '1px solid var(--border)', background: 'var(--surface-raised)', flexWrap: 'wrap', gap: '12px' }}>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
             Mostrando página {page} de {totalPages} ({total} leads no total)
           </div>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            {/* Custom Limit Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <label style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                Exibir:
+              </label>
+              <select
+                value={limit}
+                onChange={(e) => {
+                  setLimit(Number(e.target.value));
+                  setPage(1);
+                  setIsAllMatchingSelected(false);
+                }}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border)',
+                  background: 'var(--surface)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                {[20, 30, 40, 50, 100, 150, 200].map(size => (
+                  <option key={size} value={size}>{size} por página</option>
+                ))}
+              </select>
+            </div>
+
             <button
               onClick={handleExportCSV}
+              disabled={isExportingAll}
               className="btn-action"
               style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
-              title="Exportar tela atual para CSV"
+              title="Exportar tela atual ou selecionados para CSV"
             >
-              ⬇️ Exportar
+              {isExportingAll ? '⏳ Exportando...' : '⬇️ Exportar CSV'}
             </button>
             <button
               disabled={page <= 1}
@@ -897,6 +1109,138 @@ export default function UnifiedLeadsExplorer({
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal: Select All Matching Leads */}
+      {showConfirmAllModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'var(--surface, #1e293b)',
+            border: '1px solid var(--border, rgba(255,255,255,0.1))',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '520px',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            overflow: 'hidden',
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '10px',
+                background: 'var(--accent-glow, rgba(79, 70, 229, 0.2))',
+                color: 'var(--accent, #4f46e5)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.2rem',
+                fontWeight: 700
+              }}>
+                🎯
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Confirmar Seleção em Massa
+                </h3>
+                <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Ação abrangente em toda a base filtrada
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <p style={{ margin: 0, fontSize: '1rem', lineHeight: '1.5', color: 'var(--text-primary)' }}>
+                Deseja realmente selecionar todos os <strong style={{ color: 'var(--accent, #6366f1)' }}>{total} contatos</strong> do filtro:
+              </p>
+
+              <div style={{
+                background: 'var(--surface-raised, rgba(0,0,0,0.2))',
+                padding: '14px 18px',
+                borderRadius: '10px',
+                border: '1px solid var(--border)',
+                fontWeight: 700,
+                fontSize: '0.95rem',
+                color: 'var(--text-primary)'
+              }}>
+                📌 [{getActiveFilterLabel()}]
+              </div>
+
+              <div style={{
+                background: 'rgba(59, 130, 246, 0.1)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                fontSize: '0.82rem',
+                color: 'var(--text-secondary)',
+                lineHeight: '1.4'
+              }}>
+                💡 Ao confirmar, qualquer ação posterior (como <strong>Lançar em Campanha</strong>, <strong>Atribuir Operador</strong> ou <strong>Exportar CSV</strong>) será aplicada a <strong>todos os {total} contatos</strong> correspondentes a este filtro, mesmo que estejam em outras páginas.
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '16px 24px',
+              borderTop: '1px solid var(--border)',
+              background: 'var(--surface-raised)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '12px'
+            }}>
+              <button
+                onClick={() => setShowConfirmAllModal(false)}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border)',
+                  background: 'transparent',
+                  color: 'var(--text-primary)',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmSelectAllMatching}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: 'var(--accent, #4f46e5)',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
+                }}
+              >
+                Sim, Selecionar Todos ({total})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Import CSV Modal */}
       <ImportCSVModal 

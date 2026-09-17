@@ -1,9 +1,6 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
-import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
-import { CustomerRelationshipService } from '@/lib/services/CustomerRelationshipService';
-import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
+import { LeadExplorerQueryService } from '@/lib/services/LeadExplorerQueryService';
 
 export async function GET(request: Request) {
   try {
@@ -25,380 +22,41 @@ export async function GET(request: Request) {
     const startDate = searchParams.get('startDate') || '';
     const endDate = searchParams.get('endDate') || '';
     const search = searchParams.get('search') || '';
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '25', 10);
+    const exportAll = searchParams.get('exportAll') === 'true';
+    
+    // Pagination params: default 20, max 200
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+    const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
 
-    const offset = (page - 1) * limit;
-
-    // 1. Fetch matching person IDs from MySQL if DentalGO or sub filter is active
-    let mysqlLeadMap = new Map<number, any>();
-
-    if (source === 'all' || source === 'DENTALGO' || planId !== 'all' || subscriptionStatus !== 'all') {
-      try {
-        let sql = `
-          SELECT 
-            p.id,
-            COALESCE(NULLIF(p.fullName, ''), p.email, CONCAT('Lead DentalGO #', p.id)) AS fullName,
-            p.email,
-            p.phoneNumber AS phone,
-            p.createdAt,
-            s.id AS subId,
-            s.planId,
-            pl.title AS planTitle,
-            s.status AS subStatus,
-            s.createdAt AS subCreatedAt,
-            s.isValidUntil
-          FROM people p
-          LEFT JOIN subscriptions s ON s.personId = p.id
-          LEFT JOIN plans pl ON s.planId = pl.id
-          WHERE p.admin = 0
-        `;
-        const params: any[] = [];
-
-        if (search) {
-          sql += ` AND (LOWER(COALESCE(p.fullName, '')) LIKE ? OR LOWER(p.email) LIKE ? OR p.phoneNumber LIKE ?)`;
-          const sTerm = `%${search.toLowerCase()}%`;
-          params.push(sTerm, sTerm, `%${search}%`);
-        }
-
-        if (planId !== 'all' && planId !== 'no_plan') {
-          sql += ` AND pl.id = ?`;
-          params.push(planId);
-        }
-
-        if (subscriptionStatus !== 'all') {
-          const st = subscriptionStatus.toLowerCase();
-          if (st === 'active') {
-            sql += ` AND s.status = 'active'`;
-          } else if (st === 'canceled') {
-            sql += ` AND s.status = 'canceled'`;
-          } else if (st === 'expired') {
-            sql += ` AND (s.status = 'expired' OR (s.status = 'active' AND COALESCE(s.isValidUntil, s.expiresIn) < CURDATE()))`;
-          } else if (st === 'no_plan') {
-            sql += ` AND (s.id IS NULL OR s.status = 'pending')`;
-          }
-        }
-
-        if (startDate) {
-          sql += ` AND p.createdAt >= ?`;
-          params.push(new Date(startDate));
-        }
-
-        if (endDate) {
-          sql += ` AND p.createdAt <= ?`;
-          params.push(new Date(`${endDate}T23:59:59.999Z`));
-        }
-
-        sql += ` ORDER BY p.createdAt DESC LIMIT 2000`;
-
-        const [rows]: any = await pool.query(sql, params);
-        for (const row of rows) {
-          if (!mysqlLeadMap.has(row.id)) {
-            mysqlLeadMap.set(row.id, {
-              externalPersonId: row.id,
-              name: row.fullName || 'Lead DentalGO',
-              email: row.email || '',
-              phone: row.phone || '',
-              source: 'DentalGO Sinc DB',
-              planId: row.planId || null,
-              planTitle: row.planTitle || (row.planId ? row.planId : 'Sem Plano / Pendente'),
-              subscriptionStatus: row.subStatus || (row.planId ? 'active' : 'no_plan'),
-              createdAt: row.createdAt,
-              isValidUntil: row.isValidUntil
-            });
-          }
-        }
-      } catch (dbErr) {
-        console.warn('[Explorer API] MySQL query bypassed/timed out:', dbErr);
-      }
-    }
-
-    // 2. Fetch customers from Prisma CDP
-    const prismaWhere: any = {};
-
-    if (search) {
-      prismaWhere.OR = [
-        { person: { fullName: { contains: search, mode: 'insensitive' } } },
-        { person: { email: { contains: search, mode: 'insensitive' } } },
-        { person: { phoneNumber: { contains: search, mode: 'insensitive' } } }
-      ];
-    }
-
-    if (source !== 'all') {
-      if (source === 'DENTALGO') {
-        prismaWhere.source = 'DENTALGO';
-      } else if (source.startsWith('Form Capture: ')) {
-        const formTitle = source.replace('Form Capture: ', '');
-        prismaWhere.source = { contains: formTitle, mode: 'insensitive' };
-      } else if (source.includes('Form')) {
-        prismaWhere.source = { contains: 'Form', mode: 'insensitive' };
-      } else if (source === 'CSV') {
-        prismaWhere.source = { contains: 'CSV', mode: 'insensitive' };
-      } else if (source === 'BITRIX') {
-        prismaWhere.source = { contains: 'BITRIX', mode: 'insensitive' };
-      }
-    }
-
-    // Produtos/cursos pertencem ao catálogo canônico do Postgres e são
-    // independentes dos planos legados do DentalGO/MySQL.
-    if (productId !== 'all') {
-      const productCondition = productId === 'no_product'
-        ? { AND: [{ customerProducts: { none: {} } }, { opportunities: { none: { productId: { not: null } } } }] }
-        : { OR: [{ customerProducts: { some: { productId } } }, { opportunities: { some: { productId } } }] };
-      prismaWhere.AND = [...(prismaWhere.AND || []), productCondition];
-    }
-
-    // Filter Prisma Customers when planId or subscriptionStatus is specified
-    if (planId !== 'all' || subscriptionStatus !== 'all') {
-      const validPersonIds = Array.from(mysqlLeadMap.keys());
-      const subConds: any[] = [];
-
-      if (validPersonIds.length > 0) {
-        subConds.push({ externalPersonId: { in: validPersonIds } });
-      }
-
-      const cpWhere: any = {};
-      if (planId !== 'all' && planId !== 'no_plan') cpWhere.productId = planId;
-      if (subscriptionStatus === 'active') cpWhere.status = 'ACTIVE';
-      else if (subscriptionStatus === 'expired') cpWhere.status = 'EXPIRED';
-      else if (subscriptionStatus === 'canceled') cpWhere.status = 'CANCELED';
-
-      if (subscriptionStatus === 'no_plan' || planId === 'no_plan') {
-        subConds.push({ customerProducts: { none: {} } });
-      } else if (Object.keys(cpWhere).length > 0) {
-        subConds.push({ customerProducts: { some: cpWhere } });
-      }
-
-      if (subConds.length > 0) {
-        prismaWhere.AND = [
-          ...(prismaWhere.AND || []),
-          { OR: subConds }
-        ];
-      }
-    }
-
-    if (journeyId !== 'all') {
-      if (journeyId === 'none') {
-        prismaWhere.AND = [
-          ...(prismaWhere.AND || []),
-          { journeyId: null },
-          { campaignEnrollments: { none: {} } }
-        ];
-      } else {
-        prismaWhere.AND = [
-          ...(prismaWhere.AND || []),
-          {
-            OR: [
-              { journeyId },
-              { campaignEnrollments: { some: { campaignId: journeyId } } },
-              { opportunities: { some: { sourceCampaignId: journeyId } } }
-            ]
-          }
-        ];
-      }
-    }
-
-    if (assigneeId !== 'all') {
-      if (assigneeId === 'unassigned') prismaWhere.assigneeId = null;
-      else prismaWhere.assigneeId = assigneeId;
-    }
-
-    if (stage !== 'all') {
-      prismaWhere.stage = stage;
-    }
-
-    if (batchId !== 'all') {
-      prismaWhere.AND = [
-        ...(prismaWhere.AND || []),
-        {
-          metadata: {
-            path: ['importBatchId'],
-            equals: batchId
-          }
-        }
-      ];
-    }
-
-    if (startDate || endDate) {
-      const dateCond: any = {};
-      if (startDate) dateCond.gte = new Date(startDate);
-      if (endDate) dateCond.lte = new Date(`${endDate}T23:59:59.999Z`);
-      prismaWhere.createdAt = dateCond;
-    }
-
-    const prismaCustomers = await prisma.customer.findMany({
-      where: prismaWhere,
-      include: {
-        person: true,
-        assignee: { select: { id: true, name: true, email: true } },
-        journey: { select: { id: true, name: true } },
-        customerProducts: {
-          include: { product: { select: { id: true, name: true, category: true } } }
-        },
-        opportunities: {
-          include: {
-            product: { select: { id: true, name: true } },
-            pipeline: { select: { id: true, name: true } },
-            sourceCampaign: { select: { id: true, name: true } }
-          },
-          orderBy: { updatedAt: 'desc' }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 2000
+    const allMergedLeads = await LeadExplorerQueryService.fetchMatchingLeads({
+      source,
+      planId,
+      subscriptionStatus,
+      productId,
+      relationshipType,
+      journeyId,
+      assigneeId,
+      stage,
+      batchId,
+      startDate,
+      endDate,
+      search
     });
 
-    // Enrich missing contact details from MySQL people table for externalPersonIds in Prisma
-    const missingExtIds = (prismaCustomers as any[])
-      .filter(c => c.externalPersonId && !mysqlLeadMap.has(c.externalPersonId))
-      .map(c => c.externalPersonId);
-
-    if (missingExtIds.length > 0) {
-      try {
-        const idsStr = missingExtIds.join(',');
-        const [extraPeople]: any = await pool.query(`
-          SELECT 
-            p.id,
-            COALESCE(NULLIF(p.fullName, ''), p.email, CONCAT('Dr. Lead #', p.id)) AS fullName,
-            p.email,
-            p.phoneNumber AS phone,
-            p.createdAt
-          FROM people p
-          WHERE p.id IN (${idsStr})
-        `);
-        for (const r of extraPeople) {
-          mysqlLeadMap.set(r.id, {
-            externalPersonId: r.id,
-            name: r.fullName,
-            email: r.email || '',
-            phone: r.phone || '',
-            source: 'DentalGO Sinc DB',
-            planTitle: 'Sem Plano / Pendente',
-            subscriptionStatus: 'no_plan',
-            createdAt: r.createdAt
-          });
-        }
-      } catch (err) {
-        console.warn('[Explorer API] Extra people enrichment failed:', err);
-      }
-    }
-
-    // 3. Merge MySQL and Prisma leads
-    const combinedLeadsMap = new Map<string, any>();
-
-    // Add MySQL leads
-    for (const [pId, mLead] of mysqlLeadMap.entries()) {
-      const key = `ext_${pId}`;
-      combinedLeadsMap.set(key, {
-        id: `ext_${pId}`,
-        externalPersonId: pId,
-        name: mLead.name,
-        email: mLead.email,
-        phone: mLead.phone,
-        source: mLead.source,
-        planTitle: mLead.planTitle,
-        subscriptionStatus: mLead.subscriptionStatus,
-        courses: [],
-        products: [],
-        productIds: [],
-        opportunities: [],
-        relationshipType: CustomerRelationshipService.classify({ subscriptionStatus: mLead.subscriptionStatus }),
-        journeyId: null,
-        journeyName: 'Fora de Campanha',
-        assigneeId: null,
-        assigneeName: 'Não Atribuído',
-        stage: 'novo_cadastro',
-        createdAt: mLead.createdAt
-      });
-    }
-
-    // Overlay Prisma leads
-    for (const c of prismaCustomers as any[]) {
-      const key = c.externalPersonId ? `ext_${c.externalPersonId}` : c.id;
-      const existing = combinedLeadsMap.get(key) || {};
-
-      const customerProducts = c.customerProducts?.map((cp: any) => ({
-        id: cp.product.id,
-        name: cp.product.name,
-        category: cp.product.category,
-        status: cp.status
-      })) || [];
-      const courses = customerProducts.map((product: any) => product.name);
-      const saasPlan = customerProducts.find((product: any) => product.category === 'SAAS');
-      const opportunities = c.opportunities || [];
-      const opportunityProducts = opportunities
-        .filter((opportunity: any) => opportunity.product)
-        .map((opportunity: any) => ({
-          id: opportunity.product.id,
-          name: opportunity.product.name,
-          category: 'INTEREST',
-          status: opportunity.status === 'OPEN' ? 'INTEREST' : opportunity.status
-        }));
-      const existingProducts = existing.products || [];
-      const mergedProducts = Array.from(
-        new Map([...existingProducts, ...opportunityProducts, ...customerProducts].map((product: any) => [product.id, product])).values()
-      );
-      const relationshipType = CustomerRelationshipService.classify({
-        productStatuses: customerProducts.map((product: any) => product.status),
-        opportunityStatuses: opportunities.map((opportunity: any) => opportunity.status),
-        subscriptionStatus: existing.subscriptionStatus
-      });
-      const formOpportunity = opportunities.find((opportunity: any) => {
-        const metadata = opportunity.metadata as Record<string, unknown> | null;
-        return metadata?.formId;
-      });
-      const formMetadata = (formOpportunity?.metadata as Record<string, any>) || {};
-
-      combinedLeadsMap.set(key, {
-        id: c.id,
-        externalPersonId: c.externalPersonId || existing.externalPersonId || null,
-        name: (!CanonicalIdentityService.isPlaceholderName(existing.name) ? existing.name : null)
-          || c.person?.fullName
-          || (c.person?.email ? c.person.email.split('@')[0] : null)
-          || existing.name
-          || `Lead #${c.externalPersonId || c.id}`,
-        email: existing.email || c.person?.email || '',
-        phone: existing.phone || c.person?.phoneNumber || '',
-        source: existing.source || c.source || 'Form Capture / CDP',
-        planTitle: existing.planTitle || saasPlan?.name || 'Sem Plano / Pendente',
-        subscriptionStatus: existing.subscriptionStatus || saasPlan?.status?.toLowerCase() || 'no_plan',
-        courses: Array.from(new Set([...(existing.courses || []), ...courses])),
-        products: mergedProducts,
-        productIds: mergedProducts.map((product: any) => product.id),
-        opportunities: opportunities.map((opportunity: any) => ({
-          id: opportunity.id,
-          status: opportunity.status,
-          stage: opportunity.stage,
-          productId: opportunity.productId,
-          productName: opportunity.product?.name || null,
-          pipelineName: opportunity.pipeline?.name || null
-        })),
-        relationshipType,
-        formId: formMetadata.formId || null,
-        formName: formMetadata.formName || null,
-        attributionChannel: formMetadata.attributionChannel || c.acquisitionChannel || null,
-        attributionPlatform: formMetadata.attributionPlatform || null,
-        utmSource: formOpportunity?.utmSource || null,
-        utmMedium: formOpportunity?.utmMedium || null,
-        utmCampaign: formOpportunity?.utmCampaign || null,
-        marketingCampaignName: formOpportunity?.sourceCampaign?.name || null,
-        journeyId: c.journeyId || existing.journeyId || null,
-        journeyName: c.journey?.name || existing.journeyName || 'Fora de Campanha',
-        assigneeId: c.assigneeId || existing.assigneeId || null,
-        assigneeName: c.assignee?.name || existing.assigneeName || 'Não Atribuído',
-        stage: c.stage || existing.stage || 'novo_cadastro',
-        createdAt: c.createdAt || existing.createdAt
-      });
-    }
-
-    const allMergedLeads = Array.from(combinedLeadsMap.values()).filter(lead => {
-      if (productId === 'all') return true;
-      if (productId === 'no_product') return !lead.productIds || lead.productIds.length === 0;
-      return Array.isArray(lead.productIds) && lead.productIds.includes(productId);
-    }).filter(lead => relationshipType === 'all' || lead.relationshipType === relationshipType);
-    allMergedLeads.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
     const total = allMergedLeads.length;
+
+    if (exportAll) {
+      return NextResponse.json({
+        success: true,
+        total,
+        page: 1,
+        limit: total,
+        totalPages: 1,
+        leads: allMergedLeads
+      });
+    }
+
+    const offset = (page - 1) * limit;
     const paginatedLeads = allMergedLeads.slice(offset, offset + limit);
 
     return NextResponse.json({
@@ -406,7 +64,7 @@ export async function GET(request: Request) {
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(total / limit) || 1,
       leads: paginatedLeads
     });
   } catch (error: any) {
