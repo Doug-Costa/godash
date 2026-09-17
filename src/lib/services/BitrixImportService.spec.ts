@@ -35,6 +35,22 @@ describe('Bitrix Ingestion Suite (TDD)', () => {
       expect(BitrixParserService.parseValue('')).toBe(0);
       expect(BitrixParserService.parseValue(undefined)).toBe(0);
     });
+
+    it('should parse Brazilian and ISO dates accurately', () => {
+      const brDate = BitrixParserService.parseDate('16/09/2026 14:30:00');
+      expect(brDate).not.toBeNull();
+      expect(brDate?.getFullYear()).toBe(2026);
+      expect(brDate?.getMonth()).toBe(8); // Setembro (0-indexed)
+      expect(brDate?.getDate()).toBe(16);
+
+      const dotDate = BitrixParserService.parseDate('05.08.2026');
+      expect(dotDate).not.toBeNull();
+      expect(dotDate?.getDate()).toBe(5);
+      expect(dotDate?.getMonth()).toBe(7); // Agosto
+
+      const isoDate = BitrixParserService.parseDate('2026-09-16T14:30:00Z');
+      expect(isoDate).not.toBeNull();
+    });
   });
 
   describe('2. BitrixIdentityResolver - Orphan Recovery & Contact Linking', () => {

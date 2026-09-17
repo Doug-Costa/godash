@@ -110,8 +110,8 @@ export class BitrixPreflightService {
       const opRes = BitrixOperatorMapper.mapOperator(deal.assignedByName || deal.assignedById, operatorMaps);
 
       const value = BitrixParserService.parseValue(deal.opportunity);
-      const createdAt = deal.dateCreate ? new Date(deal.dateCreate) : now;
-      const updatedAt = deal.dateModify ? new Date(deal.dateModify) : createdAt;
+      const createdAt = BitrixParserService.parseDate(deal.dateCreate) || now;
+      const updatedAt = BitrixParserService.parseDate(deal.dateModify) || createdAt;
 
       processedDeals.push({
         bitrixDealId: String(deal.id),

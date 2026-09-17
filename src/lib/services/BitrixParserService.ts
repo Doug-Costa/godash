@@ -78,4 +78,35 @@ export class BitrixParserService {
     const num = parseFloat(str);
     return isNaN(num) ? 0 : num;
   }
+
+  /**
+   * Converte strings de datas em formatos comuns do Bitrix (ex: "16/09/2026 14:30:00", "16.09.2026", "2026-09-16") em Date válido.
+   */
+  static parseDate(dateStr?: string | null): Date | null {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+    const trimmed = dateStr.trim();
+    if (!trimmed) return null;
+
+    // 1. Padrão brasileiro DD/MM/YYYY ou DD.MM.YYYY ou DD-MM-YYYY (com ou sem hora)
+    const brMatch = trimmed.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+    if (brMatch) {
+      const day = parseInt(brMatch[1], 10);
+      const month = parseInt(brMatch[2], 10) - 1; // 0-indexed
+      const year = parseInt(brMatch[3], 10);
+      const hour = brMatch[4] ? parseInt(brMatch[4], 10) : 0;
+      const min = brMatch[5] ? parseInt(brMatch[5], 10) : 0;
+      const sec = brMatch[6] ? parseInt(brMatch[6], 10) : 0;
+
+      const d = new Date(year, month, day, hour, min, sec);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    // 2. Formato ISO padrão YYYY-MM-DD
+    const isoDate = new Date(trimmed);
+    if (!isNaN(isoDate.getTime())) {
+      return isoDate;
+    }
+
+    return null;
+  }
 }

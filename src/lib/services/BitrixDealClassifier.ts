@@ -1,4 +1,5 @@
 import { BitrixRawDealRow, BitrixDealClassification } from '@/lib/domain/BitrixImportContract';
+import { BitrixParserService } from './BitrixParserService';
 
 export interface DealClassificationResult {
   classification: BitrixDealClassification;
@@ -61,8 +62,8 @@ export class BitrixDealClassifier {
     let isRecent = false;
 
     if (lastActivityStr) {
-      const lastActivityDate = new Date(lastActivityStr);
-      if (!isNaN(lastActivityDate.getTime())) {
+      const lastActivityDate = BitrixParserService.parseDate(lastActivityStr);
+      if (lastActivityDate && !isNaN(lastActivityDate.getTime())) {
         const diffTime = Math.abs(referenceDate.getTime() - lastActivityDate.getTime());
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         isRecent = diffDays <= recencyCutoffDays;
