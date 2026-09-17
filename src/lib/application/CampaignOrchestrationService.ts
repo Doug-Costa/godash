@@ -370,16 +370,19 @@ export class CampaignOrchestrationService {
             }
           });
 
-          const isUnderActiveNegotiation = (opportunity?.assigneeId && opportunity.stage !== 'novo_cadastro') ||
-            (customer.assigneeId && (customer.interactionCount || 0) > 0);
-          const shouldPreserveAssignee = Boolean(
-            opportunity?.humanTakeover ||
-            customer.humanTakeover ||
-            isUnderActiveNegotiation
-          );
+          // Preservar operador APENAS se o lead estiver em negociação ativa manual
+          // ou se houver humanTakeover explícito pelo operador
+          const existingAssignee = opportunity?.assigneeId || customer.assigneeId;
+          const isExistingAssigneeInCampaign = existingAssignee ? operatorIds.includes(existingAssignee) : false;
+          
+          const hasManualTakeover = Boolean(opportunity?.humanTakeover || customer.humanTakeover);
+          const isInActivePipelineStage = Boolean(opportunity?.stage && opportunity.stage !== 'novo_cadastro' && opportunity.status === 'OPEN');
+          
+          const shouldPreserveAssignee = (hasManualTakeover || (isInActivePipelineStage && isExistingAssigneeInCampaign)) && Boolean(existingAssignee);
+
           finalAssigneeId = shouldPreserveAssignee
-            ? (opportunity?.assigneeId || customer.assigneeId || assigneeId || null)
-            : (assigneeId || opportunity?.assigneeId || customer.assigneeId || null);
+            ? (existingAssignee || assigneeId || null)
+            : (assigneeId || null);
 
           const oppMeta = (opportunity?.metadata as Record<string, any>) || {};
           const updatedMeta = {

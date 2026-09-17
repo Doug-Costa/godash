@@ -290,4 +290,110 @@ describe('CampaignOrchestrationService - TDD Suite', () => {
       expect(result.type).toBe('JOURNEY');
     });
   });
+
+  describe('4. Distribuição de Operadores em Campanhas Comerciais', () => {
+    it('atribui ao operador do round-robin quando o lead está em novo_cadastro sem humanTakeover', async () => {
+      prismaMocks.campaignFindUnique.mockResolvedValue({
+        id: 'camp-1',
+        name: 'Campanha Demo',
+        campaignNature: 'COMMERCIAL',
+        status: 'ACTIVE',
+        routingMode: 'ROUND_ROBIN',
+        pipelineId: 'pipe-vendas',
+        initialStage: 'novo_cadastro',
+        operators: [
+          { userId: 'user-thais', user: { id: 'user-thais', isActive: true, skills: [] } },
+          { userId: 'user-jucelia', user: { id: 'user-jucelia', isActive: true, skills: [] } }
+        ],
+        flowVersion: null
+      });
+
+      prismaMocks.campaignAudienceMemberFindMany.mockResolvedValue([{ customerId: 'cust-douglas' }]);
+      prismaMocks.customerFindMany.mockResolvedValue([{
+        id: 'cust-douglas',
+        personId: 'person-douglas',
+        assigneeId: 'admin-user', // Tinha Admin de teste anterior
+        interactionCount: 5,       // Mensagens de teste anteriores
+        humanTakeover: false,
+        isInNurturing: false,
+        person: { email: 'douglas@example.com', phoneNumber: '1199999999' }
+      }]);
+
+      prismaMocks.campaignEnrollmentGroupBy.mockResolvedValue([]);
+      prismaMocks.campaignEnrollmentFindUnique.mockResolvedValue(null);
+      prismaMocks.opportunityFindFirst.mockResolvedValue({
+        id: 'opp-1',
+        customerId: 'cust-douglas',
+        pipelineId: 'pipe-vendas',
+        stage: 'novo_cadastro',
+        assigneeId: 'admin-user',
+        humanTakeover: false,
+        status: 'OPEN'
+      });
+      prismaMocks.opportunityUpdate.mockResolvedValue({ id: 'opp-1', assigneeId: 'user-thais' });
+      prismaMocks.campaignEnrollmentUpsert.mockResolvedValue({ id: 'enr-1', assigneeId: 'user-thais' });
+
+      const results = await CampaignOrchestrationService.enroll('camp-1', ['cust-douglas'], { activate: true });
+
+      expect(results).toHaveLength(1);
+      // O operador atribuído deve ser Thais ou Jucelia (do round-robin), NUNCA Admin!
+      expect(prismaMocks.opportunityUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'opp-1' },
+        data: expect.objectContaining({ assigneeId: 'user-thais' })
+      }));
+      expect(prismaMocks.customerUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'cust-douglas' },
+        data: expect.objectContaining({ assigneeId: 'user-thais' })
+      }));
+    });
+
+    it('preserva operador anterior se houver humanTakeover ativo', async () => {
+      prismaMocks.campaignFindUnique.mockResolvedValue({
+        id: 'camp-1',
+        name: 'Campanha Demo',
+        campaignNature: 'COMMERCIAL',
+        status: 'ACTIVE',
+        routingMode: 'ROUND_ROBIN',
+        pipelineId: 'pipe-vendas',
+        initialStage: 'novo_cadastro',
+        operators: [
+          { userId: 'user-thais', user: { id: 'user-thais', isActive: true, skills: [] } }
+        ],
+        flowVersion: null
+      });
+
+      prismaMocks.campaignAudienceMemberFindMany.mockResolvedValue([{ customerId: 'cust-2' }]);
+      prismaMocks.customerFindMany.mockResolvedValue([{
+        id: 'cust-2',
+        personId: 'person-2',
+        assigneeId: 'user-rogeria',
+        interactionCount: 1,
+        humanTakeover: true, // Vendedora Rogéria assumiu o chat
+        isInNurturing: false,
+        person: { email: 'lead@example.com', phoneNumber: '1198888888' }
+      }]);
+
+      prismaMocks.campaignEnrollmentGroupBy.mockResolvedValue([]);
+      prismaMocks.campaignEnrollmentFindUnique.mockResolvedValue(null);
+      prismaMocks.opportunityFindFirst.mockResolvedValue({
+        id: 'opp-2',
+        customerId: 'cust-2',
+        pipelineId: 'pipe-vendas',
+        stage: 'em_negociacao',
+        assigneeId: 'user-rogeria',
+        humanTakeover: true,
+        status: 'OPEN'
+      });
+      prismaMocks.opportunityUpdate.mockResolvedValue({ id: 'opp-2', assigneeId: 'user-rogeria' });
+      prismaMocks.campaignEnrollmentUpsert.mockResolvedValue({ id: 'enr-2', assigneeId: 'user-rogeria' });
+
+      await CampaignOrchestrationService.enroll('camp-1', ['cust-2'], { activate: true });
+
+      // Garante que Rogéria foi preservada porque estava em atendimento humano
+      expect(prismaMocks.opportunityUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'opp-2' },
+        data: expect.objectContaining({ assigneeId: 'user-rogeria' })
+      }));
+    });
+  });
 });
