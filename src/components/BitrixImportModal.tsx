@@ -96,11 +96,11 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
       // Normalizar chaves comuns do Bitrix
       const normalizedContacts = contactsRaw.map(c => ({
         id: c['ID'] || c['Id'] || c['id'] || c['Código'],
-        name: c['Nome'] || c['NAME'] || c['name'],
+        name: c['Nome'] || c['NAME'] || c['name'] || c['Primeiro Nome'] || c['Primeiro nome'],
         lastName: c['Sobrenome'] || c['LAST_NAME'] || c['last_name'],
         secondName: c['Segundo nome'] || c['SECOND_NAME'],
-        email: c['E-mail'] || c['E-mail de trabalho'] || c['EMAIL'],
-        phone: c['Telefone'] || c['Telefone celular'] || c['PHONE'],
+        email: c['Email de trabalho'] || c['E-mail de trabalho'] || c['E-mail de casa'] || c['E-mail para boletins'] || c['Outro e-mail'] || c['E-mail'] || c['EMAIL'],
+        phone: c['Celular'] || c['Telefone de trabalho'] || c['Telefone celular'] || c['Telefone de casa'] || c['Telefone'] || c['PHONE'],
         source: c['Fonte'] || c['SOURCE_ID'],
         assignedByName: c['Responsável'] || c['ASSIGNED_BY_NAME'],
         raw: c
@@ -108,24 +108,24 @@ export default function BitrixImportModal({ isOpen, onClose, onSuccess }: Bitrix
 
       const normalizedDeals = dealsRaw.map(d => ({
         id: d['ID'] || d['Id'] || d['id'],
-        title: d['Título'] || d['Nome do negócio'] || d['TITLE'],
+        title: d['Nome do negócio'] || d['Título'] || d['TITLE'],
         stageId: d['Fase'] || d['STAGE_ID'],
         stageSemanticId: d['Semântica da fase'] || d['STAGE_SEMANTIC_ID'],
-        contactId: d['Contato: ID'] || d['CONTACT_ID'] || d['ID do contato'],
-        contactName: d['Contato: Nome'] || d['Contato:Nome'],
+        contactId: d['Contato: ID'] || d['CONTACT_ID'] || d['ID do contato'] || d['Contato'],
+        contactName: d['Contato: Primeiro Nome'] || d['Contato: Primeiro nome'] || d['Contato: Nome'] || d['Contato:Nome'] || d['Contato'],
         contactLastName: d['Contato: Sobrenome'] || d['Contato:Sobrenome'],
-        contactEmail: d['Contato: E-mail'] || d['Contato:E-mail'],
-        contactPhone: d['Contato: Telefone'] || d['Contato:Telefone'],
+        contactEmail: d['Contato: Email de trabalho'] || d['Contato: E-mail de trabalho'] || d['Contato: E-mail de casa'] || d['Contato: E-mail para boletins'] || d['Contato: Outro e-mail'] || d['Contato: E-mail'] || d['Contato:E-mail'],
+        contactPhone: d['Contato: Celular'] || d['Contato: Telefone de trabalho'] || d['Contato: Telefone celular'] || d['Contato: Telefone de casa'] || d['Contato: Telefone'] || d['Contato:Telefone'],
         opportunity: d['Renda'] || d['Valor'] || d['OPPORTUNITY'],
         assignedByName: d['Responsável'] || d['ASSIGNED_BY_NAME'],
-        dateCreate: d['Criado em'] || d['DATE_CREATE'],
-        dateModify: d['Modificado em'] || d['DATE_MODIFY'],
+        dateCreate: d['Criado'] || d['Criado em'] || d['DATE_CREATE'],
+        dateModify: d['Modificado'] || d['Modificado em'] || d['DATE_MODIFY'],
         lossReason: d['Motivo da perda'] || d['LOSS_REASON'],
-        interestArea: d['Área de interesse'] || d['Especialidade'],
-        formId: d['Criada pelo formulário de CRM'] || d['FORM_ID'],
-        utmSource: d['Origem UTMSource'] || d['UTM_SOURCE'],
-        utmMedium: d['Meio UTM'] || d['UTM_MEDIUM'],
-        utmCampaign: d['Campanha UTM'] || d['UTM_CAMPAIGN'],
+        interestArea: d['Área de interesse'] || d['Especialidade'] || d['Área de interesse (Negócio)'],
+        formId: d['Criada pelo formulário de CRM'] || d['FORM_ID'] || d['Criadas pelo formulário de CRM'],
+        utmSource: d['Origem UTMSource'] || d['UTM_SOURCE'] || d['UTM Source'],
+        utmMedium: d['Meio UTM'] || d['UTM_MEDIUM'] || d['UTM Medium'],
+        utmCampaign: d['Campanha UTM'] || d['UTM_CAMPAIGN'] || d['UTM Campaign'],
         raw: d
       }));
 
