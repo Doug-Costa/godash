@@ -134,6 +134,8 @@ export async function GET(request: Request) {
         prismaWhere.source = { contains: 'Form', mode: 'insensitive' };
       } else if (source === 'CSV') {
         prismaWhere.source = { contains: 'CSV', mode: 'insensitive' };
+      } else if (source === 'BITRIX') {
+        prismaWhere.source = { contains: 'BITRIX', mode: 'insensitive' };
       }
     }
 

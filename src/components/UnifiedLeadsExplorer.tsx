@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import ImportCSVModal from './ImportCSVModal';
+import BitrixImportModal from './BitrixImportModal';
 import VisualAuditorModal from './ui/VisualAuditorModal';
 
 interface Agent {
@@ -82,6 +83,7 @@ export default function UnifiedLeadsExplorer({
 
   // Import Modal State
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [showBitrixModal, setShowBitrixModal] = useState<boolean>(false);
   const [auditorModalData, setAuditorModalData] = useState<{isOpen: boolean, customerId: string, journeyId: string}>({ isOpen: false, customerId: '', journeyId: '' });
   const [refreshKey, setRefreshKey] = useState<number>(0);
 
@@ -339,6 +341,25 @@ export default function UnifiedLeadsExplorer({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
+              onClick={() => setShowBitrixModal(true)}
+              className="btn-action"
+              style={{
+                padding: '10px 16px',
+                borderRadius: '10px',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                background: 'var(--accent-glow)',
+                color: 'var(--accent)',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer'
+              }}
+              title="Migrador Seguro Bitrix24"
+            >
+              🔄 Migrar Bitrix24
+            </button>
+            <button
               onClick={() => setShowImportModal(true)}
               className="btn-action"
               style={{
@@ -404,6 +425,7 @@ export default function UnifiedLeadsExplorer({
             >
               <option value="all">🌐 Todas as Origens</option>
               <option value="DENTALGO">🦷 DentalGO Sinc DB</option>
+              <option value="BITRIX">🔄 Bitrix24 Migrado</option>
               <option value="CSV">📁 Importação CSV</option>
               {forms.map(f => (
                 <option key={f.id} value={`Form Capture: ${f.title}`}>📑 Form: {f.title}</option>
@@ -880,6 +902,13 @@ export default function UnifiedLeadsExplorer({
       <ImportCSVModal 
         isOpen={showImportModal} 
         onClose={() => setShowImportModal(false)} 
+        onSuccess={handleImportSuccess}
+      />
+
+      {/* Bitrix Migration Modal */}
+      <BitrixImportModal
+        isOpen={showBitrixModal}
+        onClose={() => setShowBitrixModal(false)}
         onSuccess={handleImportSuccess}
       />
 
