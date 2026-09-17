@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PreflightSummary } from '@/lib/services/ImportPreflightService';
+import BitrixImportModal from './BitrixImportModal';
 
 interface ImportCSVModalProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('');
   const [showManual, setShowManual] = useState(false);
+  const [showBitrixModal, setShowBitrixModal] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -168,6 +170,12 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
             <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Utilize nossa planilha formatada para evitar erros.</p>
           </div>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              onClick={() => setShowBitrixModal(true)}
+              style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.4)', color: 'var(--accent)', background: 'var(--accent-glow)', fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+            >
+              🔄 Migrar do Bitrix24
+            </button>
             <button
               onClick={() => setShowManual(!showManual)}
               style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
@@ -453,6 +461,15 @@ export default function ImportCSVModal({ isOpen, onClose, onSuccess }: ImportCSV
           </div>
         )}
       </div>
+
+      <BitrixImportModal
+        isOpen={showBitrixModal}
+        onClose={() => setShowBitrixModal(false)}
+        onSuccess={() => {
+          onSuccess();
+          onClose();
+        }}
+      />
     </div>
   );
 }
