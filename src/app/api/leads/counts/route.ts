@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
+import { CURRENT_SUBSCRIPTION_JOIN } from '@/lib/legacy/currentSubscription';
 
 export async function GET(request: Request) {
   try {
@@ -79,7 +80,7 @@ export async function GET(request: Request) {
     let canceladosQuery = `
       SELECT COUNT(DISTINCT p.id) as total
       FROM people p
-      INNER JOIN subscriptions s ON s.personId = p.id
+      ${CURRENT_SUBSCRIPTION_JOIN}
       WHERE (s.status = 'canceled' OR s.canceledAt IS NOT NULL)
     `;
     const canceladosParams: any[] = [];
@@ -98,7 +99,7 @@ export async function GET(request: Request) {
     let expirarQuery = `
       SELECT COUNT(DISTINCT p.id) as total
       FROM people p
-      INNER JOIN subscriptions s ON s.personId = p.id
+      ${CURRENT_SUBSCRIPTION_JOIN}
       WHERE s.status = 'active'
     `;
     const expirarParams: any[] = [];
@@ -122,7 +123,7 @@ export async function GET(request: Request) {
     let abandonadosQuery = `
       SELECT COUNT(DISTINCT p.id) as total
       FROM people p
-      LEFT JOIN subscriptions s ON s.personId = p.id
+      ${CURRENT_SUBSCRIPTION_JOIN}
       LEFT JOIN plans pl ON s.planId = pl.id
       WHERE pl.id IS NULL
     `;

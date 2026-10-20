@@ -5,6 +5,11 @@ import pool from '@/lib/db';
 import { AssignCampaignLeadsUseCase } from '@/lib/application/AssignCampaignLeadsUseCase';
 import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
 import { CampaignOrchestrationService } from '@/lib/application/CampaignOrchestrationService';
+import {
+  isEffectivelyActiveSql,
+  isEffectivelyExpiredSql,
+  personHasEffectiveActiveSql,
+} from '@/lib/legacy/currentSubscription';
 
 export async function GET() {
   try {
@@ -172,14 +177,14 @@ async function getMatchingPersonIdsFromSubscriptions(rule: any) {
 
   if (status && status !== 'all') {
     const sLower = status.toLowerCase();
+    // Vigência pela data, não pelo status gravado (ver src/lib/legacy/currentSubscription.ts).
+    // Cancelado/expirado nunca inclui quem é cliente vigente hoje (ex.: quem renovou).
     if (sLower === 'active') {
-      query += ` AND s.status = 'active'`;
+      query += ` AND ${isEffectivelyActiveSql('s')}`;
     } else if (sLower === 'canceled') {
-      query += ` AND s.status = 'canceled' AND NOT EXISTS (
-        SELECT 1 FROM subscriptions s2 WHERE s2.personId = s.personId AND s2.status = 'active'
-      )`;
+      query += ` AND s.status = 'canceled' AND NOT ${personHasEffectiveActiveSql('s.personId')}`;
     } else if (sLower === 'expired') {
-      query += ` AND (s.status = 'expired' OR (s.status = 'active' AND COALESCE(s.isValidUntil, s.expiresIn) < CURDATE()))`;
+      query += ` AND ${isEffectivelyExpiredSql('s')} AND NOT ${personHasEffectiveActiveSql('s.personId')}`;
     }
   }
 

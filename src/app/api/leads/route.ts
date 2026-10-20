@@ -8,6 +8,7 @@ import { RegisterLeadInteractionService } from '@/lib/application/RegisterLeadIn
 import { LeadTaggingService } from '@/lib/application/LeadTaggingService';
 import { JourneyTransitionService } from '@/lib/services/JourneyTransitionService';
 import { CampaignOrchestrationService } from '@/lib/application/CampaignOrchestrationService';
+import { CURRENT_SUBSCRIPTION_JOIN } from '@/lib/legacy/currentSubscription';
 
 const crmRepository = new PrismaCrmRepository();
 
@@ -146,9 +147,12 @@ export async function GET(request: Request) {
 
     // JOIN dinâmico de subscrições: se estiver visualizando filas de atendimento,
     // não mascara os registros pela competência de June/July nas cláusulas JOIN, permitindo obter as datas de cancelamento verdadeiras.
+    // Uma linha por pessoa: a assinatura ATUAL (ver src/lib/legacy/currentSubscription.ts).
+    // Antes, o JOIN com todas as assinaturas duplicava pessoas e colocava clientes que
+    // renovaram na fila de cancelados.
     const fromAndJoin = `
       FROM people p
-      LEFT JOIN subscriptions s ON s.personId = p.id
+      ${CURRENT_SUBSCRIPTION_JOIN}
       LEFT JOIN plans pl ON s.planId = pl.id
     `;
 

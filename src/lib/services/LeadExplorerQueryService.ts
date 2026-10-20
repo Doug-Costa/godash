@@ -2,6 +2,12 @@ import pool from '@/lib/db';
 import prisma from '@/lib/prisma';
 import { CustomerRelationshipService } from './CustomerRelationshipService';
 import { CanonicalIdentityService } from './CanonicalIdentityService';
+import {
+  CURRENT_SUBSCRIPTION_JOIN,
+  effectiveStatusSql,
+  isEffectivelyActiveSql,
+  isEffectivelyExpiredSql,
+} from '@/lib/legacy/currentSubscription';
 
 export interface LeadExplorerFilters {
   source?: string;
@@ -84,11 +90,11 @@ export class LeadExplorerQueryService {
             s.id AS subId,
             s.planId,
             pl.title AS planTitle,
-            s.status AS subStatus,
+            ${effectiveStatusSql('s')} AS subStatus,
             s.createdAt AS subCreatedAt,
             s.isValidUntil
           FROM people p
-          LEFT JOIN subscriptions s ON s.personId = p.id
+          ${CURRENT_SUBSCRIPTION_JOIN}
           LEFT JOIN plans pl ON s.planId = pl.id
           WHERE p.admin = 0
         `;
@@ -107,14 +113,15 @@ export class LeadExplorerQueryService {
 
         if (subscriptionStatus !== 'all') {
           const st = subscriptionStatus.toLowerCase();
+          // Filtros sobre a assinatura ATUAL (ver src/lib/legacy/currentSubscription.ts)
           if (st === 'active') {
-            sql += ` AND s.status = 'active'`;
+            sql += ` AND ${isEffectivelyActiveSql('s')}`;
           } else if (st === 'canceled') {
             sql += ` AND s.status = 'canceled'`;
           } else if (st === 'expired') {
-            sql += ` AND (s.status = 'expired' OR (s.status = 'active' AND COALESCE(s.isValidUntil, s.expiresIn) < CURDATE()))`;
+            sql += ` AND ${isEffectivelyExpiredSql('s')}`;
           } else if (st === 'no_plan') {
-            sql += ` AND (s.id IS NULL OR s.status = 'pending')`;
+            sql += ` AND s.id IS NULL`;
           }
         }
 
