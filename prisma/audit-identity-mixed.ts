@@ -1,13 +1,19 @@
 /**
  * audit-identity-mixed.ts
  *
- * Procura "fichas misturadas": uma única Person que reúne nomes incompatíveis
+ * Procura SUSPEITAS de "fichas misturadas": uma única Person que reúne nomes incompatíveis
  * entre si — sinal de que pessoas diferentes foram fundidas no passado (ex.: os
  * fluxos de CSV/ERP/Bitrix fundiam por telefone sozinho; o formulário ligava o
  * lead ao candidato antes da revisão).
  *
  * Complementa prisma/audit-identity-duplicates.ts, que só encontra fichas que
  * deveriam estar juntas — não o contrário.
+ *
+ * É SUSPEITA, não prova: nome canônico genérico, alias incompleto, correção de
+ * cadastro ou responsável da clínica também geram nomes "incompatíveis"; e o
+ * sinal de ligação mostra um contato compartilhado HOJE, não o que causou a
+ * fusão. Serve para montar fila de inspeção — nunca para separar fichas
+ * automaticamente.
  *
  * Usa a mesma regra de nome de src/lib/identity/matchRules.ts.
  * SOMENTE LEITURA. Terminal: só contagens. CSV: só IDs e fontes (sem nome/e-mail/telefone).
@@ -121,14 +127,15 @@ async function main() {
   const pct = (n: number) => (persons.length ? ((n / persons.length) * 100).toFixed(1) : '0.0');
   const sorted = <K>(m: Map<K, number>) => [...m].sort((a, b) => b[1] - a[1]);
 
-  console.log('\n═══ Auditoria de fichas misturadas (somente leitura) ═══');
+  console.log('\n═══ Suspeitas de fichas misturadas (somente leitura) ═══');
+  console.log('Suspeita, não prova: use para inspeção manual, nunca para separar automaticamente.');
   console.log(`Persons na base:                          ${persons.length}`);
-  console.log(`Persons com nomes incompatíveis entre si: ${mixedPersons} (${pct(mixedPersons)}%)`);
+  console.log(`Suspeitas (nomes incompatíveis na ficha): ${mixedPersons} (${pct(mixedPersons)}%)`);
   console.log('\nQuantas "pessoas" diferentes por ficha:');
   for (const [n, count] of [...byGroups].sort((a, b) => a[0] - b[0])) {
     console.log(`  ${String(count).padStart(6)}  fichas com ${n} grupos de nome`);
   }
-  console.log('\nO que ligou o nome estranho à ficha:');
+  console.log('\nContato que o nome estranho compartilha hoje com a ficha (indício, não causa comprovada):');
   const labels: Record<LinkSignal, string> = {
     TELEFONE: 'mesmo telefone (fusão por telefone sozinho)',
     EMAIL: 'mesmo e-mail (e-mail compartilhado?)',
