@@ -1,5 +1,11 @@
 import prisma from '../prisma';
-import { Person } from '@prisma/client';
+import { Person, Prisma } from '@prisma/client';
+
+type Db = Prisma.TransactionClient | typeof prisma;
+
+/** Marca, em IdentityReview.evidences, um caso ambíguo isolado numa Person provisória. */
+export const AMBIGUOUS_PROVISIONAL = 'AMBIGUOUS_PROVISIONAL';
+export const PROVISIONAL_PERSON_PREFIX = 'PROVISIONAL_PERSON:';
 
 export interface ResolveInput {
   source: string;
@@ -52,6 +58,62 @@ export class CanonicalIdentityService {
   }
 
   /**
+   * Candidatos por e-mail/telefone: campos principais, secundários e aliases.
+   * Retorna IDs de Person distintos, em ordem estável.
+   */
+  private static async findCandidatePersonIds(db: Db, email: string | null, phone: string | null): Promise<string[]> {
+    const personOr: Prisma.PersonWhereInput[] = [];
+    if (email) {
+      personOr.push(
+        { email: { equals: email, mode: 'insensitive' } },
+        { secondaryEmail: { equals: email, mode: 'insensitive' } },
+      );
+    }
+    if (phone) personOr.push({ phoneNumber: phone }, { secondaryPhone: phone });
+    if (personOr.length === 0) return [];
+
+    const aliasOr: Prisma.IdentityAliasWhereInput[] = [];
+    if (email) aliasOr.push({ email: { equals: email, mode: 'insensitive' } });
+    if (phone) aliasOr.push({ phone });
+
+    const persons = await db.person.findMany({ where: { OR: personOr }, select: { id: true } });
+    const aliases = await db.identityAlias.findMany({ where: { OR: aliasOr }, select: { personId: true }, distinct: ['personId'] });
+    return [...new Set([...persons.map(p => p.id), ...aliases.map(a => a.personId)])].sort();
+  }
+
+  /**
+   * Locks consultivos do PostgreSQL por identificador normalizado, sempre na mesma
+   * ordem (evita deadlock). Valem entre processos e containers e são liberados no
+   * fim da transação.
+   */
+  private static async lockIdentityKeys(tx: Prisma.TransactionClient, keys: (string | null)[]): Promise<void> {
+    const ordered = [...new Set(keys.filter((k): k is string => !!k))].sort();
+    for (const key of ordered) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+    }
+  }
+
+  /**
+   * Entre os candidatos, a Person provisória de um caso ambíguo ainda pendente de
+   * revisão. Entradas novas com os mesmos contatos se juntam a ela em vez de criar
+   * outra ficha (interrompe a cascata).
+   */
+  private static async findPendingProvisional(db: Db, candidateIds: string[]): Promise<string | null> {
+    if (candidateIds.length === 0) return null;
+    const reviews = await db.identityReview.findMany({
+      where: { status: 'PENDING', evidences: { array_contains: [AMBIGUOUS_PROVISIONAL] } },
+      select: { evidences: true },
+    });
+    const provisionalIds = new Set(
+      reviews
+        .flatMap(r => (Array.isArray(r.evidences) ? r.evidences : []))
+        .filter((e): e is string => typeof e === 'string' && e.startsWith(PROVISIONAL_PERSON_PREFIX))
+        .map(e => e.slice(PROVISIONAL_PERSON_PREFIX.length)),
+    );
+    return candidateIds.find(id => provisionalIds.has(id)) ?? null;
+  }
+
+  /**
    * Inspeção read-only da identidade para o Pre-flight (CDP V4).
    * Diferente de `resolve()`, este método NUNCA executa mutações no banco.
    * Ele retorna o status e a possível Person encontrada.
@@ -73,195 +135,130 @@ export class CanonicalIdentityService {
       return { status: 'FOUND', personId: existingAlias.personId };
     }
 
-    // 2. Busca canônica flexível (E-mail OU Telefone)
-    const OR_conditions: any[] = [];
-    if (email) OR_conditions.push({ email });
-    if (phone) OR_conditions.push({ phoneNumber: phone });
-
-    if (OR_conditions.length > 0) {
-      const candidates = await prisma.person.findMany({
-        where: { OR: OR_conditions },
-        select: { id: true },
-        take: 2
-      });
-
-      if (candidates.length === 1) {
-        return { status: 'FOUND', personId: candidates[0].id };
-      }
-      if (candidates.length > 1) {
-        return { status: 'AMBIGUOUS' };
-      }
+    // 2. E-mail/telefone em campos principais, secundários e aliases
+    const candidates = await this.findCandidatePersonIds(prisma, email, phone);
+    if (candidates.length === 1) return { status: 'FOUND', personId: candidates[0] };
+    if (candidates.length > 1) {
+      const provisional = await this.findPendingProvisional(prisma, candidates);
+      return provisional ? { status: 'FOUND', personId: provisional } : { status: 'AMBIGUOUS' };
     }
-
-    // 3. Busca por Aliases paralelos (se não achou pela Person base)
-    if (OR_conditions.length > 0) {
-      const aliasCandidates = await prisma.identityAlias.findMany({
-        where: {
-          OR: [
-            ...(email ? [{ email }] : []),
-            ...(phone ? [{ phone }] : [])
-          ]
-        },
-        select: { personId: true },
-        distinct: ['personId']
-      });
-
-      if (aliasCandidates.length === 1) {
-        return { status: 'FOUND', personId: aliasCandidates[0].personId };
-      }
-      if (aliasCandidates.length > 1) {
-        return { status: 'AMBIGUOUS' };
-      }
-    }
-
     return { status: 'NOT_FOUND' };
   }
 
   /**
-   * Resolve uma única identidade de forma atômica e concorrida-segura.
+   * Resolve uma única identidade de forma atômica e segura entre processos.
    * Dominio: Resolução de Identidade Canônica
    * Input: ResolveInput { source, externalId, email, phone, name, rawData }
    * Output: Promise<Person>
+   *
+   * - Locks consultivos por alias/e-mail/telefone + releitura dentro da transação:
+   *   chamadas simultâneas para a mesma pessoa não criam duas Persons.
+   * - Um único candidato: vincula o alias a ele (comportamento anterior).
+   * - Vários candidatos (ex.: e-mail aponta para A e telefone para B): NÃO funde e
+   *   NÃO liga a nenhum deles. Cria uma Person provisória isolada + IdentityReview
+   *   pendente; entradas seguintes com os mesmos contatos reutilizam essa provisória.
    */
   static async resolve(input: ResolveInput): Promise<Person> {
     const { source, externalId, rawData } = input;
     const email = this.normalizeEmail(input.email);
     const phone = this.normalizePhone(input.phone);
     const name = input.name?.trim() || null;
+    const parsedRawData = rawData ? (typeof rawData === 'string' ? JSON.parse(rawData) : rawData) : null;
 
-    // 1. Tentar encontrar o Alias existente
-    const existingAlias = await prisma.identityAlias.findUnique({
-      where: {
-        source_externalId: { source, externalId }
-      },
-      include: { person: true }
-    });
+    return prisma.$transaction(async (tx) => {
+      await this.lockIdentityKeys(tx, [
+        `alias:${source}:${externalId}`,
+        email && `email:${email}`,
+        phone && `phone:${phone}`,
+      ]);
 
-    if (existingAlias) {
-      const person = existingAlias.person;
-      
-      // Enriquecimento Oportunístico: complementa dados vazios se o payload contiver novos valores confiáveis
-      let needsEnrichment = false;
-      const updates: any = {};
+      // 1. Alias desta origem já existe (releitura após os locks)
+      const existingAlias = await tx.identityAlias.findUnique({
+        where: { source_externalId: { source, externalId } },
+        include: { person: true },
+      });
 
-      if (!person.email && email) {
-        updates.email = email;
-        needsEnrichment = true;
-      }
-      if (!person.phoneNumber && phone) {
-        updates.phoneNumber = phone;
-        needsEnrichment = true;
-      }
-      if (this.isPlaceholderName(person.fullName) && name && !this.isPlaceholderName(name)) {
-        updates.fullName = name;
-        needsEnrichment = true;
-      }
+      if (existingAlias) {
+        const person = existingAlias.person;
 
-      const aliasUpdates: any = {};
-      if (!existingAlias.email && email) aliasUpdates.email = email;
-      if (!existingAlias.phone && phone) aliasUpdates.phone = phone;
-      if (this.isPlaceholderName(existingAlias.name) && name && !this.isPlaceholderName(name)) aliasUpdates.name = name;
-      if (!existingAlias.rawData && rawData) {
-        aliasUpdates.rawData = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
-      }
+        // Enriquecimento Oportunístico: complementa dados vazios se o payload contiver novos valores confiáveis
+        const updates: Prisma.PersonUpdateInput = {};
+        if (!person.email && email) updates.email = email;
+        if (!person.phoneNumber && phone) updates.phoneNumber = phone;
+        if (this.isPlaceholderName(person.fullName) && name && !this.isPlaceholderName(name)) updates.fullName = name;
 
-      if (Object.keys(aliasUpdates).length > 0) {
-        await prisma.identityAlias.update({ where: { id: existingAlias.id }, data: aliasUpdates });
-      }
+        const aliasUpdates: Prisma.IdentityAliasUpdateInput = {};
+        if (!existingAlias.email && email) aliasUpdates.email = email;
+        if (!existingAlias.phone && phone) aliasUpdates.phone = phone;
+        if (this.isPlaceholderName(existingAlias.name) && name && !this.isPlaceholderName(name)) aliasUpdates.name = name;
+        if (!existingAlias.rawData && parsedRawData) aliasUpdates.rawData = parsedRawData;
 
-      if (needsEnrichment) {
-        console.log(`[CanonicalIdentityService] Enriquecendo dados vazios da Person ${person.id}`);
-        return prisma.person.update({
-          where: { id: person.id },
-          data: updates
-        });
+        if (Object.keys(aliasUpdates).length > 0) {
+          await tx.identityAlias.update({ where: { id: existingAlias.id }, data: aliasUpdates });
+        }
+        if (Object.keys(updates).length > 0) {
+          console.log(`[CanonicalIdentityService] Enriquecendo dados vazios da Person ${person.id}`);
+          return tx.person.update({ where: { id: person.id }, data: updates });
+        }
+        return person;
       }
 
-      return person;
-    }
+      // 2. Candidatos por e-mail/telefone (principais, secundários e aliases)
+      const candidates = await this.findCandidatePersonIds(tx, email, phone);
+      const target = candidates.length === 1
+        ? candidates[0]
+        : candidates.length > 1 ? await this.findPendingProvisional(tx, candidates) : null;
 
-    // O preflight pode ter encontrado uma Person existente por e-mail/telefone mesmo
-    // quando o alias desta fonte ainda não existe. Vincule a nova origem à identidade
-    // canônica em vez de criar uma Person duplicada no commit.
-    const identityMatch = await this.inspect({ source, externalId, email, phone, name });
-    if (identityMatch.status === 'FOUND' && identityMatch.personId) {
-      try {
-        const linkedAlias = await prisma.identityAlias.create({
-          data: {
-            source,
-            externalId,
-            email,
-            phone,
-            name,
-            rawData: rawData ? (typeof rawData === 'string' ? JSON.parse(rawData) : rawData) : null,
-            personId: identityMatch.personId
-          },
-          include: { person: true }
+      // 2a. Um único candidato (ou a provisória pendente do mesmo caso): vincula o alias
+      if (target) {
+        const linkedAlias = await tx.identityAlias.create({
+          data: { source, externalId, email, phone, name, rawData: parsedRawData, personId: target },
+          include: { person: true },
         });
 
-        const updates: { email?: string; phoneNumber?: string; fullName?: string } = {};
+        const updates: Prisma.PersonUpdateInput = {};
         if (!linkedAlias.person.email && email) updates.email = email;
         if (!linkedAlias.person.phoneNumber && phone) updates.phoneNumber = phone;
         if (this.isPlaceholderName(linkedAlias.person.fullName) && name && !this.isPlaceholderName(name)) updates.fullName = name;
 
         if (Object.keys(updates).length > 0) {
-          return prisma.person.update({ where: { id: linkedAlias.personId }, data: updates });
+          return tx.person.update({ where: { id: linkedAlias.personId }, data: updates });
         }
         return linkedAlias.person;
-      } catch (error: any) {
-        if (error.code === 'P2002') {
-          const winner = await prisma.identityAlias.findUnique({
-            where: { source_externalId: { source, externalId } },
-            include: { person: true }
-          });
-          if (winner) return winner.person;
-        }
-        throw error;
       }
-    }
 
-    // 2. Criação Atômica com tratamento de concorrência extrema
-    try {
-      // O Prisma executa isso como um nested write atômico dentro de uma transação implícita
-      const newAlias = await prisma.identityAlias.create({
+      // 2b. Nenhum candidato → Person nova; vários → Person provisória isolada + revisão
+      const newAlias = await tx.identityAlias.create({
         data: {
-          source,
-          externalId,
-          email,
-          phone,
-          name,
-          rawData: rawData ? (typeof rawData === 'string' ? JSON.parse(rawData) : rawData) : null,
-          person: {
-            create: {
-              fullName: name,
-              email,
-              phoneNumber: phone,
-              source
-            }
-          }
+          source, externalId, email, phone, name, rawData: parsedRawData,
+          person: { create: { fullName: name, email, phoneNumber: phone, source } },
         },
-        include: { person: true }
+        include: { person: true },
       });
 
-      console.log(`[CanonicalIdentityService] Nova Person criada (${newAlias.person.id}) vinculada ao alias ${source}:${externalId}`);
-      return newAlias.person;
-    } catch (error: any) {
-      // P2002 indica que outra requisição concorrente inseriu o mesmo alias de origem primeiro
-      if (error.code === 'P2002') {
-        console.log(`[CanonicalIdentityService] Colisão de concorrência para ${source}:${externalId}. Buscando registro vencedor...`);
-        const winningAlias = await prisma.identityAlias.findUnique({
-          where: {
-            source_externalId: { source, externalId }
+      if (candidates.length > 1) {
+        await tx.identityReview.create({
+          data: {
+            incomingSource: source,
+            incomingExternalId: externalId,
+            candidatePersonId: candidates[0],
+            confidenceScore: 0,
+            evidences: [
+              AMBIGUOUS_PROVISIONAL,
+              `${PROVISIONAL_PERSON_PREFIX}${newAlias.person.id}`,
+              ...(email ? ['EMAIL_MATCH'] : []),
+              ...(phone ? ['PHONE_MATCH'] : []),
+              ...candidates.map(id => `CANDIDATE:${id}`),
+            ],
+            status: 'PENDING',
           },
-          include: { person: true }
         });
-
-        if (winningAlias) {
-          return winningAlias.person;
-        }
+        console.log(`[CanonicalIdentityService] Ambíguo ${source}:${externalId} → Person provisória ${newAlias.person.id} (candidatos: ${candidates.join(', ')}), aguardando revisão`);
+      } else {
+        console.log(`[CanonicalIdentityService] Nova Person criada (${newAlias.person.id}) vinculada ao alias ${source}:${externalId}`);
       }
-      throw error;
-    }
+      return newAlias.person;
+    }, { maxWait: 15000, timeout: 30000 });
   }
 
   /**
