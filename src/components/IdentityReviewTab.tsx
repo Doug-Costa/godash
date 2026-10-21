@@ -2,8 +2,21 @@
 
 import React, { useState } from 'react';
 
+interface CandidatePerson {
+  id: string;
+  fullName: string | null;
+  email: string | null;
+  phoneNumber: string | null;
+  secondaryEmail?: string | null;
+  secondaryPhone?: string | null;
+  source?: string;
+}
+
 interface ReviewItem {
   id: string;
+  /** Caso ambíguo: a entrada está isolada numa ficha provisória até a decisão. */
+  isProvisional?: boolean;
+  candidates?: CandidatePerson[];
   incomingSource: string;
   incomingExternalId: string;
   confidenceScore: number;
@@ -290,7 +303,7 @@ export default function IdentityReviewTab({
                 {r.evidences && r.evidences.length > 0 && (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Sinais detectados:</span>
-                    {r.evidences.map((ev, idx) => (
+                    {r.evidences.filter(ev => !ev.startsWith('PROVISIONAL_PERSON:') && !ev.startsWith('CANDIDATE:')).map((ev, idx) => (
                       <span
                         key={idx}
                         style={{
@@ -306,7 +319,7 @@ export default function IdentityReviewTab({
                         {ev.includes('EXACT') && '✓ '}
                         {ev.includes('SIMILARITY') && '~ '}
                         {ev.includes('DUMMY') && '⚠️ '}
-                        {ev}
+                        {ev === 'AMBIGUOUS_PROVISIONAL' ? '⚖️ Caso ambíguo' : ev}
                       </span>
                     ))}
                   </div>
@@ -338,7 +351,70 @@ export default function IdentityReviewTab({
                     </div>
                   </div>
 
-                  {/* Coluna 2: Candidato Sugerido */}
+                  {/* Coluna 2 (caso ambíguo): todas as pessoas candidatas */}
+                  {r.isProvisional && r.candidates && r.candidates.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                        ⚖️ Os contatos desta entrada batem com <strong>{r.candidates.length} pessoas diferentes</strong>.
+                        Ela foi guardada numa ficha separada, sem juntar com ninguém, até você decidir.
+                      </div>
+                      {r.candidates.map(cand => (
+                        <div
+                          key={cand.id}
+                          style={{
+                            background: 'var(--surface)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            padding: 12,
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 10,
+                            flexWrap: 'wrap'
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                              👤 {cand.fullName || 'Sem nome canônico'}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                              📧 {cand.email || 'Sem e-mail'}
+                              {cand.secondaryEmail && (
+                                <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6 }}>(Alt: {cand.secondaryEmail})</span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                              📞 {cand.phoneNumber || 'Sem telefone'}
+                              {cand.secondaryPhone && (
+                                <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 6 }}>(Alt: {cand.secondaryPhone})</span>
+                              )}
+                            </div>
+                            {cand.source && (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Origem: {cand.source}</div>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onLink(r.id, cand.id)}
+                            disabled={isProcessing}
+                            style={{
+                              padding: '8px 14px',
+                              borderRadius: 6,
+                              border: 'none',
+                              background: 'var(--accent)',
+                              color: '#fff',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            ✓ É esta pessoa
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                  /* Coluna 2: Candidato Sugerido */
                   <div style={{
                     background: 'var(--surface)',
                     border: r.candidatePerson ? '1px solid var(--accent)' : '1px solid var(--border)',
@@ -421,6 +497,7 @@ export default function IdentityReviewTab({
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
 
                 {/* Barra de Ações Decisórias */}
@@ -458,10 +535,10 @@ export default function IdentityReviewTab({
                       cursor: 'pointer'
                     }}
                   >
-                    ✕ Manter Separado (Pessoa Nova)
+                    {r.isProvisional ? '✕ É outra pessoa (manter ficha própria)' : '✕ Manter Separado (Pessoa Nova)'}
                   </button>
 
-                  {r.candidatePerson && (
+                  {r.candidatePerson && !r.isProvisional && (
                     <button
                       type="button"
                       onClick={() => onLink(r.id, r.candidatePerson!.id)}

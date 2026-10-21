@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
-import { IdentityMatchingService } from '@/lib/services/IdentityMatchingService';
+import { IdentityMatchingService, candidatePersonIdsOf, provisionalPersonIdOf } from '@/lib/services/IdentityMatchingService';
 
 /**
  * GET /api/leads/identity-review
@@ -56,8 +56,21 @@ export async function GET() {
           })) || []
         ) || [];
 
+        // Caso ambíguo (ficha provisória isolada): todas as pessoas candidatas, para o admin escolher
+        const provisionalPersonId = provisionalPersonIdOf(r.evidences);
+        const candidateIds = provisionalPersonId ? candidatePersonIdsOf(r.evidences) : [];
+        const candidates = candidateIds.length > 0
+          ? (await prisma.person.findMany({
+              where: { id: { in: candidateIds } },
+              select: { id: true, fullName: true, email: true, phoneNumber: true, secondaryEmail: true, secondaryPhone: true, source: true }
+            }))
+          : [];
+
         return {
           id: r.id,
+          isProvisional: !!provisionalPersonId,
+          provisionalPersonId,
+          candidates,
           incomingSource: r.incomingSource,
           incomingExternalId: r.incomingExternalId,
           confidenceScore: r.confidenceScore,

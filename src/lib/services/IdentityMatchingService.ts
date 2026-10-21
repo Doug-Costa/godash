@@ -1,6 +1,21 @@
 import prisma from '../prisma';
-import { Person } from '@prisma/client';
-import { CanonicalIdentityService } from './CanonicalIdentityService';
+import { Person, Prisma } from '@prisma/client';
+import { AMBIGUOUS_PROVISIONAL, CanonicalIdentityService, PROVISIONAL_PERSON_PREFIX } from './CanonicalIdentityService';
+
+/** Person provisória de um caso ambíguo (criada pelo CanonicalIdentityService), se a revisão for desse tipo. */
+export function provisionalPersonIdOf(evidences: unknown): string | null {
+  if (!Array.isArray(evidences) || !evidences.includes(AMBIGUOUS_PROVISIONAL)) return null;
+  const tag = evidences.find((e): e is string => typeof e === 'string' && e.startsWith(PROVISIONAL_PERSON_PREFIX));
+  return tag ? tag.slice(PROVISIONAL_PERSON_PREFIX.length) : null;
+}
+
+/** IDs das Persons candidatas listadas nas evidências de um caso ambíguo. */
+export function candidatePersonIdsOf(evidences: unknown): string[] {
+  if (!Array.isArray(evidences)) return [];
+  return evidences
+    .filter((e): e is string => typeof e === 'string' && e.startsWith('CANDIDATE:'))
+    .map(e => e.slice('CANDIDATE:'.length));
+}
 
 export interface MatchingInput {
   source: string;
@@ -139,6 +154,29 @@ export class IdentityMatchingService {
       throw new Error('Revisão não encontrada ou já processada.');
     }
 
+    // Caso ambíguo isolado numa Person provisória: unir a provisória à Person escolhida
+    const provisionalId = provisionalPersonIdOf(review.evidences);
+    if (provisionalId) {
+      if (provisionalId === personId) {
+        throw new Error('Escolha uma das pessoas candidatas — a ficha provisória não pode ser vinculada a ela mesma.');
+      }
+      await this.mergePersons(
+        provisionalId,
+        personId,
+        reviewedById,
+        `Revisão ${reviewId}: caso ambíguo resolvido — ficha provisória unida à pessoa escolhida`,
+        undefined,
+        async (tx) => {
+          await tx.identityReview.update({
+            where: { id: reviewId },
+            data: { status: 'PROCESSED', decision: 'LINK', reviewedById, reviewedAt: new Date() }
+          });
+        }
+      );
+      console.log(`[IdentityMatchingService] HITL LINK (provisória): Person ${provisionalId} unida a ${personId}`);
+      return;
+    }
+
     // Vincula o Alias à Person
     await prisma.identityAlias.create({
       data: {
@@ -173,6 +211,19 @@ export class IdentityMatchingService {
 
     if (!review || review.status !== 'PENDING') {
       throw new Error('Revisão não encontrada ou já processada.');
+    }
+
+    // Caso ambíguo: a ficha provisória já é a Person separada — só confirma
+    const provisionalId = provisionalPersonIdOf(review.evidences);
+    if (provisionalId) {
+      const provisional = await prisma.person.findUnique({ where: { id: provisionalId } });
+      if (!provisional) throw new Error('Ficha provisória não encontrada.');
+      await prisma.identityReview.update({
+        where: { id: reviewId },
+        data: { status: 'PROCESSED', decision: 'REJECT', reviewedById, reviewedAt: new Date() }
+      });
+      console.log(`[IdentityMatchingService] HITL REJECT (provisória): Person ${provisionalId} confirmada como pessoa distinta`);
+      return provisional;
     }
 
     // Cria nova Person autônoma
@@ -254,10 +305,24 @@ export class IdentityMatchingService {
   }
 
   /**
-   * Unifica duas Persons (sourcePersonId e targetPersonId).
-   * Move todos os Aliases, Customers, tarefas e históricos de forma segura e auditada.
-   * Suporta sobreposição opcional de campos canônicos oficiais (canonicalOverrides).
-   * Dominio: Fusão de Pessoas (Merge)
+   * Unifica duas Persons: a origem (sourcePersonId) é absorvida pelo destino (targetPersonId).
+   *
+   * Garantias:
+   *  - Tudo numa única transação.
+   *  - Nada é apagado em cascata sem registro: quando as duas pessoas têm Customer na
+   *    mesma jornada, TODOS os registros do Customer redundante são movidos
+   *    (interações, tarefas, oportunidades, produtos, execuções de fluxo, audiência
+   *    e matrículas de campanha, eventos de domínio). Só depois o Customer vazio é
+   *    removido — e a remoção é abortada se ainda restar qualquer registro ligado.
+   *  - Linhas que colidem com restrição única (mesma campanha já existente no destino)
+   *    ficam com a versão do destino; a da origem é removida e guardada por inteiro
+   *    no MergeEvent.
+   *  - O MergeEvent.metadata (version 2) registra o necessário para desfazer:
+   *    snapshot da Person e dos Customers removidos, IDs movidos por tabela e
+   *    linhas removidas por colisão.
+   *
+   * `inTransaction` permite concluir outra gravação (ex.: fechar a revisão) na mesma transação.
+   * Retorna o id do MergeEvent.
    */
   static async mergePersons(
     sourcePersonId: string,
@@ -268,105 +333,143 @@ export class IdentityMatchingService {
       fullName?: string | null;
       email?: string | null;
       phoneNumber?: string | null;
-    }
-  ): Promise<void> {
+    },
+    inTransaction?: (tx: Prisma.TransactionClient) => Promise<void>
+  ): Promise<string> {
     if (sourcePersonId === targetPersonId) {
       throw new Error('Não é possível mesclar uma identidade consigo mesma.');
     }
 
-    const sourcePerson = await prisma.person.findUnique({
-      where: { id: sourcePersonId },
-      include: { identityAliases: true, customers: true }
-    });
+    const snapshot = <T>(row: T) => JSON.parse(JSON.stringify(row));
 
-    const targetPerson = await prisma.person.findUnique({
-      where: { id: targetPersonId },
-      include: { identityAliases: true, customers: true }
-    });
-
-    if (!sourcePerson || !targetPerson) {
-      throw new Error('Uma ou ambas as identidades para fusão não foram encontradas.');
-    }
-
-    // Executar todo o merge em uma única transação atômica
-    await prisma.$transaction(async (tx) => {
-      // 1. Gravar o MergeEvent com metadados para trilha de auditoria e reversibilidade
-      await tx.mergeEvent.create({
-        data: {
-          sourcePersonId,
-          targetPersonId,
-          decidedById,
-          reason,
-          metadata: {
-            sourcePerson: {
-              fullName: sourcePerson.fullName,
-              email: sourcePerson.email,
-              phoneNumber: sourcePerson.phoneNumber,
-              aliasesCount: sourcePerson.identityAliases.length,
-              customersCount: sourcePerson.customers.length
-            },
-            targetPerson: {
-              fullName: targetPerson.fullName,
-              email: targetPerson.email,
-              phoneNumber: targetPerson.phoneNumber
-            }
-          }
-        }
+    return prisma.$transaction(async (tx) => {
+      const sourcePerson = await tx.person.findUnique({
+        where: { id: sourcePersonId },
+        include: { identityAliases: { select: { id: true } }, customers: true }
+      });
+      const targetPerson = await tx.person.findUnique({
+        where: { id: targetPersonId },
+        include: { customers: true }
       });
 
-      // 2. Mover IdentityAliases da source para o target
+      if (!sourcePerson || !targetPerson) {
+        throw new Error('Uma ou ambas as identidades para fusão não foram encontradas.');
+      }
+
+      const { identityAliases, customers, ...sourcePersonRow } = sourcePerson;
+      const undo = {
+        version: 2,
+        sourcePerson: snapshot(sourcePersonRow),
+        targetBefore: { fullName: targetPerson.fullName, email: targetPerson.email, phoneNumber: targetPerson.phoneNumber },
+        movedAliasIds: identityAliases.map(a => a.id),
+        repointedCustomerIds: [] as string[],
+        mergedCustomers: [] as any[],
+        domainEventIdsRepointed: [] as string[],
+        reviewIdsRepointed: [] as string[],
+      };
+
+      // 1. Aliases passam para o destino
       await tx.identityAlias.updateMany({
         where: { personId: sourcePersonId },
         data: { personId: targetPersonId }
       });
 
-      // 3. Mover ou mesclar Customers para evitar conflitos de restrição única
-      for (const sourceCust of sourcePerson.customers) {
-        // Verificar se a Person sobrevivente já possui um Customer na mesma jornada
-        const conflictingCust = targetPerson.customers.find(
-          c => c.journeyId === sourceCust.journeyId
-        );
+      // 2. Customers
+      for (const sourceCust of customers) {
+        const conflictingCust = targetPerson.customers.find(c => c.journeyId === sourceCust.journeyId);
 
-        if (conflictingCust) {
-          // Conflito de jornada: Mapear e migrar históricos (interações, tarefas, oportunidades)
-          console.log(`[IdentityMatchingService] Fusão de Customer: Mapeando histórico de ${sourceCust.id} para ${conflictingCust.id}`);
-          
-          await tx.interaction.updateMany({
-            where: { customerId: sourceCust.id },
-            data: { customerId: conflictingCust.id }
-          });
-
-          await tx.task.updateMany({
-            where: { customerId: sourceCust.id },
-            data: { customerId: conflictingCust.id }
-          });
-
-          await tx.opportunity.updateMany({
-            where: { customerId: sourceCust.id },
-            data: { customerId: conflictingCust.id }
-          });
-
-          await tx.customerProduct.updateMany({
-            where: { customerId: sourceCust.id },
-            data: { customerId: conflictingCust.id }
-          });
-
-          // Deletar o Customer redundante da source
-          await tx.customer.delete({
-            where: { id: sourceCust.id }
-          });
-        } else {
-          // Sem conflito: Reaponta a Person do Customer
-          await tx.customer.update({
-            where: { id: sourceCust.id },
-            data: { personId: targetPersonId }
-          });
+        if (!conflictingCust) {
+          await tx.customer.update({ where: { id: sourceCust.id }, data: { personId: targetPersonId } });
+          undo.repointedCustomerIds.push(sourceCust.id);
+          continue;
         }
+
+        // Mesma jornada nos dois lados: move tudo para o Customer do destino
+        const from = { customerId: sourceCust.id };
+        const to = { customerId: conflictingCust.id };
+        const ids = async (rows: Promise<{ id: string }[]>) => (await rows).map(r => r.id);
+
+        const moved = {
+          interaction: await ids(tx.interaction.findMany({ where: from, select: { id: true } })),
+          task: await ids(tx.task.findMany({ where: from, select: { id: true } })),
+          opportunity: await ids(tx.opportunity.findMany({ where: from, select: { id: true } })),
+          customerProduct: await ids(tx.customerProduct.findMany({ where: from, select: { id: true } })),
+          flowExecution: await ids(tx.flowExecution.findMany({ where: from, select: { id: true } })),
+          domainEvent: await ids(tx.domainEvent.findMany({ where: from, select: { id: true } })),
+          campaignAudienceMember: [] as string[],
+          campaignEnrollment: [] as string[],
+        };
+        await tx.interaction.updateMany({ where: from, data: to });
+        await tx.task.updateMany({ where: from, data: to });
+        await tx.opportunity.updateMany({ where: from, data: to });
+        await tx.customerProduct.updateMany({ where: from, data: to });
+        await tx.flowExecution.updateMany({ where: from, data: to });
+        await tx.domainEvent.updateMany({ where: from, data: to });
+
+        // Audiência: única por (campanha, customer)
+        const droppedAudience: any[] = [];
+        const targetAudience = new Set(
+          (await tx.campaignAudienceMember.findMany({ where: to, select: { campaignId: true } })).map(a => a.campaignId)
+        );
+        for (const member of await tx.campaignAudienceMember.findMany({ where: from })) {
+          if (targetAudience.has(member.campaignId)) {
+            droppedAudience.push(snapshot(member));
+            await tx.campaignAudienceMember.delete({ where: { id: member.id } });
+          } else {
+            await tx.campaignAudienceMember.update({ where: { id: member.id }, data: to });
+            moved.campaignAudienceMember.push(member.id);
+          }
+        }
+
+        // Matrículas: únicas por (campanha, customer, isTest)
+        const droppedEnrollments: any[] = [];
+        const targetEnrollments = new Set(
+          (await tx.campaignEnrollment.findMany({ where: to, select: { campaignId: true, isTest: true } }))
+            .map(e => `${e.campaignId}:${e.isTest}`)
+        );
+        for (const enrollment of await tx.campaignEnrollment.findMany({ where: from })) {
+          if (targetEnrollments.has(`${enrollment.campaignId}:${enrollment.isTest}`)) {
+            droppedEnrollments.push(snapshot(enrollment));
+            await tx.campaignEnrollment.delete({ where: { id: enrollment.id } });
+          } else {
+            await tx.campaignEnrollment.update({ where: { id: enrollment.id }, data: to });
+            moved.campaignEnrollment.push(enrollment.id);
+          }
+        }
+
+        // Trava de segurança: o Customer só sai se não restar nada ligado a ele (evita perda por cascata)
+        const leftovers = (await Promise.all([
+          tx.interaction.count({ where: from }),
+          tx.task.count({ where: from }),
+          tx.opportunity.count({ where: from }),
+          tx.customerProduct.count({ where: from }),
+          tx.flowExecution.count({ where: from }),
+          tx.campaignAudienceMember.count({ where: from }),
+          tx.campaignEnrollment.count({ where: from }),
+        ])).reduce((sum, n) => sum + n, 0);
+        if (leftovers > 0) {
+          throw new Error(`Fusão abortada: o Customer ${sourceCust.id} ainda tem ${leftovers} registro(s) ligado(s).`);
+        }
+
+        undo.mergedCustomers.push({
+          sourceCustomer: snapshot(sourceCust),
+          intoCustomerId: conflictingCust.id,
+          moved,
+          droppedAudience,
+          droppedEnrollments,
+        });
+        await tx.customer.delete({ where: { id: sourceCust.id } });
       }
 
-      // 4. Se houver sobreposição de dados canônicos escolhidos pelo Admin, aplica na Person sobrevivente
+      // 3. Referências soltas (sem chave estrangeira) à Person de origem
+      undo.domainEventIdsRepointed = (await tx.domainEvent.findMany({ where: { personId: sourcePersonId }, select: { id: true } })).map(e => e.id);
+      await tx.domainEvent.updateMany({ where: { personId: sourcePersonId }, data: { personId: targetPersonId } });
+      undo.reviewIdsRepointed = (await tx.identityReview.findMany({ where: { candidatePersonId: sourcePersonId }, select: { id: true } })).map(r => r.id);
+      await tx.identityReview.updateMany({ where: { candidatePersonId: sourcePersonId }, data: { candidatePersonId: targetPersonId } });
+
+      // 4. Sobreposição de dados canônicos escolhidos pelo Admin
       if (canonicalOverrides) {
-        const updates: any = {};
+        const updates: Prisma.PersonUpdateInput = {};
         if (canonicalOverrides.fullName !== undefined && canonicalOverrides.fullName !== null) {
           updates.fullName = canonicalOverrides.fullName;
         }
@@ -377,19 +480,22 @@ export class IdentityMatchingService {
           updates.phoneNumber = CanonicalIdentityService.normalizePhone(canonicalOverrides.phoneNumber);
         }
         if (Object.keys(updates).length > 0) {
-          await tx.person.update({
-            where: { id: targetPersonId },
-            data: updates
-          });
+          await tx.person.update({ where: { id: targetPersonId }, data: updates });
         }
       }
 
-      // 5. Deletar a Person original mesclada (aliases e customers já foram re-apontados)
-      await tx.person.delete({
-        where: { id: sourcePersonId }
+      // 5. Trilha de auditoria e reversão
+      const mergeEvent = await tx.mergeEvent.create({
+        data: { sourcePersonId, targetPersonId, decidedById, reason, metadata: undo }
       });
-    });
 
-    console.log(`[IdentityMatchingService] Fusão concluída com sucesso: Person ${sourcePersonId} mesclada em ${targetPersonId}`);
+      // 6. Remove a Person absorvida (aliases e customers já foram re-apontados)
+      await tx.person.delete({ where: { id: sourcePersonId } });
+
+      if (inTransaction) await inTransaction(tx);
+
+      console.log(`[IdentityMatchingService] Fusão concluída: Person ${sourcePersonId} mesclada em ${targetPersonId} (MergeEvent ${mergeEvent.id})`);
+      return mergeEvent.id;
+    }, { maxWait: 15000, timeout: 60000 });
   }
 }

@@ -3,61 +3,41 @@ import { IdentityMatchingService } from './IdentityMatchingService';
 import { CanonicalIdentityService } from './CanonicalIdentityService';
 import prisma from '../prisma';
 
+// Fontes e usuário exclusivos deste teste. A limpeza NUNCA apaga dados de outras origens:
+// os testes rodam em paralelo no mesmo banco, e um deleteMany() sem filtro apagaria a fila
+// de revisão e o histórico de fusões de qualquer banco apontado por DATABASE_URL.
+const TEST_SOURCES = ['SOURCE_A', 'SOURCE_B', 'FORM_SOURCE', 'TEST_MATCH'];
+const TEST_ADMIN_EMAIL = 'identity-matching-tester@teste.local';
+
+async function cleanup(adminUserId: string) {
+  await prisma.identityReview.deleteMany({ where: { incomingSource: { in: TEST_SOURCES } } });
+  if (adminUserId) await prisma.mergeEvent.deleteMany({ where: { decidedById: adminUserId } });
+  await prisma.journey.deleteMany({ where: { id: 'j-1' } });
+  await prisma.identityAlias.deleteMany({ where: { source: { in: TEST_SOURCES } } });
+  await prisma.person.deleteMany({ where: { source: { in: TEST_SOURCES } } });
+}
+
 describe('IdentityMatchingService - Integration Tests', () => {
   let adminUserId = '';
 
   beforeEach(async () => {
     // Garantir que existe um admin user no banco para realizar a revisão
     const admin = await prisma.user.upsert({
-      where: { email: 'admin@dentalgo.com' },
+      where: { email: TEST_ADMIN_EMAIL },
       update: {},
       create: {
         name: 'Admin Test',
-        email: 'admin@dentalgo.com',
+        email: TEST_ADMIN_EMAIL,
         role: 'ADMIN',
         isActive: true
       }
     });
     adminUserId = admin.id;
-
-    // Limpar tabelas afetadas nos testes
-    await prisma.identityReview.deleteMany();
-    await prisma.mergeEvent.deleteMany();
-    await prisma.journey.deleteMany({ where: { id: 'j-1' } });
-    await prisma.identityAlias.deleteMany({
-      where: {
-        source: {
-          in: ['SOURCE_A', 'SOURCE_B', 'FORM_SOURCE', 'TEST_MATCH']
-        }
-      }
-    });
-    await prisma.person.deleteMany({
-      where: {
-        source: {
-          in: ['SOURCE_A', 'SOURCE_B', 'FORM_SOURCE', 'TEST_MATCH']
-        }
-      }
-    });
+    await cleanup(adminUserId);
   });
 
   afterEach(async () => {
-    await prisma.identityReview.deleteMany();
-    await prisma.mergeEvent.deleteMany();
-    await prisma.journey.deleteMany({ where: { id: 'j-1' } });
-    await prisma.identityAlias.deleteMany({
-      where: {
-        source: {
-          in: ['SOURCE_A', 'SOURCE_B', 'FORM_SOURCE', 'TEST_MATCH']
-        }
-      }
-    });
-    await prisma.person.deleteMany({
-      where: {
-        source: {
-          in: ['SOURCE_A', 'SOURCE_B', 'FORM_SOURCE', 'TEST_MATCH']
-        }
-      }
-    });
+    await cleanup(adminUserId);
   });
 
   it('should treat same externalId from different sources as separate and NOT auto-merge them', async () => {
