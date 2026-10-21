@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Configuration
-# Default target directory
-APP_DIR="/root/godash" 
+# Default target directory: pasta real do projeto no servidor (sobrescreva com APP_DIR=... bash deploy.sh)
+APP_DIR="${APP_DIR:-/opt/GODASH}"
 ENV_FILE=".env.local"
 
 echo "🚀 Iniciando Deploy do DentalGO BI..."
