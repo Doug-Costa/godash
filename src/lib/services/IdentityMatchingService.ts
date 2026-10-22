@@ -175,7 +175,8 @@ export class IdentityMatchingService {
             where: { id: reviewId },
             data: { status: 'PROCESSED', decision: 'LINK', reviewedById, reviewedAt: new Date() }
           });
-        }
+        },
+        { reviewId }
       );
       console.log(`[IdentityMatchingService] HITL LINK (provisória): Person ${provisionalId} unida a ${personId}`);
       return;
@@ -383,6 +384,7 @@ export class IdentityMatchingService {
       `Revisão ${reviewId} (auditoria: ${kind === 'MERGE_SUGGESTED' ? 'junção sugerida' : 'par de dúvida'})`,
       undefined,
       async (tx) => { await close(tx, 'PROCESSED', 'LINK'); },
+      { reviewId },
     );
     return { outcome: 'MERGED', mergeEventId };
   }
@@ -440,7 +442,8 @@ export class IdentityMatchingService {
       email?: string | null;
       phoneNumber?: string | null;
     },
-    inTransaction?: (tx: Prisma.TransactionClient) => Promise<void>
+    inTransaction?: (tx: Prisma.TransactionClient) => Promise<void>,
+    context?: { reviewId?: string }
   ): Promise<string> {
     if (sourcePersonId === targetPersonId) {
       throw new Error('Não é possível mesclar uma identidade consigo mesma.');
@@ -472,6 +475,8 @@ export class IdentityMatchingService {
         mergedCustomers: [] as any[],
         domainEventIdsRepointed: [] as string[],
         reviewIdsRepointed: [] as string[],
+        reviewId: context?.reviewId ?? null,
+        canonicalOverridesApplied: {} as Record<string, string | null>,
       };
 
       // 1. Aliases passam para o destino
@@ -587,6 +592,7 @@ export class IdentityMatchingService {
         }
         if (Object.keys(updates).length > 0) {
           await tx.person.update({ where: { id: targetPersonId }, data: updates });
+          undo.canonicalOverridesApplied = updates as Record<string, string | null>;
         }
       }
 

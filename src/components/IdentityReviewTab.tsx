@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import AuditReviewQueue from './AuditReviewQueue';
+import MergeHistory from './MergeHistory';
 
 interface CandidatePerson {
   id: string;
@@ -142,6 +143,9 @@ export default function IdentityReviewTab({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* Fila gerada pela auditoria de identidade (junções sugeridas, pares de dúvida, suspeitas) */}
       <AuditReviewQueue />
+
+      {/* Junções recentes, com prévia e desfazer auditado */}
+      <MergeHistory />
 
       {/* Header com Ações Globais */}
       <div style={{

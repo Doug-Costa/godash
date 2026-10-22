@@ -20,7 +20,8 @@ async function cleanup() {
   const persons = await prisma.person.findMany({ where: { source: SOURCE }, select: { id: true } });
   const personIds = persons.map(p => p.id);
   await prisma.identityReview.deleteMany({ where: { incomingSource: SOURCE } });
-  await prisma.mergeEvent.deleteMany({ where: { reason: { startsWith: '[teste]' } } });
+  // Só as junções feitas pelo usuário deste teste (outros arquivos rodam em paralelo no mesmo banco)
+  if (tester) await prisma.mergeEvent.deleteMany({ where: { decidedById: tester } });
   await prisma.mergeEvent.deleteMany({ where: { OR: [{ sourcePersonId: { in: personIds } }, { targetPersonId: { in: personIds } }] } });
   await prisma.domainEvent.deleteMany({ where: { actorType: SOURCE } });
   await prisma.campaign.deleteMany({ where: { objective: SOURCE } });

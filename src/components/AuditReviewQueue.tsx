@@ -129,7 +129,7 @@ export default function AuditReviewQueue() {
       const json = await res.json();
       if (!json.success) throw new Error(json.error);
       const texts: Record<string, string> = {
-        MERGED: 'Fichas unidas. A operação fica registrada e pode ser desfeita.',
+        MERGED: 'Fichas unidas. Se precisar, desfaça em "Histórico de junções", logo abaixo.',
         OBSOLETE: 'Uma das fichas já não existia (provavelmente já unida). Revisão fechada.',
         CLOSED: 'Decisão registrada.',
       };
@@ -210,7 +210,7 @@ export default function AuditReviewQueue() {
           <div style={{ fontSize: 13, fontWeight: 700 }}>Confirmar junção de {selectedItems.length} par(es)</div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
             Em cada par, a ficha da direita é absorvida pela da esquerda: os registros e cadastros dela passam para a da esquerda.
-            Cada junção fica registrada e pode ser desfeita.
+            Cada junção fica registrada e pode ser desfeita em "Histórico de junções".
           </div>
           <div style={{ maxHeight: 220, overflowY: 'auto', fontSize: 12, display: 'flex', flexDirection: 'column', gap: 2 }}>
             {selectedItems.map(i => (
@@ -307,7 +307,7 @@ export default function AuditReviewQueue() {
               <PersonCard title="Será absorvida" p={right} highlight={false} />
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              Ao juntar: {right.aliasCount} registro(s) de origem e {right.customerCount} cadastro(s) da direita passam para a da esquerda. Pode ser desfeito.
+              Ao juntar: {right.aliasCount} registro(s) de origem e {right.customerCount} cadastro(s) da direita passam para a da esquerda. Pode ser desfeito em "Histórico de junções".
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button type="button" style={btn()} disabled={busy} onClick={() => {
