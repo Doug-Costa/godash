@@ -1,6 +1,7 @@
 import prisma from '../prisma';
 import { Person, Prisma } from '@prisma/client';
 import { AMBIGUOUS_PROVISIONAL, CanonicalIdentityService, PROVISIONAL_PERSON_PREFIX } from './CanonicalIdentityService';
+import { absorbPersonIdOf, auditKindOf, isBatchable, keepPersonIdOf } from '../identity/reviewQueue';
 
 /** Person provisória de um caso ambíguo (criada pelo CanonicalIdentityService), se a revisão for desse tipo. */
 export function provisionalPersonIdOf(evidences: unknown): string | null {
@@ -153,6 +154,9 @@ export class IdentityMatchingService {
     if (!review || review.status !== 'PENDING') {
       throw new Error('Revisão não encontrada ou já processada.');
     }
+    if (auditKindOf(review.evidences)) {
+      throw new Error('Revisão da auditoria de identidade: use as ações da fila de auditoria.');
+    }
 
     // Caso ambíguo isolado numa Person provisória: unir a provisória à Person escolhida
     const provisionalId = provisionalPersonIdOf(review.evidences);
@@ -211,6 +215,9 @@ export class IdentityMatchingService {
 
     if (!review || review.status !== 'PENDING') {
       throw new Error('Revisão não encontrada ou já processada.');
+    }
+    if (auditKindOf(review.evidences)) {
+      throw new Error('Revisão da auditoria de identidade: use as ações da fila de auditoria.');
     }
 
     // Caso ambíguo: a ficha provisória já é a Person separada — só confirma
@@ -302,6 +309,105 @@ export class IdentityMatchingService {
       where: { id: personId },
       data: updates
     });
+  }
+
+  /**
+   * Decide uma revisão criada pela carga das auditorias (prisma/load-identity-review-queue.ts).
+   *
+   *  - MERGE_SUGGESTED / PAIR_REVIEW:
+   *      MERGE         → junta as duas fichas (keepPersonId escolhe qual fica; padrão = a sugerida)
+   *      KEEP_SEPARATE → confirma que são pessoas diferentes
+   *  - MIXED_SUSPECT (só inspeção, nunca separa automaticamente):
+   *      CONFIRM_SAME  → a ficha está correta
+   *      NEEDS_SPLIT   → marca a ficha para separação manual (continua visível como adiada)
+   *
+   * Se alguma das fichas já não existir (ex.: foi unida por outra revisão), fecha como OBSOLETE.
+   */
+  static async resolveAuditReview(
+    reviewId: string,
+    decision: 'MERGE' | 'KEEP_SEPARATE' | 'CONFIRM_SAME' | 'NEEDS_SPLIT',
+    reviewedById: string,
+    keepPersonId?: string,
+  ): Promise<{ outcome: 'MERGED' | 'CLOSED' | 'OBSOLETE'; mergeEventId?: string }> {
+    const review = await prisma.identityReview.findUnique({ where: { id: reviewId } });
+    if (!review || !['PENDING', 'DEFERRED'].includes(review.status)) {
+      throw new Error('Revisão não encontrada ou já processada.');
+    }
+    const kind = auditKindOf(review.evidences);
+    if (!kind) throw new Error('Esta revisão não veio da auditoria de identidade.');
+
+    const close = (db: Prisma.TransactionClient | typeof prisma, status: string, finalDecision: string) =>
+      db.identityReview.update({
+        where: { id: reviewId },
+        data: { status, decision: finalDecision, reviewedById, reviewedAt: new Date() },
+      });
+
+    if (kind === 'MIXED_SUSPECT') {
+      if (decision === 'CONFIRM_SAME') {
+        await close(prisma, 'PROCESSED', 'CONFIRMED_SAME');
+        return { outcome: 'CLOSED' };
+      }
+      if (decision === 'NEEDS_SPLIT') {
+        await close(prisma, 'DEFERRED', 'SPLIT_NEEDED');
+        return { outcome: 'CLOSED' };
+      }
+      throw new Error('Para suspeitas de ficha misturada use CONFIRM_SAME ou NEEDS_SPLIT.');
+    }
+
+    const suggestedKeep = keepPersonIdOf(review.evidences);
+    const suggestedAbsorb = absorbPersonIdOf(review.evidences);
+    if (!suggestedKeep || !suggestedAbsorb) throw new Error('Revisão sem as duas fichas do par.');
+
+    if (decision === 'KEEP_SEPARATE') {
+      await close(prisma, 'PROCESSED', 'REJECT');
+      return { outcome: 'CLOSED' };
+    }
+    if (decision !== 'MERGE') throw new Error('Para pares use MERGE ou KEEP_SEPARATE.');
+
+    const keep = keepPersonId ?? suggestedKeep;
+    if (keep !== suggestedKeep && keep !== suggestedAbsorb) {
+      throw new Error('A ficha que fica precisa ser uma das duas do par.');
+    }
+    const absorb = keep === suggestedKeep ? suggestedAbsorb : suggestedKeep;
+
+    const found = await prisma.person.count({ where: { id: { in: [keep, absorb] } } });
+    if (found < 2) {
+      await close(prisma, 'PROCESSED', 'OBSOLETE');
+      return { outcome: 'OBSOLETE' };
+    }
+
+    const mergeEventId = await this.mergePersons(
+      absorb,
+      keep,
+      reviewedById,
+      `Revisão ${reviewId} (auditoria: ${kind === 'MERGE_SUGGESTED' ? 'junção sugerida' : 'par de dúvida'})`,
+      undefined,
+      async (tx) => { await close(tx, 'PROCESSED', 'LINK'); },
+    );
+    return { outcome: 'MERGED', mergeEventId };
+  }
+
+  /**
+   * Aprovação em lote, só para revisões marcadas como aprováveis em lote (junções
+   * sugeridas e telefone + nome compatível) e só com os IDs escolhidos na tela.
+   * Cada item é decidido separadamente; falha em um não desfaz os outros.
+   */
+  static async resolveAuditReviewsBatch(reviewIds: string[], reviewedById: string) {
+    const results: { reviewId: string; outcome: string; error?: string }[] = [];
+    for (const reviewId of reviewIds) {
+      try {
+        const review = await prisma.identityReview.findUnique({ where: { id: reviewId }, select: { evidences: true } });
+        if (!review || !isBatchable(review.evidences)) {
+          results.push({ reviewId, outcome: 'SKIPPED', error: 'Não pode ser aprovada em lote.' });
+          continue;
+        }
+        const { outcome } = await this.resolveAuditReview(reviewId, 'MERGE', reviewedById);
+        results.push({ reviewId, outcome });
+      } catch (err: any) {
+        results.push({ reviewId, outcome: 'FAILED', error: err.message });
+      }
+    }
+    return results;
   }
 
   /**

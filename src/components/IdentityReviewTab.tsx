@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import AuditReviewQueue from './AuditReviewQueue';
 
 interface CandidatePerson {
   id: string;
@@ -139,6 +140,9 @@ export default function IdentityReviewTab({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Fila gerada pela auditoria de identidade (junções sugeridas, pares de dúvida, suspeitas) */}
+      <AuditReviewQueue />
+
       {/* Header com Ações Globais */}
       <div style={{
         display: 'flex',

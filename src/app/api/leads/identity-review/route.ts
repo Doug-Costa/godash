@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { auth } from '@/auth';
 import { IdentityMatchingService, candidatePersonIdsOf, provisionalPersonIdOf } from '@/lib/services/IdentityMatchingService';
+import { AUDIT_REVIEW_SOURCE } from '@/lib/identity/reviewQueue';
 
 /**
  * GET /api/leads/identity-review
@@ -15,7 +16,8 @@ export async function GET() {
     }
 
     const reviews = await prisma.identityReview.findMany({
-      where: { status: { in: ['PENDING', 'DEFERRED'] } },
+      // As revisões da auditoria têm tela e rota próprias (/api/leads/identity-review/audit)
+      where: { status: { in: ['PENDING', 'DEFERRED'] }, NOT: { incomingSource: AUDIT_REVIEW_SOURCE } },
       include: {
         candidatePerson: {
           include: {
