@@ -45,6 +45,11 @@ describe('nomes', () => {
 
   it('nome ausente ou genérico é desconhecido', () => {
     expect(compareNames(['Lead DentalGO #7509'], ['Douglas Costa'])).toBe('UNKNOWN');
+    // Nomes genéricos gravados pelo importador Bitrix quando o contato vem sem nome
+    expect(compareNames(['Contato Sem Nome'], ['Douglas Costa'])).toBe('UNKNOWN');
+    expect(compareNames(['Contato Recuperado'], ['Douglas Costa'])).toBe('UNKNOWN');
+    // O genérico é ignorado e os nomes reais da mesma ficha continuam valendo
+    expect(compareNames(['Contato Recuperado', 'Douglas Costa'], ['Douglas Henrique Costa'])).toBe('COMPATIBLE');
     expect(compareNames([], ['Douglas Costa'])).toBe('UNKNOWN');
   });
 });

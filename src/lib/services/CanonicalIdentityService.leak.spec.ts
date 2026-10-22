@@ -111,6 +111,14 @@ describe.skipIf(!process.env.DATABASE_URL)('CanonicalIdentityService — vazamen
     expect(await prisma.person.count({ where: { source: SOURCE } })).toBe(antes);
   });
 
+  it('ficha criada como "Contato Sem Nome" (Bitrix) recebe o nome real quando ele chega', async () => {
+    const semNome = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'bitrix_x', email: 'fabio@teste.com', name: 'Contato Sem Nome' });
+    expect(semNome.fullName).toBe('Contato Sem Nome');
+    const depois = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'csv_x', email: 'fabio@teste.com', name: 'Fábio Torres' });
+    expect(depois.id).toBe(semNome.id);
+    expect(depois.fullName).toBe('Fábio Torres');
+  });
+
   it('caso simples continua igual: um candidato por e-mail → mesmo Person', async () => {
     const a = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'csv_1', email: 'eva@teste.com', name: 'Eva Prado' });
     const b = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'bitrix_1', email: 'EVA@teste.com', name: 'Eva Prado' });

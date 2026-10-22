@@ -48,7 +48,9 @@ export interface MatchResult {
 
 const NAME_PARTICLES = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'del', 'la', 'di']);
 const NAME_TITLES = new Set(['dr', 'dra', 'drs', 'prof', 'profa', 'sr', 'sra']);
-const PLACEHOLDER_RE = /^(lead|dr\.?\s*lead|sem nome|n\/a|nao informado|não informado)\b/i;
+// Nomes genéricos gravados quando a origem não trouxe nome (ex.: importador Bitrix:
+// "Contato Sem Nome", "Contato Recuperado") — contam como "sem nome", nunca como nome real.
+const PLACEHOLDER_RE = /^(lead|dr\.?\s*lead|sem nome|n\/a|nao informado|não informado|contato sem nome|contato recuperado)\b/i;
 
 export function normalizeEmail(email?: string | null): string | null {
   if (!email) return null;

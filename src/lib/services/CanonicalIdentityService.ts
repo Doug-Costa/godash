@@ -26,7 +26,7 @@ export class CanonicalIdentityService {
     const normalized = name.trim().toLowerCase();
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return true;
     return /^(dr\.?\s*)?lead(?:\s+dentalgo)?\s*#?\s*[\w-]+$/.test(normalized)
-      || ['sem nome', 'n/a', 'nao informado', 'não informado'].includes(normalized);
+      || ['sem nome', 'n/a', 'nao informado', 'não informado', 'contato sem nome', 'contato recuperado'].includes(normalized);
   }
   /**
    * Normaliza e-mail para minúsculas e remove espaços.
