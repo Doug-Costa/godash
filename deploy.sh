@@ -17,7 +17,14 @@ fi
 
 # Pull latest changes from git
 echo "📥 Puxando código do GitHub..."
-git pull origin main
+# Para o deploy se o pull falhar (ex.: arquivo alterado direto no servidor).
+# Antes, a falha passava despercebida e o container era reconstruído com o código antigo.
+if ! git pull --ff-only origin main; then
+    echo "❌ git pull falhou — deploy interrompido, nada foi reconstruído."
+    echo "   Veja o que está alterado no servidor com: git status && git diff"
+    exit 1
+fi
+echo "📌 Versão a publicar: $(git log -1 --oneline)"
 
 # Check for .env.local existence (critical for runtime/build)
 if [ ! -f "$ENV_FILE" ]; then

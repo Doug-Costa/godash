@@ -50,3 +50,7 @@ postgres_data/
 scratch/
 
 
+
+# Dados gravados pelo sistema em produção (ex.: /api/settings)
+prisma_data/*
+!prisma_data/.gitkeep
