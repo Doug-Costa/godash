@@ -4,6 +4,7 @@ import {
   absorbPersonIdOf,
   auditKindOf,
   buildReviewQueue,
+  findObsoleteReviews,
   inspectedPersonIdOf,
   isBatchable,
   keepPersonIdOf,
@@ -84,5 +85,18 @@ describe('buildReviewQueue', () => {
       person({ id: '1', fullName: 'Douglas Costa', email: 'a@teste.com' }),
       person({ id: '2', fullName: 'Douglas Costa', email: 'b@teste.com' }),
     ])).toEqual([]);
+  });
+});
+
+describe('findObsoleteReviews', () => {
+  const reviews = [
+    { id: 'r1', evidences: ['KIND:MERGE_SUGGESTED', 'KEEP:a', 'ABSORB:b'] },
+    { id: 'r2', evidences: ['KIND:PAIR_REVIEW', 'KEEP:a', 'ABSORB:sumiu'] },
+    { id: 'r3', evidences: ['KIND:MIXED_SUSPECT', 'PERSON:sumiu2'] },
+    { id: 'r4', evidences: ['EMAIL_EXACT'] }, // sem fichas citadas: nunca é obsoleta
+  ];
+
+  it('marca como obsoleta só a revisão com alguma ficha que já não existe', () => {
+    expect(findObsoleteReviews(reviews, new Set(['a', 'b'])).map(r => r.id)).toEqual(['r2', 'r3']);
   });
 });

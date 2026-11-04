@@ -136,6 +136,22 @@ describe.skipIf(!process.env.DATABASE_URL)('fila de revisão da auditoria', () =
     expect(await prisma.person.count({ where: { id: { in: [s.clin1.id, s.clin2.id] } } })).toBe(2);
   }, 120000);
 
+  it('carga fecha como obsoletas as revisões cujas fichas foram unidas por outro caminho', async () => {
+    const s = await seed();
+    await runLoader(true);
+    const tel = await reviewFor(pairKey(s.tel1.id, s.tel2.id));
+
+    // As duas fichas do par são unidas fora desta revisão (ex.: pela junção manual)
+    await IdentityMatchingService.mergePersons(s.tel1.id, s.tel2.id, tester, '[queue-teste] fora da fila');
+    await runLoader(true);
+
+    const fechada = await prisma.identityReview.findUnique({ where: { id: tel.id } });
+    expect(fechada?.status).toBe('PROCESSED');
+    expect(fechada?.decision).toBe('OBSOLETE');
+    // As outras continuam abertas
+    expect((await reviewFor(pairKey(s.clin1.id, s.clin2.id))).status).toBe('PENDING');
+  }, 120000);
+
   it('suspeita de ficha misturada: confirmar ou marcar para separar, sem separar nada', async () => {
     const s = await seed();
     await runLoader(true);

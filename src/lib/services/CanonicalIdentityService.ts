@@ -262,6 +262,47 @@ export class CanonicalIdentityService {
   }
 
   /**
+   * Ficha de uma pessoa do DentalGO (MySQL `people.id`).
+   *
+   * 1. FATO: se já existe Person com esse externalPersonId, é ela (completa só campos vazios).
+   * 2. Senão, passa por resolve() — trava, busca por e-mail/telefone em campos principais,
+   *    secundários e aliases, e isola casos ambíguos — com o alias DENTALGO:<id>, que
+   *    garante uma única ficha mesmo com chamadas simultâneas para o mesmo id.
+   * 3. Marca o externalPersonId na ficha encontrada, se ela ainda não tiver um.
+   *
+   * Substitui a criação direta de Person que existia na entrada em campanha, que não
+   * conferia e-mail/telefone (duplicava quem já tinha vindo por CSV, Bitrix ou formulário).
+   */
+  static async resolveDentalGoPerson(
+    externalPersonId: number,
+    info?: { fullName?: string | null; email?: string | null; phoneNumber?: string | null } | null,
+  ): Promise<Person> {
+    const email = this.normalizeEmail(info?.email);
+    const phone = this.normalizePhone(info?.phoneNumber);
+    const name = info?.fullName?.trim() || null;
+
+    const byId = await prisma.person.findFirst({ where: { externalPersonId }, orderBy: { createdAt: 'asc' } });
+    if (byId) {
+      const updates: Prisma.PersonUpdateInput = {};
+      if (!byId.email && email) updates.email = email;
+      if (!byId.phoneNumber && phone) updates.phoneNumber = phone;
+      if (this.isPlaceholderName(byId.fullName) && name && !this.isPlaceholderName(name)) updates.fullName = name;
+      return Object.keys(updates).length > 0
+        ? prisma.person.update({ where: { id: byId.id }, data: updates })
+        : byId;
+    }
+
+    const person = await this.resolve({ source: 'DENTALGO', externalId: String(externalPersonId), email, phone, name });
+    if (person.externalPersonId === null) {
+      return prisma.person.update({ where: { id: person.id }, data: { externalPersonId } });
+    }
+    if (person.externalPersonId !== externalPersonId) {
+      console.warn(`[CanonicalIdentityService] DentalGO #${externalPersonId} ligado à Person ${person.id}, que já tem o DentalGO #${person.externalPersonId} (mesmo contato em duas contas)`);
+    }
+    return person;
+  }
+
+  /**
    * Resolve um lote de identidades de forma idempotente e de alta performance.
    * Dominio: Resolução de Lotes de Identidade (idempotente)
    * Input: ResolveInput[]

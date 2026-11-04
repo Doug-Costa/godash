@@ -1,4 +1,5 @@
 import prisma from '../prisma';
+import { CanonicalIdentityService } from '../services/CanonicalIdentityService';
 import { RoutingEngineService } from '../services/RoutingEngineService';
 import { DomainEventService } from '@/lib/services/DomainEventService';
 import { DomainEventType, ActorType } from '@/lib/domain/events';
@@ -117,40 +118,11 @@ export class AssignCampaignLeadsUseCase {
         }
       }
 
-      // Upsert Person com dados de identidade do MySQL (resolve "Lead #7509" em campanhas)
+      // Ficha da pessoa do DentalGO: pelo ID do DentalGO ou, se ainda não existir, pelo motor
+      // de identidade (trava + e-mail/telefone + caso ambíguo isolado). Antes, a ficha era criada
+      // direto, sem conferir quem já tinha vindo por CSV, Bitrix ou formulário.
       if (typeof currentId === 'number' && personInfo) {
-        const normalizePhone = (raw: string | null) => {
-          if (!raw) return null;
-          const d = raw.replace(/\D/g, '');
-          if (d.startsWith('55') && (d.length === 12 || d.length === 13)) return `+${d}`;
-          if (d.length >= 10 && d.length <= 11) return `+55${d}`;
-          return null;
-        };
-        const cleanEmail = personInfo.email?.toLowerCase().trim() || null;
-        const cleanPhone = normalizePhone(personInfo.phoneNumber);
-        const cleanName = personInfo.fullName || null;
-
-        let existingPerson = await prisma.person.findFirst({ where: { externalPersonId: currentId } });
-        if (existingPerson) {
-          await prisma.person.update({
-            where: { id: existingPerson.id },
-            data: {
-              fullName: existingPerson.fullName || cleanName,
-              email: existingPerson.email || cleanEmail,
-              phoneNumber: existingPerson.phoneNumber || cleanPhone,
-            }
-          });
-        } else {
-          existingPerson = await prisma.person.create({
-            data: {
-              externalPersonId: currentId,
-              fullName: cleanName,
-              email: cleanEmail,
-              phoneNumber: cleanPhone,
-              source: 'DENTALGO',
-            }
-          });
-        }
+        const existingPerson = await CanonicalIdentityService.resolveDentalGoPerson(currentId, personInfo);
 
         if (customer && !customer.personId) {
           await prisma.customer.update({
@@ -176,16 +148,8 @@ export class AssignCampaignLeadsUseCase {
         });
       } else {
         if (typeof currentId === 'number') {
-          // Encontrar ou criar Person
-          let person = await prisma.person.findFirst({ where: { externalPersonId: currentId } });
-          if (!person) {
-            person = await prisma.person.create({
-              data: {
-                externalPersonId: currentId,
-                source: 'DENTALGO',
-              }
-            });
-          }
+          // Encontrar ou criar Person (mesmo caminho acima; sem dados do MySQL, cria pelo ID com alias)
+          const person = await CanonicalIdentityService.resolveDentalGoPerson(currentId, personInfo);
 
           customer = await prisma.customer.create({
             data: {

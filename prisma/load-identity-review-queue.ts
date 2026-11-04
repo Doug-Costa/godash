@@ -5,18 +5,29 @@
  * encontraram: junções sugeridas, pares de dúvida e suspeitas de ficha misturada.
  * Regras em src/lib/identity/reviewQueue.ts.
  *
- * NÃO junta nem separa fichas. Só cria revisões pendentes; a decisão é do admin na tela.
+ * Também fecha como OBSOLETE as revisões abertas cujas fichas já não existem
+ * (foram unidas por outra revisão) — se o caso continuar valendo para a ficha que
+ * ficou, ele entra de novo com a chave dela.
+ *
+ * NÃO junta nem separa fichas. Só cria/fecha revisões; a decisão é do admin na tela.
  * Pode rodar de novo: revisões já criadas (em qualquer status) não são duplicadas.
  *
  * Uso:
  *   npx tsx prisma/load-identity-review-queue.ts            # SIMULAÇÃO — não grava nada
- *   npx tsx prisma/load-identity-review-queue.ts --apply    # grava as revisões
+ *   npx tsx prisma/load-identity-review-queue.ts --apply    # grava
  *   docker exec -it dentalgo-bi npx tsx prisma/load-identity-review-queue.ts [--apply]
  */
 
 import { PrismaClient } from '@prisma/client';
 import { loadAuditPersons } from '../src/lib/identity/identityAudit';
-import { AUDIT_REVIEW_SOURCE, buildReviewQueue, isBatchable, type AuditReviewKind } from '../src/lib/identity/reviewQueue';
+import {
+  AUDIT_REVIEW_SOURCE,
+  auditKindOf,
+  buildReviewQueue,
+  findObsoleteReviews,
+  isBatchable,
+  type AuditReviewKind,
+} from '../src/lib/identity/reviewQueue';
 
 const prisma = new PrismaClient();
 const APPLY = process.argv.includes('--apply');
@@ -31,13 +42,15 @@ async function main() {
   const persons = await loadAuditPersons(prisma);
   const items = buildReviewQueue(persons);
 
-  const existing = new Set(
-    (await prisma.identityReview.findMany({
-      where: { incomingSource: AUDIT_REVIEW_SOURCE },
-      select: { incomingExternalId: true },
-    })).map(r => r.incomingExternalId),
-  );
+  const allAuditReviews = await prisma.identityReview.findMany({
+    where: { incomingSource: AUDIT_REVIEW_SOURCE },
+    select: { id: true, incomingExternalId: true, status: true, evidences: true },
+  });
+  const existing = new Set(allAuditReviews.map(r => r.incomingExternalId));
   const toCreate = items.filter(i => !existing.has(i.incomingExternalId));
+
+  const open = allAuditReviews.filter(r => r.status === 'PENDING' || r.status === 'DEFERRED');
+  const obsolete = findObsoleteReviews(open, new Set(persons.map(p => p.id)));
 
   console.log(`\n═══ Carga da fila de revisão — ${APPLY ? 'GRAVANDO' : 'SIMULAÇÃO (nada será gravado)'} ═══`);
   console.log(`Persons analisadas: ${persons.length}\n`);
@@ -45,8 +58,9 @@ async function main() {
     const all = items.filter(i => i.kind === kind);
     const fresh = toCreate.filter(i => i.kind === kind);
     const batch = fresh.filter(i => isBatchable(i.evidences)).length;
+    const stale = obsolete.filter(r => auditKindOf(r.evidences) === kind).length;
     console.log(`${LABELS[kind]}`);
-    console.log(`   encontradas: ${String(all.length).padStart(5)} | já na fila: ${String(all.length - fresh.length).padStart(5)} | novas: ${String(fresh.length).padStart(5)} | aprováveis em lote: ${batch}`);
+    console.log(`   encontradas: ${String(all.length).padStart(5)} | já na fila: ${String(all.length - fresh.length).padStart(5)} | novas: ${String(fresh.length).padStart(5)} | aprováveis em lote: ${String(batch).padStart(4)} | obsoletas a fechar: ${stale}`);
   }
 
   if (!APPLY) {
@@ -67,7 +81,13 @@ async function main() {
       })),
     });
   }
-  console.log(`\n✔ ${toCreate.length} revisões criadas. Nenhuma ficha foi juntada ou separada.`);
+  const closed = obsolete.length
+    ? (await prisma.identityReview.updateMany({
+        where: { id: { in: obsolete.map(r => r.id) }, status: { in: ['PENDING', 'DEFERRED'] } },
+        data: { status: 'PROCESSED', decision: 'OBSOLETE', reviewedAt: new Date() },
+      })).count
+    : 0;
+  console.log(`\n✔ ${toCreate.length} revisões criadas e ${closed} obsoletas fechadas. Nenhuma ficha foi juntada ou separada.`);
 }
 
 main()

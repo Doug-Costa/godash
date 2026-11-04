@@ -54,6 +54,27 @@ export const strayAliasIdsOf = (evidences: unknown): string[] =>
     ? evidences.filter((e): e is string => typeof e === 'string' && e.startsWith(STRAY_TAG)).map(e => e.slice(STRAY_TAG.length))
     : [];
 
+/** Fichas citadas por uma revisão da auditoria (par ou ficha inspecionada). */
+export function referencedPersonIdsOf(evidences: unknown): string[] {
+  return [keepPersonIdOf(evidences), absorbPersonIdOf(evidences), inspectedPersonIdOf(evidences)]
+    .filter((id): id is string => !!id);
+}
+
+/**
+ * Revisões abertas que perderam o sentido: alguma ficha citada já não existe
+ * (foi unida por outra revisão). Quando a suspeita "muda de endereço" para a ficha
+ * que ficou, a carga cria a revisão nova com a chave da ficha sobrevivente.
+ */
+export function findObsoleteReviews<T extends { id: string; evidences: unknown }>(
+  openReviews: T[],
+  existingPersonIds: Set<string>,
+): T[] {
+  return openReviews.filter(r => {
+    const ids = referencedPersonIdsOf(r.evidences);
+    return ids.length > 0 && ids.some(id => !existingPersonIds.has(id));
+  });
+}
+
 export function buildReviewQueue(persons: AuditPerson[]): QueueItem[] {
   const items: QueueItem[] = [];
   const { pairs, mergeClusters } = findDuplicatePairs(persons);
