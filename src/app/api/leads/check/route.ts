@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { IdentityResolutionService } from '@/lib/application/IdentityResolutionService';
+import { CanonicalIdentityService } from '@/lib/services/CanonicalIdentityService';
 import { auth } from '@/auth';
 
 export async function POST(request: Request) {
@@ -13,15 +13,21 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { name, email, phone } = body;
 
-    // Resolve Identity
-    const resolution = await IdentityResolutionService.resolve({
+    // Mesma regra das entradas (somente leitura). Antes usava IdentityResolutionService, que
+    // nunca respondia 'FOUND' — o aviso de negociação em andamento nunca aparecia.
+    const resolution = await CanonicalIdentityService.inspect({
+      source: 'MANUAL',
+      externalId: 'leads-check',
       email,
-      phoneNumber: phone,
-      fullName: name
+      phone,
+      name
     });
+    const person = resolution.status === 'FOUND' && resolution.personId
+      ? await prisma.person.findUnique({ where: { id: resolution.personId }, select: { id: true, fullName: true } })
+      : null;
 
-    if (resolution.action === 'FOUND' && resolution.person) {
-      const personId = resolution.person.id;
+    if (person) {
+      const personId = person.id;
 
       // Find if there are active opportunities
       const activeOpps = await prisma.opportunity.findMany({
@@ -70,7 +76,7 @@ export async function POST(request: Request) {
         return NextResponse.json({
           exists: true,
           conflicts: formattedConflicts,
-          personName: resolution.person.fullName || name
+          personName: person.fullName || name
         });
       }
       

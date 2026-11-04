@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { Customer, SaleChannel } from '@prisma/client';
-import { IdentityResolutionService } from './IdentityResolutionService';
+import { randomUUID } from 'crypto';
+import { CanonicalIdentityService, PROVISIONAL_PERSON_PREFIX } from '@/lib/services/CanonicalIdentityService';
 import { CustomerRevenueService } from './CustomerRevenueService';
 
 export class CustomerCreationService {
@@ -40,124 +41,46 @@ export class CustomerCreationService {
       isPurchase = true
     } = data;
 
-    // 1. Resolve Identity (Person-based CDP V4 com Ranking e Detecção de Conflitos)
+    // 1. Identidade: o mesmo motor das importações (src/lib/services/CanonicalIdentityService.ts)
+    //  - com ID do DentalGO (sincronização): pela ficha desse ID (FATO) ou pelo motor;
+    //  - sem ID (formulário): pelo motor, com um alias único por envio.
+    // O motor só junta com e-mail igual + nome compatível. Caso duvidoso fica numa ficha
+    // provisória isolada com revisão — antes, a revisão era criada E o lead já ia para a
+    // ficha candidata (fusão antes da revisão), e a revisão não encontrava o lead (ids diferentes).
+    // Dados canônicos de quem veio do DentalGO/ERP não são sobrescritos (só campos vazios).
     const fullName = metadata?.fullName || metadata?.name || null;
     const email = metadata?.email || null;
     const phoneNumber = metadata?.phoneNumber || metadata?.phone || null;
 
-    const resolution = await IdentityResolutionService.resolve({
-      externalPersonId,
-      email,
-      phoneNumber,
-      fullName
-    });
-
-    let personId: string;
-    let reviewRecord: any = null;
-
-    if ((resolution.action === 'AUTO_MATCH' || resolution.action === 'FOUND') && resolution.person) {
-      personId = resolution.person.id;
-      // Enrich Person details if there are new signals (Preserva campos canônicos)
-      await IdentityResolutionService.registerAlias(personId, {
-        source,
-        externalId: externalPersonId ? String(externalPersonId) : undefined,
-        email,
-        phone: phoneNumber,
-        name: fullName,
-        rawData: metadata
-      });
-    } else if (resolution.action === 'REVIEW_REQUIRED' || resolution.action === 'CONFLICT') {
-      const candidatePerson = resolution.person || resolution.candidates?.[0] || null;
-      const incomingExtId = externalPersonId ? String(externalPersonId) : `gen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
-      try {
-        reviewRecord = await prisma.identityReview.create({
-          data: {
-            incomingSource: source,
-            incomingExternalId: incomingExtId,
-            candidatePersonId: candidatePerson?.id || null,
-            confidenceScore: resolution.confidence || 0,
-            evidences: resolution.evidences || [],
-            status: 'PENDING'
-          }
-        });
-        console.log(`[CDP V4] Ambiguidade/Conflito detectado (${resolution.action}): IdentityReview ${reviewRecord.id} criado.`);
-      } catch (err) {
-        console.error('[CDP V4] Erro ao criar IdentityReview:', err);
-      }
-
-      if (candidatePerson) {
-        personId = candidatePerson.id;
-        // Salva em alias sem alterar a identidade canônica
-        await IdentityResolutionService.registerAlias(personId, {
+    const person = externalPersonId
+      ? await CanonicalIdentityService.resolveDentalGoPerson(externalPersonId, { fullName, email, phoneNumber })
+      : await CanonicalIdentityService.resolve({
           source,
-          externalId: externalPersonId ? String(externalPersonId) : undefined,
+          externalId: `submission:${randomUUID()}`,
           email,
           phone: phoneNumber,
           name: fullName,
-          rawData: {
-            ...metadata,
-            identityResolutionAction: resolution.action,
-            conflictReason: resolution.conflictReason
-          }
+          rawData: metadata,
         });
-      } else {
-        const cleanEmail = IdentityResolutionService.normalizeEmail(email);
-        const cleanPhone = IdentityResolutionService.normalizePhone(phoneNumber);
-        const newPerson = await prisma.person.create({
-          data: {
-            externalPersonId: externalPersonId || null,
-            fullName,
-            email: cleanEmail,
-            phoneNumber: cleanPhone,
-            source,
-            identityAliases: (cleanEmail || cleanPhone || fullName) ? {
-              create: {
-                source,
-                externalId: externalPersonId ? String(externalPersonId) : `gen_${Math.random().toString(36).substring(2, 11)}`,
-                email: cleanEmail,
-                phone: cleanPhone,
-                name: fullName,
-                rawData: metadata as any
-              }
-            } : undefined
-          }
-        });
-        personId = newPerson.id;
-      }
-    } else {
-      // CREATE_NEW: Cria nova Person canônica
-      const cleanEmail = IdentityResolutionService.normalizeEmail(email);
-      const cleanPhone = IdentityResolutionService.normalizePhone(phoneNumber);
-      const newPerson = await prisma.person.create({
-        data: {
-          externalPersonId: externalPersonId || null,
-          fullName,
-          email: cleanEmail,
-          phoneNumber: cleanPhone,
-          source,
-          identityAliases: (cleanEmail || cleanPhone || fullName) ? {
-            create: {
-              source,
-              externalId: externalPersonId ? String(externalPersonId) : `gen_${Math.random().toString(36).substring(2, 11)}`,
-              email: cleanEmail,
-              phone: cleanPhone,
-              name: fullName,
-              rawData: metadata as any
-            }
-          } : undefined
-        }
-      });
-      personId = newPerson.id;
-    }
+    const personId = person.id;
+
+    // Revisão aberta para esta ficha provisória (marca o cadastro e a oportunidade)
+    const reviewRecord = await prisma.identityReview.findFirst({
+      where: { status: 'PENDING', evidences: { array_contains: [`${PROVISIONAL_PERSON_PREFIX}${personId}`] } },
+      select: { id: true, evidences: true },
+    });
+    const reviewReason = reviewRecord
+      ? ((reviewRecord.evidences as string[]).find(e => e.startsWith('REASON:'))?.slice('REASON:'.length)
+        || 'Contatos batem com mais de uma ficha')
+      : null;
 
     const enrichedMetadata = {
       ...metadata,
       ...(reviewRecord ? {
         hasPendingReview: true,
         identityReviewId: reviewRecord.id,
-        identityResolutionAction: resolution.action,
-        reviewReason: resolution.conflictReason || 'Revisão de correspondência de identidade necessária'
+        identityResolutionAction: 'REVIEW_REQUIRED',
+        reviewReason
       } : {})
     };
 
@@ -261,8 +184,8 @@ export class CustomerCreationService {
         ...(reviewRecord ? {
           hasPendingReview: true,
           identityReviewId: reviewRecord.id,
-          identityResolutionAction: resolution.action,
-          reviewReason: resolution.conflictReason || 'Revisão de correspondência de identidade necessária'
+          identityResolutionAction: 'REVIEW_REQUIRED',
+          reviewReason
         } : {})
       };
 

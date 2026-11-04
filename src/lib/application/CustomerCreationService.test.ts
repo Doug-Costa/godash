@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   registerPurchase: vi.fn(),
   resolve: vi.fn(),
-  registerAlias: vi.fn(),
+  resolveDentalGoPerson: vi.fn(),
+  reviewFindFirst: vi.fn(),
   customerFindFirst: vi.fn(),
   customerCreate: vi.fn(),
   customerFindUnique: vi.fn(),
@@ -18,16 +19,13 @@ vi.mock('@/lib/prisma', () => ({
     customer: { findFirst: mocks.customerFindFirst, create: mocks.customerCreate, findUnique: mocks.customerFindUnique },
     interaction: { create: mocks.interactionCreate },
     opportunity: { findFirst: mocks.opportunityFindFirst, create: mocks.opportunityCreate },
-    pipeline: { findUnique: mocks.pipelineFindUnique }
+    pipeline: { findUnique: mocks.pipelineFindUnique },
+    identityReview: { findFirst: mocks.reviewFindFirst }
   }
 }));
-vi.mock('./IdentityResolutionService', () => ({
-  IdentityResolutionService: {
-    resolve: mocks.resolve,
-    registerAlias: mocks.registerAlias,
-    normalizeEmail: (value: string) => value,
-    normalizePhone: (value: string) => value
-  }
+vi.mock('@/lib/services/CanonicalIdentityService', () => ({
+  PROVISIONAL_PERSON_PREFIX: 'PROVISIONAL_PERSON:',
+  CanonicalIdentityService: { resolve: mocks.resolve, resolveDentalGoPerson: mocks.resolveDentalGoPerson }
 }));
 vi.mock('./CustomerRevenueService', () => ({ CustomerRevenueService: { registerPurchase: mocks.registerPurchase } }));
 
@@ -36,7 +34,8 @@ import { CustomerCreationService } from './CustomerCreationService';
 describe('CustomerCreationService para formulários', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.resolve.mockResolvedValue({ action: 'FOUND', person: { id: 'person-1' } });
+    mocks.resolve.mockResolvedValue({ id: 'person-1' });
+    mocks.reviewFindFirst.mockResolvedValue(null);
     mocks.customerFindFirst.mockResolvedValue(null);
     mocks.customerCreate.mockResolvedValue({ id: 'customer-1' });
     mocks.customerFindUnique.mockResolvedValue({ id: 'customer-1' });
