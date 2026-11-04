@@ -1,5 +1,6 @@
 import prisma from '../prisma';
 import { Person, Prisma } from '@prisma/client';
+import { matchIdentities, normalizeCpf, type IdentitySignals, type MatchResult } from '../identity/matchRules';
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -13,6 +14,8 @@ export interface ResolveInput {
   email?: string | null;
   phone?: string | null;
   name?: string | null;
+  /** CPF, se a origem trouxer (ex.: Bitrix). Ajuda na regra; nunca junta sozinho. */
+  cpf?: string | null;
   rawData?: any;
 }
 
@@ -113,6 +116,44 @@ export class CanonicalIdentityService {
     return candidateIds.find(id => provisionalIds.has(id)) ?? null;
   }
 
+  /** Sinais de identidade de uma Person (principais, secundários e aliases), para as regras. */
+  private static async signalsOfPerson(db: Db, personId: string): Promise<IdentitySignals | null> {
+    const p = await db.person.findUnique({
+      where: { id: personId },
+      select: {
+        fullName: true, email: true, secondaryEmail: true, phoneNumber: true, secondaryPhone: true, cpf: true,
+        identityAliases: { select: { name: true, email: true, phone: true } },
+      },
+    });
+    if (!p) return null;
+    return {
+      names: [p.fullName, ...p.identityAliases.map(a => a.name)].filter((n): n is string => !!n),
+      emails: [p.email, p.secondaryEmail, ...p.identityAliases.map(a => a.email)].filter((e): e is string => !!e),
+      phones: [p.phoneNumber, p.secondaryPhone, ...p.identityAliases.map(a => a.phone)].filter((t): t is string => !!t),
+      cpf: p.cpf,
+    };
+  }
+
+  /**
+   * Com um único candidato, aplica as regras de identidade (src/lib/identity/matchRules.ts):
+   * só junta com e-mail igual + nome compatível; telefone sozinho, e-mail compartilhado com
+   * nome diferente, CPF divergente etc. vão para revisão.
+   */
+  private static async judgeSingleCandidate(
+    db: Db,
+    candidateId: string,
+    incoming: { name: string | null; email: string | null; phone: string | null; cpf?: string | null },
+  ): Promise<MatchResult> {
+    const candidate = await this.signalsOfPerson(db, candidateId);
+    const signals: IdentitySignals = {
+      names: incoming.name ? [incoming.name] : [],
+      emails: incoming.email ? [incoming.email] : [],
+      phones: incoming.phone ? [incoming.phone] : [],
+      cpf: incoming.cpf ?? null,
+    };
+    return matchIdentities(signals, candidate ?? { names: [], emails: [], phones: [] });
+  }
+
   /**
    * Inspeção read-only da identidade para o Pre-flight (CDP V4).
    * Diferente de `resolve()`, este método NUNCA executa mutações no banco.
@@ -137,7 +178,15 @@ export class CanonicalIdentityService {
 
     // 2. E-mail/telefone em campos principais, secundários e aliases
     const candidates = await this.findCandidatePersonIds(prisma, email, phone);
-    if (candidates.length === 1) return { status: 'FOUND', personId: candidates[0] };
+    if (candidates.length === 1) {
+      const verdict = await this.judgeSingleCandidate(prisma, candidates[0], {
+        name: input.name?.trim() || null, email, phone, cpf: input.cpf,
+      });
+      if (verdict.decision === 'AUTO_MERGE') return { status: 'FOUND', personId: candidates[0] };
+      if (verdict.decision === 'DISTINCT') return { status: 'NOT_FOUND' };
+      const provisional = await this.findPendingProvisional(prisma, candidates);
+      return provisional ? { status: 'FOUND', personId: provisional } : { status: 'AMBIGUOUS' };
+    }
     if (candidates.length > 1) {
       const provisional = await this.findPendingProvisional(prisma, candidates);
       return provisional ? { status: 'FOUND', personId: provisional } : { status: 'AMBIGUOUS' };
@@ -163,6 +212,7 @@ export class CanonicalIdentityService {
     const email = this.normalizeEmail(input.email);
     const phone = this.normalizePhone(input.phone);
     const name = input.name?.trim() || null;
+    const cpf = normalizeCpf(input.cpf);
     const parsedRawData = rawData ? (typeof rawData === 'string' ? JSON.parse(rawData) : rawData) : null;
 
     return prisma.$transaction(async (tx) => {
@@ -185,6 +235,7 @@ export class CanonicalIdentityService {
         const updates: Prisma.PersonUpdateInput = {};
         if (!person.email && email) updates.email = email;
         if (!person.phoneNumber && phone) updates.phoneNumber = phone;
+        if (!person.cpf && cpf) updates.cpf = cpf;
         if (this.isPlaceholderName(person.fullName) && name && !this.isPlaceholderName(name)) updates.fullName = name;
 
         const aliasUpdates: Prisma.IdentityAliasUpdateInput = {};
@@ -205,11 +256,22 @@ export class CanonicalIdentityService {
 
       // 2. Candidatos por e-mail/telefone (principais, secundários e aliases)
       const candidates = await this.findCandidatePersonIds(tx, email, phone);
-      const target = candidates.length === 1
-        ? candidates[0]
-        : candidates.length > 1 ? await this.findPendingProvisional(tx, candidates) : null;
 
-      // 2a. Um único candidato (ou a provisória pendente do mesmo caso): vincula o alias
+      // Um candidato: as regras decidem. Vários: só a provisória pendente do mesmo caso.
+      let target: string | null = null;
+      let verdict: MatchResult | null = null;
+      if (candidates.length === 1) {
+        verdict = await this.judgeSingleCandidate(tx, candidates[0], { name, email, phone, cpf });
+        if (verdict.decision === 'AUTO_MERGE') target = candidates[0];
+        // REVIEW: se o próprio candidato é a provisória pendente deste caso, a entrada se junta a ela
+        else if (verdict.decision === 'REVIEW') target = await this.findPendingProvisional(tx, candidates);
+        // DISTINCT (ex.: só um telefone fictício em comum): ficha nova, sem revisão
+      } else if (candidates.length > 1) {
+        target = await this.findPendingProvisional(tx, candidates);
+      }
+      const needsReview = !target && (candidates.length > 1 || verdict?.decision === 'REVIEW');
+
+      // 2a. Junção permitida pelas regras (ou a provisória pendente do mesmo caso): vincula o alias
       if (target) {
         const linkedAlias = await tx.identityAlias.create({
           data: { source, externalId, email, phone, name, rawData: parsedRawData, personId: target },
@@ -219,6 +281,7 @@ export class CanonicalIdentityService {
         const updates: Prisma.PersonUpdateInput = {};
         if (!linkedAlias.person.email && email) updates.email = email;
         if (!linkedAlias.person.phoneNumber && phone) updates.phoneNumber = phone;
+        if (!linkedAlias.person.cpf && cpf) updates.cpf = cpf;
         if (this.isPlaceholderName(linkedAlias.person.fullName) && name && !this.isPlaceholderName(name)) updates.fullName = name;
 
         if (Object.keys(updates).length > 0) {
@@ -227,16 +290,16 @@ export class CanonicalIdentityService {
         return linkedAlias.person;
       }
 
-      // 2b. Nenhum candidato → Person nova; vários → Person provisória isolada + revisão
+      // 2b. Nenhum candidato → Person nova; caso que precisa de revisão → Person provisória isolada + revisão
       const newAlias = await tx.identityAlias.create({
         data: {
           source, externalId, email, phone, name, rawData: parsedRawData,
-          person: { create: { fullName: name, email, phoneNumber: phone, source } },
+          person: { create: { fullName: name, email, phoneNumber: phone, cpf, source } },
         },
         include: { person: true },
       });
 
-      if (candidates.length > 1) {
+      if (needsReview) {
         await tx.identityReview.create({
           data: {
             incomingSource: source,
@@ -246,14 +309,16 @@ export class CanonicalIdentityService {
             evidences: [
               AMBIGUOUS_PROVISIONAL,
               `${PROVISIONAL_PERSON_PREFIX}${newAlias.person.id}`,
-              ...(email ? ['EMAIL_MATCH'] : []),
-              ...(phone ? ['PHONE_MATCH'] : []),
+              ...(verdict ? [`REASON:${verdict.reason}`, ...verdict.evidences, ...verdict.blockers] : [
+                ...(email ? ['EMAIL_MATCH'] : []),
+                ...(phone ? ['PHONE_MATCH'] : []),
+              ]),
               ...candidates.map(id => `CANDIDATE:${id}`),
             ],
             status: 'PENDING',
           },
         });
-        console.log(`[CanonicalIdentityService] Ambíguo ${source}:${externalId} → Person provisória ${newAlias.person.id} (candidatos: ${candidates.join(', ')}), aguardando revisão`);
+        console.log(`[CanonicalIdentityService] Revisão ${source}:${externalId} → Person provisória ${newAlias.person.id} (candidatos: ${candidates.join(', ')}${verdict ? `; ${verdict.reason}` : ''}), aguardando revisão`);
       } else {
         console.log(`[CanonicalIdentityService] Nova Person criada (${newAlias.person.id}) vinculada ao alias ${source}:${externalId}`);
       }

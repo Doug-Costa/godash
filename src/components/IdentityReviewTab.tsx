@@ -311,7 +311,7 @@ export default function IdentityReviewTab({
                 {r.evidences && r.evidences.length > 0 && (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Sinais detectados:</span>
-                    {r.evidences.filter(ev => !ev.startsWith('PROVISIONAL_PERSON:') && !ev.startsWith('CANDIDATE:')).map((ev, idx) => (
+                    {r.evidences.filter(ev => !ev.startsWith('PROVISIONAL_PERSON:') && !ev.startsWith('CANDIDATE:') && !ev.startsWith('REASON:')).map((ev, idx) => (
                       <span
                         key={idx}
                         style={{
@@ -363,8 +363,13 @@ export default function IdentityReviewTab({
                   {r.isProvisional && r.candidates && r.candidates.length > 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                        ⚖️ Os contatos desta entrada batem com <strong>{r.candidates.length} pessoas diferentes</strong>.
-                        Ela foi guardada numa ficha separada, sem juntar com ninguém, até você decidir.
+                        {r.candidates.length > 1 ? (
+                          <>⚖️ Os contatos desta entrada batem com <strong>{r.candidates.length} pessoas diferentes</strong>.</>
+                        ) : (
+                          <>⚖️ Os contatos desta entrada batem com uma ficha existente, mas as regras não permitem juntar sozinho
+                          {r.evidences.find(ev => ev.startsWith('REASON:')) && <>: <strong>{r.evidences.find(ev => ev.startsWith('REASON:'))!.slice(7)}</strong></>}.</>
+                        )}
+                        {' '}Ela foi guardada numa ficha separada, sem juntar com ninguém, até você decidir.
                       </div>
                       {r.candidates.map(cand => (
                         <div

@@ -247,8 +247,9 @@ export class ImportPreflightService {
       personId = identityRes.personId;
 
       if (identityStatus === 'AMBIGUOUS') {
-        errors.push('Identidade ambígua: Encontrados múltiplos perfis para este contato.');
-        status = 'ERROR';
+        // O motor isola o caso numa ficha separada e abre revisão — a linha é importada, sem juntar com ninguém
+        warnings.push('Contato parecido com ficha(s) existente(s), mas sem segurança para juntar: será importado numa ficha separada e enviado para revisão.');
+        if (status === 'READY') status = 'WARNING';
       } else if (identityStatus === 'NOT_FOUND') {
         warnings.push('Nova identidade será criada no banco de dados.');
         if (status === 'READY') status = 'WARNING';

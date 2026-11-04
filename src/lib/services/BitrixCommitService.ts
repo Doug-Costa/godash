@@ -105,7 +105,8 @@ export class BitrixCommitService {
                 externalId: deal.bitrixContactId || `snapshot_${deal.bitrixDealId}`,
                 email: deal.personResolved?.email,
                 phone: deal.personResolved?.phone,
-                name: deal.personResolved?.fullName
+                name: deal.personResolved?.fullName,
+                cpf: deal.personResolved?.cpf
               });
               personCache.set(cacheKey, person);
             }

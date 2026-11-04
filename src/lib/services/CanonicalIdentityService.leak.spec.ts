@@ -111,12 +111,75 @@ describe.skipIf(!process.env.DATABASE_URL)('CanonicalIdentityService — vazamen
     expect(await prisma.person.count({ where: { source: SOURCE } })).toBe(antes);
   });
 
-  it('ficha criada como "Contato Sem Nome" (Bitrix) recebe o nome real quando ele chega', async () => {
+  it('ficha "Contato Sem Nome" (Bitrix): mesmo e-mail de outra origem vai para revisão; a própria origem completa o nome', async () => {
     const semNome = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'bitrix_x', email: 'fabio@teste.com', name: 'Contato Sem Nome' });
     expect(semNome.fullName).toBe('Contato Sem Nome');
-    const depois = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'csv_x', email: 'fabio@teste.com', name: 'Fábio Torres' });
-    expect(depois.id).toBe(semNome.id);
-    expect(depois.fullName).toBe('Fábio Torres');
+
+    // Outra origem com o mesmo e-mail: sem nome na ficha para confirmar → revisão, não junta
+    const outra = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'csv_x', email: 'fabio@teste.com', name: 'Fábio Torres' });
+    expect(outra.id).not.toBe(semNome.id);
+    const review = await prisma.identityReview.findFirst({ where: { incomingSource: SOURCE, incomingExternalId: 'csv_x' } });
+    expect(review?.evidences).toEqual(expect.arrayContaining(['REASON:Mesmo e-mail, mas sem nome para confirmar', `CANDIDATE:${semNome.id}`]));
+
+    // A mesma origem trazendo o nome real completa a ficha genérica
+    const completada = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'bitrix_x', email: 'fabio@teste.com', name: 'Fábio Torres' });
+    expect(completada.id).toBe(semNome.id);
+    expect(completada.fullName).toBe('Fábio Torres');
+  });
+
+  describe('um único candidato: as regras decidem (antes juntava por qualquer contato igual)', () => {
+    const reviewOf = (externalId: string) =>
+      prisma.identityReview.findFirst({ where: { incomingSource: SOURCE, incomingExternalId: externalId } });
+
+    it('mesmo telefone, nome compatível → NÃO junta; ficha provisória + revisão', async () => {
+      const a = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'csv_t', phone: '41988887777', name: 'Gabriel Souza' });
+      const b = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'bitrix_t', phone: '+5541988887777', name: 'Gabriel Souza Lima' });
+      expect(b.id).not.toBe(a.id);
+      const review = await reviewOf('bitrix_t');
+      expect(review?.status).toBe('PENDING');
+      expect(review?.evidences).toEqual(expect.arrayContaining([
+        'AMBIGUOUS_PROVISIONAL', `PROVISIONAL_PERSON:${b.id}`, `CANDIDATE:${a.id}`, 'PHONE_EXACT', 'NAME_COMPATIBLE',
+        'REASON:Mesmo telefone — confirmar se é a mesma pessoa',
+      ]));
+      // A ficha existente não recebe o alias novo
+      expect(await prisma.identityAlias.count({ where: { personId: a.id } })).toBe(1);
+    });
+
+    it('e-mail da clínica com outra pessoa → NÃO junta; revisão', async () => {
+      const maria = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'csv_m', email: 'contato@clinica-leak.com', name: 'Maria Silva' });
+      const joao = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'form_j', email: 'contato@clinica-leak.com', name: 'João Pereira' });
+      expect(joao.id).not.toBe(maria.id);
+      expect((await reviewOf('form_j'))?.evidences).toEqual(expect.arrayContaining(['NAME_INCOMPATIBLE', 'EMAIL_EXACT']));
+    });
+
+    it('CPF diferente bloqueia a junção mesmo com e-mail e nome iguais', async () => {
+      const a = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'csv_c', email: 'helio@teste.com', name: 'Hélio Dias', cpf: '529.982.247-25' });
+      const b = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'bitrix_c', email: 'helio@teste.com', name: 'Hélio Dias', cpf: '111.444.777-35' });
+      expect(b.id).not.toBe(a.id);
+      expect((await reviewOf('bitrix_c'))?.evidences).toEqual(expect.arrayContaining(['CPF_DIFFERENT']));
+      expect(a.cpf).toBe('52998224725'); // CPF da entrada é gravado na ficha
+    });
+
+    it('só um telefone fictício em comum → ficha nova, sem revisão', async () => {
+      const a = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'csv_d', phone: '(11) 99999-9999', name: 'Igor Melo' });
+      const b = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'csv_e', phone: '11999999999', name: 'Júlia Reis' });
+      expect(b.id).not.toBe(a.id);
+      expect(await reviewOf('csv_e')).toBeNull();
+    });
+
+    it('nova entrada do mesmo caso pendente se junta à provisória (sem cascata)', async () => {
+      await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'csv_k', phone: '31977776666', name: 'Karla Nunes' });
+      const prov = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'bitrix_k1', phone: '31977776666', name: 'Karla Nunes Prado' });
+      const de_novo = await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'bitrix_k2', phone: '31977776666', name: 'Karla Nunes Prado' });
+      expect(de_novo.id).toBe(prov.id);
+      expect(await prisma.person.count({ where: { phoneNumber: '+5531977776666' } })).toBe(2);
+    });
+
+    it('preflight (inspect) prevê a revisão em vez de "encontrado"', async () => {
+      await CanonicalIdentityService.resolve({ source: SOURCE, externalId: 'csv_p', phone: '51966665555', name: 'Lucas Prado' });
+      const r = await CanonicalIdentityService.inspect({ source: SOURCE, externalId: 'novo_p', phone: '51966665555', name: 'Lucas Prado' });
+      expect(r.status).toBe('AMBIGUOUS');
+    });
   });
 
   it('caso simples continua igual: um candidato por e-mail → mesmo Person', async () => {

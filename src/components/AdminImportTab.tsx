@@ -674,7 +674,7 @@ export default function AdminImportTab({
                           <span className="badge badge-neu" style={{ fontSize: 10 }}>
                             {row.identityStatus === 'FOUND' && '🟢 Reconhecido'}
                             {row.identityStatus === 'NOT_FOUND' && '🟡 Nova Pessoa'}
-                            {row.identityStatus === 'AMBIGUOUS' && '🔴 Ambíguo'}
+                            {row.identityStatus === 'AMBIGUOUS' && '🟠 Vai para revisão'}
                             {row.identityStatus === 'NOT_REQUIRED' && '⚪ N/A'}
                           </span>
                         </td>

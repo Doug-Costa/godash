@@ -30,6 +30,25 @@ describe('ImportPreflightService', () => {
     vi.mocked(ImportDuplicateInspectionService.purchaseExists).mockResolvedValue(false);
   });
 
+  it('contato que vai para revisão é AVISO (linha importada), não erro', async () => {
+    vi.mocked(CanonicalIdentityService.inspect).mockResolvedValue({ status: 'AMBIGUOUS' });
+    const csv = [
+      HEADER,
+      ['26844', '8/30/2019', '944472/FRANCIELI RIBEIRO DE BRITO', '',
+        'CURSOS / ESPECIALIZACAO EM ENDODONTIA', 'franedir2@gmail.com',
+        'franedir2@gmail.com', '(44)99824-0966', '', '291/0008', '380/0009',
+        '', '44', 'ESPECIALIZACAO EM ENDODONTIA', '24/ATIVA'].join(',')
+    ].join('\r\n');
+
+    const summary = await ImportPreflightService.analyzeCsv(csv);
+    const row = summary.results[0];
+    expect(summary.errorRows).toBe(0);
+
+    expect(row.identityStatus).toBe('AMBIGUOUS');
+    expect(row.status).not.toBe('ERROR');
+    expect(row.warnings.join(' ')).toMatch(/enviado para revisão/);
+  });
+
   it('ignora a linha vazia exportada antes do cabeçalho real', async () => {
     const csv = [
       ',,,,,,,,,,,,,,',
