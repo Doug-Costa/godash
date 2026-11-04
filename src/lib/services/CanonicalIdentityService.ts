@@ -340,24 +340,26 @@ export class CanonicalIdentityService {
    */
   static async resolveDentalGoPerson(
     externalPersonId: number,
-    info?: { fullName?: string | null; email?: string | null; phoneNumber?: string | null } | null,
+    info?: { fullName?: string | null; email?: string | null; phoneNumber?: string | null; cpf?: string | null } | null,
   ): Promise<Person> {
     const email = this.normalizeEmail(info?.email);
     const phone = this.normalizePhone(info?.phoneNumber);
     const name = info?.fullName?.trim() || null;
+    const cpf = normalizeCpf(info?.cpf);
 
     const byId = await prisma.person.findFirst({ where: { externalPersonId }, orderBy: { createdAt: 'asc' } });
     if (byId) {
       const updates: Prisma.PersonUpdateInput = {};
       if (!byId.email && email) updates.email = email;
       if (!byId.phoneNumber && phone) updates.phoneNumber = phone;
+      if (!byId.cpf && cpf) updates.cpf = cpf;
       if (this.isPlaceholderName(byId.fullName) && name && !this.isPlaceholderName(name)) updates.fullName = name;
       return Object.keys(updates).length > 0
         ? prisma.person.update({ where: { id: byId.id }, data: updates })
         : byId;
     }
 
-    const person = await this.resolve({ source: 'DENTALGO', externalId: String(externalPersonId), email, phone, name });
+    const person = await this.resolve({ source: 'DENTALGO', externalId: String(externalPersonId), email, phone, name, cpf });
     if (person.externalPersonId === null) {
       return prisma.person.update({ where: { id: person.id }, data: { externalPersonId } });
     }

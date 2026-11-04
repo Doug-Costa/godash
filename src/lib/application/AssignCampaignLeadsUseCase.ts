@@ -106,15 +106,19 @@ export class AssignCampaignLeadsUseCase {
       if (typeof currentId === 'number') {
         try {
           const pool = (await import('../db')).default;
+          // A tabela people NÃO tem coluna `name`: a consulta antiga (COALESCE(fullName, name, email))
+          // falhava sempre, o erro era engolido e a pessoa entrava na campanha com uma ficha vazia.
           const [pRows]: any = await pool.query(
-            `SELECT COALESCE(NULLIF(fullName, ''), NULLIF(name, ''), email) AS fullName, email, phoneNumber FROM people WHERE id = ?`,
+            `SELECT NULLIF(fullName, '') AS fullName, NULLIF(email, '') AS email, NULLIF(phoneNumber, '') AS phoneNumber,
+                    NULLIF(documentNumber, '') AS cpf
+             FROM people WHERE id = ?`,
             [currentId]
           );
           if (pRows && pRows[0]) {
             personInfo = pRows[0];
           }
         } catch (e) {
-          console.warn(`[AssignCampaignLeads] Could not fetch person ${currentId} from MySQL:`, e);
+          console.error(`[AssignCampaignLeads] Falha ao buscar a pessoa ${currentId} no MySQL — a ficha ficará sem dados:`, e);
         }
       }
 
