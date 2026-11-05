@@ -12,14 +12,15 @@
  *   docker exec -it dentalgo-bi npx tsx prisma/simulate-dentalgo-sync.ts --limit 2000
  *   docker exec -it dentalgo-bi npx tsx prisma/simulate-dentalgo-sync.ts --only 12345 # uma pessoa
  *
- * Atenção: a simulação compara cada pessoa com as fichas do CRM de AGORA. Na gravação, contas do
- * DentalGO que dividem e-mail/telefone entre si também serão comparadas umas com as outras —
- * por isso elas aparecem num total à parte.
+ * Como na gravação, as contas entram em ordem de ID e cada ficha criada passa a ser candidata
+ * para as seguintes (contas do DentalGO também são comparadas entre si). Telefones fictícios e
+ * genéricos (5+ contas no DentalGO) não contam.
  */
 import prisma from '../src/lib/prisma';
 import pool from '../src/lib/db';
 import { CanonicalIdentityService } from '../src/lib/services/CanonicalIdentityService';
 import { DentalGoSyncSimulation, type DentalGoPersonRow } from '../src/lib/identity/dentalGoSyncSimulation';
+import { GENERIC_PHONE_MIN_ACCOUNTS, requireGenericPhones } from '../src/lib/identity/genericPhones';
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(name);
@@ -54,7 +55,7 @@ async function main() {
     return;
   }
 
-  const sim = new DentalGoSyncSimulation(inspect);
+  const sim = new DentalGoSyncSimulation(inspect, await requireGenericPhones());
   let lastId = 0;
   const started = Date.now();
   while (sim.summary.total < LIMIT) {
@@ -79,11 +80,11 @@ async function main() {
     for (const [reason, n] of [...s.reviewReasons].sort((a, b) => b[1] - a[1])) console.log(`  ${String(n).padStart(6)}  ${reason}`);
   }
   console.log('\nPontos de atenção:');
-  console.log(`  ${String(s.linkedToPersonWithOtherDentalGoId).padStart(6)}  ligariam a uma ficha que já tem OUTRO ID do DentalGO (duas contas da mesma pessoa?)`);
-  console.log(`  ${String(s.crmPersonsReceivingSeveralAccounts).padStart(6)}  fichas do CRM receberiam 2 ou mais contas do DentalGO`);
-  console.log(`  ${String(s.accountsSharingEmail).padStart(6)}  contas do DentalGO dividem o e-mail com outra conta do DentalGO`);
-  console.log(`  ${String(s.accountsSharingPhone).padStart(6)}  contas do DentalGO dividem o telefone com outra conta do DentalGO`);
-  console.log('  (na gravação, essas contas também serão comparadas entre si, pelas mesmas regras)');
+  console.log(`  ${String(s.reviewsBetweenDentalGoAccounts).padStart(6)}  das revisões vêm de contas do DentalGO comparadas entre si (ex.: mesmo telefone)`);
+  console.log(`  ${String(s.linkedToPersonWithOtherDentalGoId).padStart(6)}  já ligadas a uma ficha que tem OUTRO ID do DentalGO (duas contas da mesma pessoa?)`);
+  console.log(`  ${String(s.accountsSharingEmail).padStart(6)}  contas do DentalGO dividem o e-mail com outra conta`);
+  console.log(`  ${String(s.accountsSharingPhone).padStart(6)}  contas do DentalGO dividem um telefone válido com outra conta`);
+  console.log(`  ${String(s.genericPhones).padStart(6)}  telefones genéricos ignorados (${GENERIC_PHONE_MIN_ACCOUNTS}+ contas no DentalGO — não juntam nem abrem revisão)`);
 
   console.log('\nExemplos para conferir (IDs do DentalGO — use --only <id> para ver um caso):');
   for (const [k, ids] of s.samples) console.log(`  ${k.padEnd(24)} ${ids.join(', ')}`);

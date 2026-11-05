@@ -268,3 +268,24 @@ export function decideAgainstCandidates<T extends { id: string; signals: Identit
   }
   return { decision: 'DISTINCT', reviewCandidates: [] };
 }
+
+/**
+ * Entrada nova só reaproveita uma ficha provisória em revisão se for, pelas regras, a MESMA
+ * pessoa que já está nela: junção automática, ou revisão com nome compatível, sem bloqueio
+ * (CPF) e sem e-mail diferente do dela. Antes juntava qualquer entrada que tocasse a
+ * provisória — 3 contas diferentes no mesmo telefone acabavam na mesma ficha.
+ * `verdict` = matchIdentities(entrada, provisória).
+ */
+export function canJoinProvisional(verdict: MatchResult, incomingEmail: string | null, provisional: IdentitySignals | null): boolean {
+  if (!provisional) return false;
+  if (verdict.decision === 'AUTO_MERGE') return true;
+  if (verdict.decision !== 'REVIEW' || verdict.blockers.length > 0) return false;
+  if (!verdict.evidences.includes('NAME_COMPATIBLE')) return false;
+  const emails = provisional.emails.map(e => normalizeEmail(e)).filter(Boolean);
+  const incoming = normalizeEmail(incomingEmail);
+  return !incoming || emails.length === 0 || emails.includes(incoming);
+}
+
+/** Motivos de revisão decididos fora de matchIdentities (pelo motor e pela simulação). */
+export const OTHER_DENTALGO_ACCOUNT_REASON = 'A ficha encontrada já está ligada a OUTRA conta do DentalGO — mesma pessoa com duas contas?';
+export const MULTI_CANDIDATE_REASON = 'Contatos apontam para fichas diferentes';

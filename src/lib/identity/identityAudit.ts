@@ -14,6 +14,7 @@ import {
   type IdentitySignals,
   type MatchResult,
 } from './matchRules';
+import { withoutIgnoredPhones } from './genericPhones';
 
 export interface AuditPerson {
   id: string;
@@ -64,8 +65,12 @@ export interface DuplicateAudit {
 
 const MAX_BLOCK = 400;
 
-export function findDuplicatePairs(persons: AuditPerson[]): DuplicateAudit {
-  const signals = persons.map(signalsOf);
+/**
+ * `ignoredPhones`: telefones genéricos (genericPhones.ts) — não formam bloco nem contam como evidência.
+ * Fictícios por padrão já são ignorados nas regras.
+ */
+export function findDuplicatePairs(persons: AuditPerson[], ignoredPhones: ReadonlySet<string> = new Set()): DuplicateAudit {
+  const signals = persons.map(p => withoutIgnoredPhones(signalsOf(p), ignoredPhones));
 
   // Blocagem: só compara fichas que compartilham alguma chave
   const blocks = new Map<string, Set<number>>();

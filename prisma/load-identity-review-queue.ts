@@ -19,6 +19,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { closeDentalGoConnection, requireGenericPhones } from '../src/lib/identity/genericPhones';
 import { loadAuditPersons } from '../src/lib/identity/identityAudit';
 import {
   AUDIT_REVIEW_SOURCE,
@@ -40,7 +41,9 @@ const LABELS: Record<AuditReviewKind, string> = {
 
 async function main() {
   const persons = await loadAuditPersons(prisma);
-  const items = buildReviewQueue(persons);
+  const genericPhones = await requireGenericPhones();
+  console.log(`Telefones genéricos ignorados (5+ contas no DentalGO): ${genericPhones.size}`);
+  const items = buildReviewQueue(persons, genericPhones);
 
   const allAuditReviews = await prisma.identityReview.findMany({
     where: { incomingSource: AUDIT_REVIEW_SOURCE },
@@ -95,4 +98,7 @@ main()
     console.error(err);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    await prisma.$disconnect();
+    await closeDentalGoConnection();
+  });

@@ -18,6 +18,7 @@ import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { closeDentalGoConnection, requireGenericPhones } from '../src/lib/identity/genericPhones';
 import { findDuplicatePairs, loadAuditPersons } from '../src/lib/identity/identityAudit';
 import { normalizeCpf } from '../src/lib/identity/matchRules';
 
@@ -25,7 +26,9 @@ const prisma = new PrismaClient();
 
 async function main() {
   const persons = await loadAuditPersons(prisma);
-  const { pairs, mergeClusters, skippedBigBlocks } = findDuplicatePairs(persons);
+  const genericPhones = await requireGenericPhones();
+  console.log(`Telefones genéricos ignorados (5+ contas no DentalGO): ${genericPhones.size}`);
+  const { pairs, mergeClusters, skippedBigBlocks } = findDuplicatePairs(persons, genericPhones);
   for (const block of skippedBigBlocks) console.warn(`  ⚠ bloco ignorado por tamanho: ${block}`);
 
   const removableDuplicates = mergeClusters.reduce((sum, c) => sum + c.length - 1, 0);
@@ -79,4 +82,7 @@ main()
     console.error(err);
     process.exitCode = 1;
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    await prisma.$disconnect();
+    await closeDentalGoConnection();
+  });

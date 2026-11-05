@@ -3,13 +3,15 @@
  * resolveDentalGoPerson() (gravação) faz — e não gravar nada.
  * Requer Postgres descartável (DATABASE_URL), com as migrations aplicadas.
  */
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import prisma from '../prisma';
-import { CanonicalIdentityService } from './CanonicalIdentityService';
+import { setGenericPhonesProvider } from '../identity/genericPhones';
+import { CanonicalIdentityService, MULTI_CANDIDATE_REASON, OTHER_DENTALGO_ACCOUNT_REASON } from './CanonicalIdentityService';
 
 const SOURCE = 'DGSIM_TEST';
 const DOMAIN = '@dgsim.teste';
-const IDS = [940001, 940002, 940003, 940004, 940005, 940006];
+const IDS = [940001, 940002, 940003, 940004, 940005, 940006, 940007, 940008, 940009, 940010, 940011, 940012];
+const GENERIC = '+5547933330000';
 
 async function cleanup() {
   await prisma.identityReview.deleteMany({ where: { incomingSource: 'DENTALGO', incomingExternalId: { in: IDS.map(String) } } });
@@ -30,8 +32,10 @@ const counts = async () => ({
 });
 
 describe.skipIf(!process.env.DATABASE_URL)('CanonicalIdentityService — simulação da base do DentalGO', () => {
+  beforeAll(() => setGenericPhonesProvider(async () => new Set([GENERIC])));
   beforeEach(cleanup);
   afterAll(async () => {
+    setGenericPhonesProvider(null);
     await cleanup();
     await prisma.$disconnect();
   });
@@ -44,7 +48,7 @@ describe.skipIf(!process.env.DATABASE_URL)('CanonicalIdentityService — simula�
 
     const before = await counts();
     const sim = await CanonicalIdentityService.inspectDentalGoPerson(IDS[0], dg);
-    expect(sim).toEqual({ outcome: 'WOULD_LINK', personId: csv.id, personHasOtherDentalGoId: false });
+    expect(sim).toEqual({ outcome: 'WOULD_LINK', personId: csv.id });
     expect(await counts()).toEqual(before); // simulação não grava
 
     const person = await CanonicalIdentityService.resolveDentalGoPerson(IDS[0], dg);
@@ -81,13 +85,53 @@ describe.skipIf(!process.env.DATABASE_URL)('CanonicalIdentityService — simula�
     expect(person).toMatchObject({ fullName: 'Renata Alves', email: `renata${DOMAIN}`, externalPersonId: IDS[3] });
   });
 
-  it('avisa quando a ficha encontrada já tem OUTRO ID do DentalGO (duas contas da mesma pessoa)', async () => {
+  it('ficha que já tem OUTRO ID do DentalGO não recebe junção automática: vai para revisão', async () => {
     const crm = await prisma.person.create({
       data: { fullName: 'Carla Menezes', email: `carla${DOMAIN}`, externalPersonId: IDS[4], source: SOURCE },
     });
-    const sim = await CanonicalIdentityService.inspectDentalGoPerson(IDS[5], {
-      fullName: 'Carla Menezes', email: `carla${DOMAIN}`, phoneNumber: null, cpf: null,
-    });
-    expect(sim).toEqual({ outcome: 'WOULD_LINK', personId: crm.id, personHasOtherDentalGoId: true });
+    const dg = { fullName: 'Carla Menezes', email: `carla${DOMAIN}`, phoneNumber: null, cpf: null };
+    expect(await CanonicalIdentityService.inspectDentalGoPerson(IDS[5], dg))
+      .toEqual({ outcome: 'REVIEW', reason: OTHER_DENTALGO_ACCOUNT_REASON, candidates: 1 });
+
+    const person = await CanonicalIdentityService.resolveDentalGoPerson(IDS[5], dg);
+    expect(person.id).not.toBe(crm.id);
+    expect(person.externalPersonId).toBe(IDS[5]);
+    expect((await prisma.person.findUniqueOrThrow({ where: { id: crm.id } })).externalPersonId).toBe(IDS[4]);
+  });
+
+  it('3 contas do DentalGO no mesmo telefone com e-mails diferentes: 3 fichas, 2 revisões, ninguém junta', async () => {
+    const contas = [
+      { id: IDS[6], fullName: 'Paula Reis', email: `paula${DOMAIN}`, phoneNumber: '47 98765-1234', cpf: null },
+      { id: IDS[7], fullName: 'Paula Reis Lima', email: `paula.lima${DOMAIN}`, phoneNumber: '47987651234', cpf: null },
+      { id: IDS[8], fullName: 'Carlos Reis', email: `carlos${DOMAIN}`, phoneNumber: '+55 47 98765-1234', cpf: null },
+    ];
+    const previsto = [];
+    const fichas = [];
+    for (const c of contas) {
+      previsto.push(await CanonicalIdentityService.inspectDentalGoPerson(c.id, c));
+      fichas.push(await CanonicalIdentityService.resolveDentalGoPerson(c.id, c));
+    }
+    expect(previsto.map(p => p.outcome)).toEqual(['NEW', 'REVIEW', 'REVIEW']);
+    expect((previsto[2] as any).reason).toBe(MULTI_CANDIDATE_REASON);
+    expect(new Set(fichas.map(f => f.id)).size).toBe(3);
+    expect(fichas.map(f => f.externalPersonId)).toEqual([IDS[6], IDS[7], IDS[8]]);
+    expect(await prisma.identityReview.count({
+      where: { incomingSource: 'DENTALGO', incomingExternalId: { in: [IDS[7], IDS[8]].map(String) }, status: 'PENDING' },
+    })).toBe(2);
+  });
+
+  it('telefone genérico não junta nem abre revisão (e continua gravado na ficha)', async () => {
+    const contas = [
+      { id: IDS[9], fullName: 'Ana Souza', email: `ana.g${DOMAIN}`, phoneNumber: '47 93333-0000', cpf: null },
+      { id: IDS[10], fullName: 'Bruno Lima', email: `bruno.g${DOMAIN}`, phoneNumber: '47933330000', cpf: null },
+    ];
+    for (const c of contas) {
+      expect(await CanonicalIdentityService.inspectDentalGoPerson(c.id, c)).toEqual({ outcome: 'NEW', reason: 'NO_CANDIDATE' });
+      const ficha = await CanonicalIdentityService.resolveDentalGoPerson(c.id, c);
+      expect(ficha.phoneNumber).toBe(GENERIC);
+    }
+    expect(await prisma.identityReview.count({
+      where: { incomingSource: 'DENTALGO', incomingExternalId: { in: [IDS[9], IDS[10]].map(String) } },
+    })).toBe(0);
   });
 });

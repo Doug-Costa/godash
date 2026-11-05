@@ -1,6 +1,7 @@
 import prisma from '../prisma';
 import { Person, Prisma } from '@prisma/client';
-import { matchIdentities, normalizeCpf, type IdentitySignals, type MatchResult } from '../identity/matchRules';
+import { MULTI_CANDIDATE_REASON, OTHER_DENTALGO_ACCOUNT_REASON, canJoinProvisional, matchIdentities, normalizeCpf, type IdentitySignals, type MatchResult } from '../identity/matchRules';
+import { getGenericPhones, isIgnoredPhone, withoutIgnoredPhones } from '../identity/genericPhones';
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -16,14 +17,24 @@ export interface ResolveInput {
   name?: string | null;
   /** CPF, se a origem trouxer (ex.: Bitrix). Ajuda na regra; nunca junta sozinho. */
   cpf?: string | null;
+  /** Conta do DentalGO que está entrando (só em resolveDentalGoPerson): ficha com OUTRO ID do DentalGO não recebe junção automática. */
+  dentalGoId?: number | null;
   rawData?: any;
 }
+
+export { OTHER_DENTALGO_ACCOUNT_REASON, MULTI_CANDIDATE_REASON };
+
+type Decision =
+  | { kind: 'LINK'; target: string; candidates: string[]; verdict: MatchResult }
+  | { kind: 'JOIN_PROVISIONAL'; target: string; candidates: string[]; verdict: MatchResult | null }
+  | { kind: 'REVIEW'; candidates: string[]; verdict: MatchResult | null; reason: string }
+  | { kind: 'NEW'; reason: 'NO_CANDIDATE' | 'DISTINCT'; candidates: string[] };
 
 /** Resultado de inspectDentalGoPerson(): o que a sincronização faria com uma pessoa do DentalGO. */
 export type DentalGoInspection =
   | { outcome: 'LINKED_BY_ID'; personId: string }                                         // já ligada pelo ID do DentalGO
   | { outcome: 'LINKED_BY_ALIAS'; personId: string; personHasOtherDentalGoId: boolean }    // já tem o registro de origem DENTALGO:<id>
-  | { outcome: 'WOULD_LINK'; personId: string; personHasOtherDentalGoId: boolean }         // as regras juntariam a uma ficha existente
+  | { outcome: 'WOULD_LINK'; personId: string }                                           // as regras juntariam a uma ficha existente
   | { outcome: 'WOULD_JOIN_PROVISIONAL'; personId: string }                               // entraria numa ficha provisória já em revisão
   | { outcome: 'REVIEW'; reason: string; candidates: number }                             // ficha separada + revisão
   | { outcome: 'NEW'; reason: 'NO_CANDIDATE' | 'DISTINCT' };                              // ficha nova
@@ -152,6 +163,7 @@ export class CanonicalIdentityService {
     db: Db,
     candidateId: string,
     incoming: { name: string | null; email: string | null; phone: string | null; cpf?: string | null },
+    generic: ReadonlySet<string>,
   ): Promise<MatchResult> {
     const candidate = await this.signalsOfPerson(db, candidateId);
     const signals: IdentitySignals = {
@@ -160,7 +172,56 @@ export class CanonicalIdentityService {
       phones: incoming.phone ? [incoming.phone] : [],
       cpf: incoming.cpf ?? null,
     };
-    return matchIdentities(signals, candidate ?? { names: [], emails: [], phones: [] });
+    return matchIdentities(signals, withoutIgnoredPhones(candidate ?? { names: [], emails: [], phones: [] }, generic));
+  }
+
+  /** Telefone usado para BUSCAR e COMPARAR: fictícios e genéricos não contam (continuam gravados na ficha). */
+  private static matchPhone(phone: string | null, generic: ReadonlySet<string>): string | null {
+    return phone && !isIgnoredPhone(phone, generic) ? phone : null;
+  }
+
+  /**
+   * A decisão do motor, igual para gravação (resolve), pré-checagem (inspect) e simulação
+   * (inspectDentalGoPerson): candidatos por e-mail/telefone → regras com um candidato →
+   * provisória pendente do mesmo caso → revisão ou ficha nova.
+   * `dentalGoId`: conta do DentalGO que está entrando; uma ficha que já tem OUTRO ID do
+   * DentalGO não recebe a junção automática (vai para revisão).
+   */
+  private static async decide(
+    db: Db,
+    incoming: { name: string | null; email: string | null; phone: string | null; cpf: string | null },
+    generic: ReadonlySet<string>,
+    dentalGoId?: number | null,
+  ): Promise<Decision> {
+    const candidates = await this.findCandidatePersonIds(db, incoming.email, incoming.phone);
+    if (candidates.length === 0) return { kind: 'NEW', reason: 'NO_CANDIDATE', candidates };
+
+    if (candidates.length === 1) {
+      let verdict = await this.judgeSingleCandidate(db, candidates[0], incoming, generic);
+      if (verdict.decision === 'AUTO_MERGE' && dentalGoId != null) {
+        const c = await db.person.findUnique({ where: { id: candidates[0] }, select: { externalPersonId: true } });
+        if (c?.externalPersonId != null && c.externalPersonId !== dentalGoId) {
+          verdict = { ...verdict, decision: 'REVIEW', reason: OTHER_DENTALGO_ACCOUNT_REASON };
+        }
+      }
+      if (verdict.decision === 'AUTO_MERGE') return { kind: 'LINK', target: candidates[0], candidates, verdict };
+      if (verdict.decision === 'DISTINCT') return { kind: 'NEW', reason: 'DISTINCT', candidates };
+      const provisional = await this.findPendingProvisional(db, candidates);
+      if (provisional && canJoinProvisional(verdict, incoming.email, await this.signalsOfPerson(db, provisional))) {
+        return { kind: 'JOIN_PROVISIONAL', target: provisional, candidates, verdict };
+      }
+      return { kind: 'REVIEW', candidates, verdict, reason: verdict.reason };
+    }
+
+    const provisional = await this.findPendingProvisional(db, candidates);
+    if (provisional) {
+      const signals = await this.signalsOfPerson(db, provisional);
+      const vsProvisional = await this.judgeSingleCandidate(db, provisional, incoming, generic);
+      if (canJoinProvisional(vsProvisional, incoming.email, signals)) {
+        return { kind: 'JOIN_PROVISIONAL', target: provisional, candidates, verdict: null };
+      }
+    }
+    return { kind: 'REVIEW', candidates, verdict: null, reason: MULTI_CANDIDATE_REASON };
   }
 
   /**
@@ -170,37 +231,24 @@ export class CanonicalIdentityService {
    */
   static async inspect(input: Omit<ResolveInput, 'rawData'>): Promise<{ status: 'FOUND' | 'NOT_FOUND' | 'AMBIGUOUS'; personId?: string }> {
     const { source, externalId } = input;
-    const email = this.normalizeEmail(input.email);
-    const phone = this.normalizePhone(input.phone);
 
     // 1. Tentar encontrar o Alias existente
     const existingAlias = await prisma.identityAlias.findUnique({
-      where: {
-        source_externalId: { source, externalId }
-      },
-      select: { personId: true }
+      where: { source_externalId: { source, externalId } },
+      select: { personId: true },
     });
+    if (existingAlias) return { status: 'FOUND', personId: existingAlias.personId };
 
-    if (existingAlias) {
-      return { status: 'FOUND', personId: existingAlias.personId };
-    }
-
-    // 2. E-mail/telefone em campos principais, secundários e aliases
-    const candidates = await this.findCandidatePersonIds(prisma, email, phone);
-    if (candidates.length === 1) {
-      const verdict = await this.judgeSingleCandidate(prisma, candidates[0], {
-        name: input.name?.trim() || null, email, phone, cpf: input.cpf,
-      });
-      if (verdict.decision === 'AUTO_MERGE') return { status: 'FOUND', personId: candidates[0] };
-      if (verdict.decision === 'DISTINCT') return { status: 'NOT_FOUND' };
-      const provisional = await this.findPendingProvisional(prisma, candidates);
-      return provisional ? { status: 'FOUND', personId: provisional } : { status: 'AMBIGUOUS' };
-    }
-    if (candidates.length > 1) {
-      const provisional = await this.findPendingProvisional(prisma, candidates);
-      return provisional ? { status: 'FOUND', personId: provisional } : { status: 'AMBIGUOUS' };
-    }
-    return { status: 'NOT_FOUND' };
+    // 2. Mesma decisão da gravação
+    const generic = await getGenericPhones();
+    const d = await this.decide(prisma, {
+      name: input.name?.trim() || null,
+      email: this.normalizeEmail(input.email),
+      phone: this.matchPhone(this.normalizePhone(input.phone), generic),
+      cpf: normalizeCpf(input.cpf),
+    }, generic, input.dentalGoId);
+    if (d.kind === 'LINK' || d.kind === 'JOIN_PROVISIONAL') return { status: 'FOUND', personId: d.target };
+    return d.kind === 'REVIEW' ? { status: 'AMBIGUOUS' } : { status: 'NOT_FOUND' };
   }
 
   /**
@@ -223,12 +271,15 @@ export class CanonicalIdentityService {
     const name = input.name?.trim() || null;
     const cpf = normalizeCpf(input.cpf);
     const parsedRawData = rawData ? (typeof rawData === 'string' ? JSON.parse(rawData) : rawData) : null;
+    // Telefone fictício ou genérico: continua gravado na ficha, mas não busca nem compara
+    const generic = await getGenericPhones();
+    const matchPhone = this.matchPhone(phone, generic);
 
     return prisma.$transaction(async (tx) => {
       await this.lockIdentityKeys(tx, [
         `alias:${source}:${externalId}`,
         email && `email:${email}`,
-        phone && `phone:${phone}`,
+        matchPhone && `phone:${matchPhone}`,
       ]);
 
       // 1. Alias desta origem já existe (releitura após os locks)
@@ -263,22 +314,12 @@ export class CanonicalIdentityService {
         return person;
       }
 
-      // 2. Candidatos por e-mail/telefone (principais, secundários e aliases)
-      const candidates = await this.findCandidatePersonIds(tx, email, phone);
-
-      // Um candidato: as regras decidem. Vários: só a provisória pendente do mesmo caso.
-      let target: string | null = null;
-      let verdict: MatchResult | null = null;
-      if (candidates.length === 1) {
-        verdict = await this.judgeSingleCandidate(tx, candidates[0], { name, email, phone, cpf });
-        if (verdict.decision === 'AUTO_MERGE') target = candidates[0];
-        // REVIEW: se o próprio candidato é a provisória pendente deste caso, a entrada se junta a ela
-        else if (verdict.decision === 'REVIEW') target = await this.findPendingProvisional(tx, candidates);
-        // DISTINCT (ex.: só um telefone fictício em comum): ficha nova, sem revisão
-      } else if (candidates.length > 1) {
-        target = await this.findPendingProvisional(tx, candidates);
-      }
-      const needsReview = !target && (candidates.length > 1 || verdict?.decision === 'REVIEW');
+      // 2. A decisão do motor (mesma da pré-checagem e da simulação)
+      const d = await this.decide(tx, { name, email, phone: matchPhone, cpf }, generic, input.dentalGoId);
+      const candidates = d.candidates;
+      const verdict = d.kind === 'NEW' ? null : d.verdict;
+      const target = d.kind === 'LINK' || d.kind === 'JOIN_PROVISIONAL' ? d.target : null;
+      const needsReview = d.kind === 'REVIEW';
 
       // 2a. Junção permitida pelas regras (ou a provisória pendente do mesmo caso): vincula o alias
       if (target) {
@@ -318,16 +359,17 @@ export class CanonicalIdentityService {
             evidences: [
               AMBIGUOUS_PROVISIONAL,
               `${PROVISIONAL_PERSON_PREFIX}${newAlias.person.id}`,
-              ...(verdict ? [`REASON:${verdict.reason}`, ...verdict.evidences, ...verdict.blockers] : [
+              ...(verdict ? [`REASON:${d.kind === 'REVIEW' ? d.reason : verdict.reason}`, ...verdict.evidences, ...verdict.blockers] : [
+                `REASON:${MULTI_CANDIDATE_REASON}`,
                 ...(email ? ['EMAIL_MATCH'] : []),
-                ...(phone ? ['PHONE_MATCH'] : []),
+                ...(matchPhone ? ['PHONE_MATCH'] : []),
               ]),
               ...candidates.map(id => `CANDIDATE:${id}`),
             ],
             status: 'PENDING',
           },
         });
-        console.log(`[CanonicalIdentityService] Revisão ${source}:${externalId} → Person provisória ${newAlias.person.id} (candidatos: ${candidates.join(', ')}${verdict ? `; ${verdict.reason}` : ''}), aguardando revisão`);
+        console.log(`[CanonicalIdentityService] Revisão ${source}:${externalId} → Person provisória ${newAlias.person.id} (candidatos: ${candidates.join(', ')}; ${d.kind === 'REVIEW' ? d.reason : ''}), aguardando revisão`);
       } else {
         console.log(`[CanonicalIdentityService] Nova Person criada (${newAlias.person.id}) vinculada ao alias ${source}:${externalId}`);
       }
@@ -368,7 +410,7 @@ export class CanonicalIdentityService {
         : byId;
     }
 
-    const person = await this.resolve({ source: 'DENTALGO', externalId: String(externalPersonId), email, phone, name, cpf });
+    const person = await this.resolve({ source: 'DENTALGO', externalId: String(externalPersonId), email, phone, name, cpf, dentalGoId: externalPersonId });
     if (person.externalPersonId === null) {
       return prisma.person.update({ where: { id: person.id }, data: { externalPersonId } });
     }
@@ -407,23 +449,14 @@ export class CanonicalIdentityService {
     });
     if (alias) return { outcome: 'LINKED_BY_ALIAS', personId: alias.personId, personHasOtherDentalGoId: await otherDentalGoId(alias.personId) };
 
-    const candidates = await this.findCandidatePersonIds(prisma, email, phone);
-    if (candidates.length === 0) return { outcome: 'NEW', reason: 'NO_CANDIDATE' };
-
-    if (candidates.length === 1) {
-      const verdict = await this.judgeSingleCandidate(prisma, candidates[0], { name, email, phone, cpf });
-      if (verdict.decision === 'AUTO_MERGE') {
-        return { outcome: 'WOULD_LINK', personId: candidates[0], personHasOtherDentalGoId: await otherDentalGoId(candidates[0]) };
-      }
-      if (verdict.decision === 'DISTINCT') return { outcome: 'NEW', reason: 'DISTINCT' };
-      const provisional = await this.findPendingProvisional(prisma, candidates);
-      if (provisional) return { outcome: 'WOULD_JOIN_PROVISIONAL', personId: provisional };
-      return { outcome: 'REVIEW', reason: verdict.reason, candidates: 1 };
+    const generic = await getGenericPhones();
+    const d = await this.decide(prisma, { name, email, phone: this.matchPhone(phone, generic), cpf }, generic, externalPersonId);
+    switch (d.kind) {
+      case 'LINK': return { outcome: 'WOULD_LINK', personId: d.target };
+      case 'JOIN_PROVISIONAL': return { outcome: 'WOULD_JOIN_PROVISIONAL', personId: d.target };
+      case 'REVIEW': return { outcome: 'REVIEW', reason: d.reason, candidates: d.candidates.length };
+      case 'NEW': return { outcome: 'NEW', reason: d.reason };
     }
-
-    const provisional = await this.findPendingProvisional(prisma, candidates);
-    if (provisional) return { outcome: 'WOULD_JOIN_PROVISIONAL', personId: provisional };
-    return { outcome: 'REVIEW', reason: 'Contatos apontam para fichas diferentes', candidates: candidates.length };
   }
 
   /**

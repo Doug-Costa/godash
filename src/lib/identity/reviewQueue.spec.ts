@@ -25,7 +25,7 @@ function runLoader(apply: boolean): Promise<string> {
   const tsx = path.join(ROOT, 'node_modules/tsx/dist/cli.mjs');
   const script = path.join(ROOT, 'prisma/load-identity-review-queue.ts');
   return new Promise((resolve, reject) =>
-    execFile(process.execPath, [tsx, script, ...(apply ? ['--apply'] : [])], { env: process.env, cwd: ROOT },
+    execFile(process.execPath, [tsx, script, ...(apply ? ['--apply'] : [])], { env: { ...process.env, IDENTITY_GENERIC_PHONES: 'none' }, cwd: ROOT },
       (err, stdout, stderr) => (err ? reject(new Error(stderr || err.message)) : resolve(stdout))));
 }
 

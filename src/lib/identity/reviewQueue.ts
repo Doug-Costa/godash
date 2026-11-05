@@ -75,9 +75,9 @@ export function findObsoleteReviews<T extends { id: string; evidences: unknown }
   });
 }
 
-export function buildReviewQueue(persons: AuditPerson[]): QueueItem[] {
+export function buildReviewQueue(persons: AuditPerson[], ignoredPhones: ReadonlySet<string> = new Set()): QueueItem[] {
   const items: QueueItem[] = [];
-  const { pairs, mergeClusters } = findDuplicatePairs(persons);
+  const { pairs, mergeClusters } = findDuplicatePairs(persons, ignoredPhones);
 
   // 1. Junções sugeridas: uma revisão por ficha a absorver, apontando para a que fica
   const clusterOf = new Map<string, number>();
