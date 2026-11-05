@@ -4,7 +4,7 @@
  */
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import prisma from '../prisma';
-import { applyEmptyPersonRepair, planEmptyPersonRepair, type DentalGoLookup } from './emptyPersonRepair';
+import { applyEmptyPersonRepair, planEmptyPersonRepair, removeEmptyOrphans, type DentalGoLookup } from './emptyPersonRepair';
 
 const SOURCE = 'EMPTY_TEST';
 const EXT = [930001, 930002];
@@ -58,6 +58,63 @@ describe.skipIf(!process.env.DATABASE_URL)('reparo de fichas vazias', () => {
 
     // Nada é apagado
     expect(await prisma.person.count({ where: { id: { in: [orfa.id, comCadastro.id, dentalgoSemDados.id] } } })).toBe(3);
+  });
+
+  it('busca os dados no cadastro: pelo ID do DentalGO dele, nos dados gravados e no envio do formulário', async () => {
+    const pipeline = await prisma.pipeline.create({ data: { name: SOURCE } });
+    try {
+      const viaIdDoCadastro = await prisma.person.create({ data: { source: SOURCE } });
+      await prisma.customer.create({ data: { personId: viaIdDoCadastro.id, externalPersonId: EXT[0], source: SOURCE } });
+
+      const viaMetadata = await prisma.person.create({ data: { source: SOURCE } });
+      await prisma.customer.create({ data: { personId: viaMetadata.id, source: SOURCE, metadata: { fullName: 'Sônia Prado', email: 'sonia@teste.com' } } });
+
+      const viaFormulario = await prisma.person.create({ data: { source: SOURCE } });
+      const cust = await prisma.customer.create({ data: { personId: viaFormulario.id, source: SOURCE } });
+      await prisma.opportunity.create({
+        data: { customerId: cust.id, pipelineId: pipeline.id, metadata: { submittedName: 'Teo Barros', submittedEmail: 'teo@teste.com', submittedPhone: '11977776666' } },
+      });
+
+      const plan = (await planEmptyPersonRepair(prisma, fakeDentalGo)).filter(i => i.source === SOURCE);
+      const byId = Object.fromEntries(plan.map(i => [i.personId, i]));
+      expect(byId[viaIdDoCadastro.id].category).toBe('FILL_FROM_DENTALGO');
+      expect(byId[viaIdDoCadastro.id].fill?.externalPersonId).toBe(EXT[0]);
+      expect(byId[viaMetadata.id].category).toBe('FILL_FROM_RECORDS');
+      expect(byId[viaFormulario.id].category).toBe('FILL_FROM_RECORDS');
+
+      await applyEmptyPersonRepair(prisma, plan);
+      expect(await prisma.person.findUniqueOrThrow({ where: { id: viaIdDoCadastro.id } }))
+        .toMatchObject({ fullName: 'Paulo Teles', externalPersonId: EXT[0], cpf: '52998224725' });
+      expect(await prisma.person.findUniqueOrThrow({ where: { id: viaMetadata.id } }))
+        .toMatchObject({ fullName: 'Sônia Prado', email: 'sonia@teste.com' });
+      expect(await prisma.person.findUniqueOrThrow({ where: { id: viaFormulario.id } }))
+        .toMatchObject({ fullName: 'Teo Barros', email: 'teo@teste.com', phoneNumber: '+5511977776666' });
+    } finally {
+      await prisma.person.deleteMany({ where: { source: SOURCE } });
+      await prisma.pipeline.delete({ where: { id: pipeline.id } });
+    }
+  });
+
+  it('remove só as órfãs, confere de novo na hora e registra os IDs', async () => {
+    const orfa = await prisma.person.create({ data: { source: SOURCE } });
+    const virouAlias = await prisma.person.create({ data: { source: SOURCE } });
+    const comCadastro = await prisma.person.create({ data: { source: SOURCE } });
+    await prisma.customer.create({ data: { personId: comCadastro.id, source: SOURCE } });
+
+    const plan = (await planEmptyPersonRepair(prisma, fakeDentalGo)).filter(i => i.source === SOURCE);
+    expect(plan.filter(i => i.category === 'ORPHAN').map(i => i.personId).sort()).toEqual([orfa.id, virouAlias.id].sort());
+
+    // Entre o plano e a remoção, uma delas ganhou um registro de origem: não pode sair
+    await prisma.identityAlias.create({ data: { personId: virouAlias.id, source: SOURCE, externalId: 'chegou-depois' } });
+
+    expect(await removeEmptyOrphans(prisma, plan, null)).toBe(1);
+    expect(await prisma.person.findUnique({ where: { id: orfa.id } })).toBeNull();
+    expect(await prisma.person.findUnique({ where: { id: virouAlias.id } })).not.toBeNull();
+    expect(await prisma.person.findUnique({ where: { id: comCadastro.id } })).not.toBeNull();
+
+    const evento = await prisma.domainEvent.findFirst({ where: { type: 'IDENTITY_EMPTY_ORPHANS_REMOVED' }, orderBy: { occurredAt: 'desc' } });
+    expect(((evento?.metadata as any).removed as any[]).map(r => r.id)).toEqual([orfa.id]);
+    await prisma.domainEvent.deleteMany({ where: { type: 'IDENTITY_EMPTY_ORPHANS_REMOVED' } });
   });
 
   it('nunca sobrescreve um campo que alguém preencheu depois do plano', async () => {
