@@ -19,6 +19,15 @@ export interface ResolveInput {
   rawData?: any;
 }
 
+/** Resultado de inspectDentalGoPerson(): o que a sincronização faria com uma pessoa do DentalGO. */
+export type DentalGoInspection =
+  | { outcome: 'LINKED_BY_ID'; personId: string }                                         // já ligada pelo ID do DentalGO
+  | { outcome: 'LINKED_BY_ALIAS'; personId: string; personHasOtherDentalGoId: boolean }    // já tem o registro de origem DENTALGO:<id>
+  | { outcome: 'WOULD_LINK'; personId: string; personHasOtherDentalGoId: boolean }         // as regras juntariam a uma ficha existente
+  | { outcome: 'WOULD_JOIN_PROVISIONAL'; personId: string }                               // entraria numa ficha provisória já em revisão
+  | { outcome: 'REVIEW'; reason: string; candidates: number }                             // ficha separada + revisão
+  | { outcome: 'NEW'; reason: 'NO_CANDIDATE' | 'DISTINCT' };                              // ficha nova
+
 /**
  * CDP V4 - CanonicalIdentityService
  * Serviço de Master Data Management (MDM) para resolução atômica de identidades canônicas (Person).
@@ -367,6 +376,54 @@ export class CanonicalIdentityService {
       console.warn(`[CanonicalIdentityService] DentalGO #${externalPersonId} ligado à Person ${person.id}, que já tem o DentalGO #${person.externalPersonId} (mesmo contato em duas contas)`);
     }
     return person;
+  }
+
+  /**
+   * Versão SÓ DE LEITURA de resolveDentalGoPerson(): diz o que aconteceria, sem gravar nada.
+   * Segue os mesmos passos e as mesmas regras (ID do DentalGO → alias DENTALGO:<id> →
+   * candidatos por e-mail/telefone julgados por matchIdentities → provisória pendente).
+   * Usada na simulação da sincronização da base do DentalGO.
+   */
+  static async inspectDentalGoPerson(
+    externalPersonId: number,
+    info?: { fullName?: string | null; email?: string | null; phoneNumber?: string | null; cpf?: string | null } | null,
+  ): Promise<DentalGoInspection> {
+    const email = this.normalizeEmail(info?.email);
+    const phone = this.normalizePhone(info?.phoneNumber);
+    const name = info?.fullName?.trim() || null;
+    const cpf = normalizeCpf(info?.cpf);
+
+    const byId = await prisma.person.findFirst({ where: { externalPersonId }, orderBy: { createdAt: 'asc' }, select: { id: true } });
+    if (byId) return { outcome: 'LINKED_BY_ID', personId: byId.id };
+
+    const otherDentalGoId = async (personId: string) => {
+      const p = await prisma.person.findUnique({ where: { id: personId }, select: { externalPersonId: true } });
+      return p?.externalPersonId != null && p.externalPersonId !== externalPersonId;
+    };
+
+    const alias = await prisma.identityAlias.findUnique({
+      where: { source_externalId: { source: 'DENTALGO', externalId: String(externalPersonId) } },
+      select: { personId: true },
+    });
+    if (alias) return { outcome: 'LINKED_BY_ALIAS', personId: alias.personId, personHasOtherDentalGoId: await otherDentalGoId(alias.personId) };
+
+    const candidates = await this.findCandidatePersonIds(prisma, email, phone);
+    if (candidates.length === 0) return { outcome: 'NEW', reason: 'NO_CANDIDATE' };
+
+    if (candidates.length === 1) {
+      const verdict = await this.judgeSingleCandidate(prisma, candidates[0], { name, email, phone, cpf });
+      if (verdict.decision === 'AUTO_MERGE') {
+        return { outcome: 'WOULD_LINK', personId: candidates[0], personHasOtherDentalGoId: await otherDentalGoId(candidates[0]) };
+      }
+      if (verdict.decision === 'DISTINCT') return { outcome: 'NEW', reason: 'DISTINCT' };
+      const provisional = await this.findPendingProvisional(prisma, candidates);
+      if (provisional) return { outcome: 'WOULD_JOIN_PROVISIONAL', personId: provisional };
+      return { outcome: 'REVIEW', reason: verdict.reason, candidates: 1 };
+    }
+
+    const provisional = await this.findPendingProvisional(prisma, candidates);
+    if (provisional) return { outcome: 'WOULD_JOIN_PROVISIONAL', personId: provisional };
+    return { outcome: 'REVIEW', reason: 'Contatos apontam para fichas diferentes', candidates: candidates.length };
   }
 
   /**
